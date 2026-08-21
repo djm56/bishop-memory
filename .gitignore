@@ -1,0 +1,58 @@
+# --- Go build artifacts ---
+# Default binary name (when running `go build` without -o).
+/bishop-memory
+# Everything the Makefile's `build` and `dist-linux*` targets produce
+# (bin/memoryd, bin/memoryd-linux-amd64, bin/memoryd-linux-arm64, and
+# any future platform/arch this project adds a dist-* target for) —
+# one blanket rule on the directory rather than naming each binary, so
+# a new cross-compile target never needs a matching .gitignore edit.
+/bin/
+# Cross-compiled Windows binaries.
+*.exe
+# `go test -c` compiled test binaries. Not produced by `make test`/CI
+# (which run plain `go test`, never `-c`), but a common enough local
+# debugging step that it is worth covering pre-emptively.
+*.test
+# `go test -coverprofile=...`/`go tool pprof` output, if run locally.
+# Not produced by the Makefile or CI today, but a likely first thing a
+# contributor reaches for, and the whole point of this pass is that a
+# stray artefact like this must never reach a commit by accident.
+coverage.out
+*.prof
+
+# --- Local data: SQLite database files ---
+# The DB lives under data/ and uses WAL mode, which produces -wal / -shm
+# sibling files alongside the main database. Both naming conventions are
+# covered (Makefile uses *.db; README documents *.sqlite as a future
+# option).
+data/*.sqlite
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite-wal
+data/*.sqlite-shm
+
+# --- Local environment files ---
+# .env holds secrets (PORT, DB_PATH, LOG_LEVEL, future API keys).
+# .env.example is checked in.
+.env
+
+# --- Vendored dependencies (unused; kept for cleanliness if anyone runs `go mod vendor`) ---
+/vendor/
+
+# --- Note: cmd/memoryd/main_test.go's subprocess test -----------------
+# TestGracefulShutdown_OnSIGTERM builds a throwaway memoryd binary and a
+# throwaway SQLite database, but both live under t.TempDir() (an
+# OS-managed temp directory outside this repo, removed automatically
+# when the test finishes) — nothing it writes ever lands inside this
+# tree, so no dedicated ignore rule is needed for it. Verified empirically
+# (task-20260821-02 step 6, Job 5): a full `go build ./... && make
+# dist-linux && go vet ./... && gofmt -l . && go test ./... -count=1 &&
+# go test -race ./... -count=1` run against a scratch git-initialized
+# copy of this tree left `git status --porcelain` reporting only the
+# real source tree — no stray binary or database file.
+
+# --- Editor / OS scratch ---
+.DS_Store
+*.swp
+*~

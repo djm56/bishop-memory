@@ -1,0 +1,55 @@
+name: CI
+
+# Runs the full local verification gate (see CONTRIBUTING.md) on Linux
+# for every push and pull request. No publishing/release job and no
+# secrets are used anywhere in this workflow, by design (task-20260821-02
+# step 6, Job 5).
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: build, vet, fmt, test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          # go-version-file (rather than a hardcoded version string)
+          # keeps CI pinned to exactly the Go version go.mod declares
+          # ("go 1.25.5"), so a go.mod bump can't silently drift out of
+          # sync with what CI actually runs.
+          go-version-file: go.mod
+          # actions/setup-go's built-in module cache, keyed on go.sum —
+          # no separate actions/cache step needed.
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt (must report no files)
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$unformatted"
+            echo
+            echo "Run 'gofmt -w .' (or 'make fmt') locally and commit the result."
+            exit 1
+          fi
+
+      - name: go test
+        run: go test ./... -count=1
+
+      - name: go test -race
+        run: go test -race ./... -count=1

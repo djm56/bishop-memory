@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  scripts/com.bishop-memory.memoryd.plist
+
+  launchd template for the bishop-memory daemon. `install-daemon.sh`
+  substitutes `__BISHOP_ROOT__` with the resolved bishop-memory path
+  before installing to ~/Library/LaunchAgents/com.bishop-memory.memoryd.plist.
+
+  Defaults (Phase 2):
+    * Label:    com.bishop-memory.memoryd
+    * RunAtLoad / KeepAlive:  always-on, restarted on exit
+    * Program:   <BISHOP_ROOT>/bin/memoryd
+    * WorkingDirectory: <BISHOP_ROOT>
+    * Env:       PORT=8787, DB_PATH=data/memory.db, APP_ENV=production
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bishop-memory.memoryd</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BISHOP_ROOT__/bin/memoryd</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__BISHOP_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PORT</key>
+        <string>8787</string>
+        <key>DB_PATH</key>
+        <string>data/memory.db</string>
+        <key>APP_ENV</key>
+        <string>production</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>__BISHOP_ROOT__/data/memoryd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__BISHOP_ROOT__/data/memoryd.err.log</string>
+</dict>
+</plist>

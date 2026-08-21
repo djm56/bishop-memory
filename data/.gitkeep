@@ -1,0 +1,3 @@
+# Keeps the data/ directory under version control.
+# SQLite database files (data/*.sqlite, data/*.db, data/*.db-wal,
+# data/*.db-shm) are git-ignored — see ../.gitignore.

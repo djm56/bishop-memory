@@ -1,0 +1,204 @@
+# scripts/bishop-memory.service
+#
+# systemd unit template for the bishop-memory daemon (memoryd), the
+# Linux counterpart to scripts/com.bishop-memory.memoryd.plist (macOS
+# launchd). scripts/install-daemon-linux.sh substitutes __BISHOP_ROOT__
+# with the resolved bishop-memory checkout path before installing to
+# /etc/systemd/system/bishop-memory.service.
+#
+# Design summary (task-20260821-02 step 6, Job 3):
+#   * Runs as a dedicated non-root system account ("bishop-memory"),
+#     created by the installer — never root, never the operator's own
+#     account.
+#   * Binds loopback only (HTTP_HOST=127.0.0.1), consistent with Job 2's
+#     default and reinforced independently at the network-filter level
+#     below (IPAddressAllow/Deny), so a misconfigured override still
+#     cannot be reached from outside the host.
+#   * Exactly one writable path: the systemd-managed StateDirectory
+#     (/var/lib/bishop-memory), which holds the SQLite database and its
+#     WAL/SHM siblings. Every other hardening directive exists to make
+#     that the ONLY writable/reachable surface.
+#   * TimeoutStopSec is set well above cmd/memoryd/main.go's own 10s
+#     shutdownTimeout so `systemctl stop`/`restart` lets the graceful
+#     SIGTERM shutdown (signal.NotifyContext + http.Server.Shutdown,
+#     added in Step 4) actually finish — including the final db.Close()
+#     — instead of the WAL database being killed mid-write.
+#
+# Every hardening directive below carries its own justification comment
+# so a future maintainer does not have to reverse-engineer intent before
+# touching this file (a hardening directive nobody can explain gets
+# removed by the next maintainer — see this task's brief).
+
+[Unit]
+Description=bishop-memory — locally-bound memory service for AI agents
+Documentation=file://__BISHOP_ROOT__/README.md file://__BISHOP_ROOT__/docs/api-contract.md
+# local-fs.target: /var/lib (StateDirectory) must be mounted first.
+# network.target: harmless ordering even though the service only ever
+# binds loopback, which is always up before network.target — this just
+# avoids any edge case on minimal/embedded init orderings.
+After=local-fs.target network.target
+Wants=network.target
+
+[Service]
+Type=simple
+
+# --- Identity: dedicated non-root account (Job 3 requirement) --------
+# Created by install-daemon-linux.sh via useradd/groupadd, never root
+# and never the operator's own login account. No shell, no home
+# directory — this account exists solely to own the one writable
+# directory below and run this one process.
+User=bishop-memory
+Group=bishop-memory
+
+WorkingDirectory=__BISHOP_ROOT__
+ExecStart=__BISHOP_ROOT__/bin/memoryd
+
+# --- Environment -------------------------------------------------------
+# HTTP_HOST=127.0.0.1: loopback-only bind (Job 2). Explicit here rather
+# than relying only on the application's own default so the unit file
+# is self-documenting about the deployment's security model even if
+# config.go's default ever changes.
+Environment=HTTP_HOST=127.0.0.1
+Environment=PORT=8787
+Environment=APP_ENV=production
+# DB_PATH points inside the StateDirectory below — the literal
+# "/var/lib" prefix matches StateDirectory='s always-fixed root for
+# system units (systemd.exec(5), specifier %S); "bishop-memory" is the
+# StateDirectory= value itself.
+Environment=DB_PATH=/var/lib/bishop-memory/memory.db
+
+# --- Restart policy ------------------------------------------------------
+# on-failure (not "always"): a clean `systemctl stop` must not trigger
+# a restart. RestartSec gives a brief backoff instead of a tight crash
+# loop; the StartLimit* pair stops systemd from restarting indefinitely
+# if the failure is persistent (e.g. a corrupted database file) rather
+# than transient.
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# --- Shutdown ------------------------------------------------------------
+# KillSignal=SIGTERM: the exact signal cmd/memoryd/main.go listens for
+# via signal.NotifyContext (Step 4). TimeoutStopSec must exceed the
+# application's own 10s shutdownTimeout constant plus margin for the
+# final db.Close() and OS I/O flush, or systemd would SIGKILL the
+# process mid-shutdown — precisely the WAL-database-killed-mid-write
+# failure this unit exists to avoid. 20s = 2x the app's own budget.
+KillSignal=SIGTERM
+TimeoutStopSec=20s
+
+# --- Hardening: filesystem -----------------------------------------------
+# ProtectSystem=strict: mount /, /usr, /boot, /etc, etc. read-only for
+# this process. The binary and db/schema.sql under WorkingDirectory only
+# ever need to be READ; nothing in this codebase writes outside the one
+# database file.
+ProtectSystem=strict
+# StateDirectory is the sanctioned exception to ProtectSystem=strict
+# above: systemd creates /var/lib/bishop-memory before the process
+# starts, chowns it to User/Group above, and grants it (and only it)
+# write access — exactly the "one writable directory" this service
+# needs for its SQLite file + WAL/SHM siblings. Mode 0750 (owner rwx,
+# group rx, no world access) — tighter than the directory's own
+# internal/store/sqlite.go 0o700 fallback would allow via MkdirAll
+# alone, since MkdirAll is a no-op on an already-existing directory and
+# never widens or narrows it.
+StateDirectory=bishop-memory
+StateDirectoryMode=0750
+# ProtectHome: this service has no legitimate reason to read or write
+# any user's home directory (including root's), so hide /home, /root,
+# and /run/user entirely.
+ProtectHome=true
+# PrivateTmp: isolates /tmp and /var/tmp into a private mount for this
+# service. Nothing in this codebase currently uses temp files, but this
+# is a zero-cost guard against a future dependency that does, and against
+# a compromised process reading another service's temp files.
+PrivateTmp=true
+
+# --- Hardening: kernel / hardware surface --------------------------------
+# PrivateDevices: no access to physical devices (/dev/sda, etc.) — this
+# is a pure userspace HTTP+SQLite service with no hardware access need.
+PrivateDevices=true
+# ProtectKernelTunables: /proc/sys and /sys become read-only. The
+# service never tunes kernel parameters.
+ProtectKernelTunables=true
+# ProtectKernelModules: blocks (un)loading kernel modules. Irrelevant to
+# an HTTP daemon.
+ProtectKernelModules=true
+# ProtectKernelLogs: blocks reading the kernel log ring buffer
+# (/dev/kmsg) — this service logs to its own stdout/journal stream only.
+ProtectKernelLogs=true
+# ProtectControlGroups: the cgroup filesystem is read-only. The service
+# never manages cgroups (that is systemd's own job).
+ProtectControlGroups=true
+# ProtectClock: blocks changing the system clock. This service reads
+# timestamps for its own event/task records; it never has a reason to
+# set the clock, and blocking it closes off a timestamp-tampering vector
+# for a compromised process.
+ProtectClock=true
+
+# --- Hardening: privilege / capability surface ---------------------------
+# NoNewPrivileges: the process (and anything it might exec, though it
+# execs nothing) can never gain privileges beyond what it starts with —
+# e.g. via a setuid binary. Universal, zero-cost default.
+NoNewPrivileges=true
+# CapabilityBoundingSet / AmbientCapabilities left empty: this service
+# binds an unprivileged port (8787, so no CAP_NET_BIND_SERVICE), never
+# does raw sockets, ptrace, or anything else capability-gated. Zero
+# capabilities needed, zero granted.
+CapabilityBoundingSet=
+AmbientCapabilities=
+# RestrictSUIDSGID: the process can never create a setuid/setgid file.
+# Nothing in this codebase's file I/O (SQLite pages, WAL/SHM files) ever
+# needs that bit set.
+RestrictSUIDSGID=true
+# RestrictNamespaces: the process can never create new Linux namespaces
+# (a container-escape-adjacent primitive). This service never namespaces
+# itself.
+RestrictNamespaces=true
+# RestrictRealtime: the process can never request realtime scheduling.
+# An HTTP+SQLite service has no realtime latency requirement, and
+# realtime scheduling is a known local DoS vector (a realtime thread can
+# starve the rest of the system).
+RestrictRealtime=true
+# LockPersonality: locks the process's execution-domain personality
+# (the personality(2) syscall), closing off an ABI-confusion primitive a
+# compromised process could otherwise use.
+LockPersonality=true
+# MemoryDenyWriteExecute: blocks any memory mapping that is
+# simultaneously writable and executable. Safe here specifically because
+# memoryd is a pure-Go binary built with CGO_ENABLED=0 (Job 4 — the
+# SQLite driver, modernc.org/sqlite, is pure Go) with no JIT and no
+# legitimate need for W+X memory at any point in its lifetime.
+MemoryDenyWriteExecute=true
+
+# --- Hardening: network surface ------------------------------------------
+# RestrictAddressFamilies: only AF_INET/AF_INET6 are permitted — the one
+# thing this process does on a socket is listen for HTTP on a loopback
+# TCP address. Nothing in this codebase opens an AF_UNIX, AF_NETLINK, or
+# any other family of socket, so none of those are allowed either.
+RestrictAddressFamilies=AF_INET AF_INET6
+# IPAddressAllow/Deny: defense-in-depth for the Job 2 loopback-only bind
+# decision, enforced at the kernel socket-filter level rather than only
+# in application config. Even if HTTP_HOST is ever misconfigured to a
+# non-loopback address, traffic from outside the host still cannot
+# reach this process, because the filter below denies every address
+# except loopback regardless of what the application binds to.
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8 ::1/128
+# SystemCallFilter: systemd's own curated "@system-service" allow-list
+# (ordinary daemon behaviour — file I/O, networking, threading, time)
+# rather than a hand-picked list this task would have to maintain.
+# SystemCallErrorNumber=EPERM makes a denied syscall fail cleanly
+# (visible in logs) instead of killing the process outright.
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# --- Hardening: misc -------------------------------------------------------
+# UMask=0077: any file this process creates directly defaults to
+# owner-only, matching internal/store/sqlite.go's own explicit 0600
+# chmod on the database file as a second, independent layer.
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
