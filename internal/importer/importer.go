@@ -11,39 +11,48 @@
 //   - Markdown files (*.md) become one document per file. The document's
 //     kind is derived from its path relative to root:
 //
-//     state/ACTIVE-TASK.md                  -> "state"
-//     state/EVENT-LOG.md                    -> "state"
-//     tasks/<id>/CONTEXT.md                 -> "context"   (EXACTLY one
-//     tasks/<id>/PROGRESS.md                -> "progress"   dir under tasks/
-//     improvements/IMPROVEMENTS.md          -> "improvements"
+//     state/CURRENT-MISSION.md              -> "state"
+//     state/FLIGHT-RECORDER.md              -> "state"
+//     state/MISSION-ARCHIVE.md              -> "state"
+//     missions/<id>/BRIEF.md                -> "brief"    (EXACTLY one
+//     missions/<id>/PROGRESS.md             -> "progress"  dir under missions/
+//     missions/<id>/DEBRIEF.md              -> "debrief"
+//     findings/FINDINGS.md                  -> "findings"
+//     findings/PATTERNS.md                  -> "patterns"
+//     findings/service-records/<name>.md    -> "service-record"
+//     reference/DIRECTIVES.md               -> "directives"
 //     graph/<anything>.md                   -> "graph"
 //     reference/<anything>.md               -> "reference"
-//     agent-documents/<anything>.md         -> "agent-documents"
+//     workspace/<anything>.md               -> "workspace"
 //     <top-level>/<file>.md                 -> "<top-level>"
 //     <root>/<file>.md                      -> "document" (fallback)
 //
-//     The "context"/"progress" mapping is intentionally tight: it
-//     applies only to exactly tasks/<id>/CONTEXT.md and
-//     tasks/<id>/PROGRESS.md. A tasks/CONTEXT.md (no <id>) or a
-//     tasks/<id>/<sub>/CONTEXT.md (deeper nested) falls through to
-//     the top-level-directory-name kind (or "document" fallback) —
-//     those files are NOT project context/progress.
+//     The missions/<id>/BRIEF/PROGRESS/DEBRIEF mapping is intentionally
+//     tight: it applies only to exactly those filenames at one directory
+//     level under missions/. A missions/<id>/<sub>/BRIEF.md (deeper nested)
+//     or a bare missions/BRIEF.md (no <id>) falls through to the
+//     top-level-directory-name kind (or "document" fallback) — those files
+//     are NOT mission metadata.
 //
-//     The ACTIVE-TASK.md parser additionally extracts the structured
-//     field list (Task ID / Project / Status / Owner / Next Action /
-//     Last Updated / Blockers / Notes — per
-//     .opencode/templates/state/STATE-FILE-TEMPLATE.md) and prepends a
+//     Note: graph/ directory has no counterpart in the harness memory tree
+//     and is retained deliberately as a fixture exercising the plain
+//     directory-name fallback; nothing should remove it as leftover.
+//
+//     The CURRENT-MISSION.md parser additionally extracts the structured
+//     field list (Mission ID / Status / Owner / Next Action /
+//     Last Updated / Blockers — per
+//     .claude/templates/state/STATE-FILE-TEMPLATE.md) and prepends a
 //     duplicated block at the top of the body so the values are
 //     searchable both in their original position and as a single
 //     structured block. The raw file content is preserved verbatim
 //     below the prefix.
 //
 //   - JSONL files (*.jsonl) are split line by line; each non-blank line
-//     becomes one document with kind="event". Title is the parsed
-//     event_type (or the filename if parsing fails); body is a
-//     summary + note + task_id composition (or the raw line as a
-//     fallback); source_path is "<relpath>:<line-number>" so each line
-//     is unique.
+//     becomes one document with kind="flight-recorder". Title is the parsed
+//     event (or the filename if parsing fails); body is a
+//     structured composition of step, agent, note, and mission_id fields
+//     (or the raw line as a fallback); source_path is "<abspath>:<line-number>"
+//     so each line is unique across all roots.
 //
 // What does NOT get imported:
 //
@@ -218,7 +227,7 @@ func Sync(db *sql.DB, root string) error {
 }
 
 // importMarkdown reads one Markdown file, classifies it by its path,
-// and upserts it as a single document. ACTIVE-TASK.md gets a
+// and upserts it as a single document. CURRENT-MISSION.md gets a
 // structured-field prefix prepended to its body (see package docblock).
 func importMarkdown(db *sql.DB, absPath, relPath string) error {
 	content, err := os.ReadFile(absPath)
@@ -231,20 +240,28 @@ func importMarkdown(db *sql.DB, absPath, relPath string) error {
 	title := markdownTitle(string(content), filepath.Base(relPath))
 	body := string(content)
 
-	// ACTIVE-TASK.md gets the structured-field prefix; the raw content
-	// is preserved below the prefix so a full-text search still finds
-	// every original token.
-	if filepath.Base(relPath) == "ACTIVE-TASK.md" {
-		body = prependActiveTaskFields(body)
+	// CURRENT-MISSION.md and FLIGHT-RECORDER.md get the structured-field prefix;
+	// the raw content is preserved below the prefix so a full-text search still
+	// finds every original token.
+	if filepath.Base(relPath) == "CURRENT-MISSION.md" {
+		body = prependCurrentMissionFields(body)
+	}
+	if filepath.Base(relPath) == "FLIGHT-RECORDER.md" {
+		body = prependFlightRecorderFields(body)
 	}
 
+	// Use absPath for source_path so multiple roots with the same relative
+	// path do not collide on the UNIQUE constraint and silently overwrite.
+	// The kind mapping and title extraction continue to use relPath.
 	return upsertDocument(db, absPath, title, kind, body, sha)
 }
 
 // importJSONL reads one JSONL file line by line and upserts each
-// non-blank line as a separate document with kind="event". The
-// source_path is "<relpath>:<line-number>" so each line is unique and
-// can be re-imported idempotently.
+// non-blank line as a separate document with kind="flight-recorder". The
+// source_path is "<abspath>:<line-number>" — using the absolute path ensures
+// that multiple distinct roots with the same relative JSONL file do not
+// collide on the UNIQUE constraint, and each line can be re-imported
+// idempotently.
 //
 // JSON parsing is best-effort: a line that fails json.Unmarshal is
 // still imported (raw line as body, filename as title) so unexpected
@@ -276,35 +293,46 @@ func importJSONL(db *sql.DB, absPath, relPath string) error {
 		title := fallbackTitle
 		body := line
 
-		// Best-effort JSON parse — on success, normalise body to
-		// "summary\nnote\ntask_id: <id>" and use event_type as title.
+		// Best-effort JSON parse — on success, compose body from the
+		// flight_recorder table fields and use event as title.
 		var ev struct {
-			EventType string `json:"event_type"`
-			Summary   string `json:"summary"`
-			Note      string `json:"note"`
-			TaskID    string `json:"task_id"`
+			Event      string `json:"event"`
+			MissionID  string `json:"mission_id"`
+			Step       string `json:"step"`
+			Agent      string `json:"agent"`
+			Note       string `json:"note"`
+			OccurredAt string `json:"occurred_at"`
 		}
 		if jerr := json.Unmarshal([]byte(line), &ev); jerr == nil {
-			if ev.EventType != "" {
-				title = ev.EventType
+			if ev.Event != "" {
+				title = ev.Event
 			}
-			parts := make([]string, 0, 3)
-			if ev.Summary != "" {
-				parts = append(parts, ev.Summary)
+			parts := make([]string, 0, 5)
+			if ev.MissionID != "" {
+				parts = append(parts, "mission_id: "+ev.MissionID)
+			}
+			if ev.Step != "" {
+				parts = append(parts, "step: "+ev.Step)
+			}
+			if ev.Agent != "" {
+				parts = append(parts, "agent: "+ev.Agent)
+			}
+			if ev.Event != "" {
+				parts = append(parts, "event: "+ev.Event)
 			}
 			if ev.Note != "" {
-				parts = append(parts, ev.Note)
+				parts = append(parts, "note: "+ev.Note)
 			}
-			if ev.TaskID != "" {
-				parts = append(parts, "task_id: "+ev.TaskID)
+			if ev.OccurredAt != "" {
+				parts = append(parts, "occurred_at: "+ev.OccurredAt)
 			}
 			if len(parts) > 0 {
 				body = strings.Join(parts, "\n")
 			}
 		}
 
-		sourcePath := fmt.Sprintf("%s:%d", relPath, lineNo)
-		if uerr := upsertDocument(db, sourcePath, title, "event", body, sha); uerr != nil {
+		sourcePath := fmt.Sprintf("%s:%d", absPath, lineNo)
+		if uerr := upsertDocument(db, sourcePath, title, "flight-recorder", body, sha); uerr != nil {
 			return fmt.Errorf("upsert %s line %d: %w", relPath, lineNo, uerr)
 		}
 	}
@@ -449,21 +477,43 @@ func kindFromPath(relPath string) string {
 	parts := strings.Split(filepath.ToSlash(relPath), "/")
 	base := parts[len(parts)-1]
 
-	// tasks/<id>/CONTEXT.md  -> "context"
-	// tasks/<id>/PROGRESS.md -> "progress"
+	// missions/<id>/BRIEF.md     -> "brief"
+	// missions/<id>/PROGRESS.md  -> "progress"
+	// missions/<id>/DEBRIEF.md   -> "debrief"
+	// findings/PATTERNS.md       -> "patterns"
+	// findings/service-records/<name>.md -> "service-record"
+	// reference/DIRECTIVES.md    -> "directives"
 	//
-	// The kind follows the filename, but ONLY at exactly one directory
-	// level under tasks/ (so relPath has 3 forward-slash-separated
-	// parts: "tasks", "<id>", "CONTEXT.md|PROGRESS.md"). A
-	// tasks/<id>/<sub>/CONTEXT.md (4 parts) or a bare tasks/CONTEXT.md
-	// (2 parts) falls through to the top-level-directory kind rule
-	// below — those files are NOT project context/progress.
-	if len(parts) == 3 && parts[0] == "tasks" {
+	// These special cases apply only at exactly the specified nesting
+	// level. A missions/<id>/<sub>/BRIEF.md (4+ parts) falls through to
+	// "missions". A bare missions/BRIEF.md (2 parts) falls through to
+	// "missions". These files are NOT mission metadata.
+	if len(parts) == 3 && parts[0] == "missions" {
 		switch base {
-		case "CONTEXT.md":
-			return "context"
+		case "BRIEF.md":
+			return "brief"
 		case "PROGRESS.md":
 			return "progress"
+		case "DEBRIEF.md":
+			return "debrief"
+		}
+	}
+
+	if len(parts) == 2 && parts[0] == "findings" {
+		switch base {
+		case "PATTERNS.md":
+			return "patterns"
+		}
+	}
+
+	if len(parts) == 3 && parts[0] == "findings" && parts[1] == "service-records" {
+		return "service-record"
+	}
+
+	if len(parts) == 2 && parts[0] == "reference" {
+		switch base {
+		case "DIRECTIVES.md":
+			return "directives"
 		}
 	}
 
@@ -475,34 +525,33 @@ func kindFromPath(relPath string) string {
 	return "document"
 }
 
-// activeTaskKnownFields is the set of structured field keys the
-// ACTIVE-TASK.md parser recognises (per
-// .opencode/templates/state/STATE-FILE-TEMPLATE.md).
-var activeTaskKnownFields = map[string]bool{
-	"Task ID":      true,
-	"Project":      true,
+// currentMissionKnownFields is the set of structured field keys the
+// CURRENT-MISSION.md parser recognises (per
+// .claude/templates/state/STATE-FILE-TEMPLATE.md). Exactly six fields
+// are recognized; Project and Notes from the old ACTIVE-TASK.md are dropped.
+var currentMissionKnownFields = map[string]bool{
+	"Mission ID":   true,
 	"Status":       true,
 	"Owner":        true,
 	"Next Action":  true,
 	"Last Updated": true,
 	"Blockers":     true,
-	"Notes":        true,
 }
 
-// prependActiveTaskFields extracts the recognised field list from
-// ACTIVE-TASK.md content and prepends a duplicated block at the top
+// prependCurrentMissionFields extracts the recognised field list from
+// CURRENT-MISSION.md content and prepends a duplicated block at the top
 // of the body. The raw file content is preserved verbatim below the
 // prefix.
 //
 // Rationale: the bullet fields are already searchable in their
 // original position, but prepending them as "Key: Value" lines (no
 // leading "- ", no template preamble) makes them findable for agents
-// that search for the bare key/value pairs (e.g. "Task ID: task-20260820-02").
+// that search for the bare key/value pairs (e.g. "Mission ID: mission-20260904-01").
 //
 // The first occurrence of each key wins (later duplicates in the
 // file are ignored) and only recognised keys are extracted — unknown
 // bullet items are left in the raw content.
-func prependActiveTaskFields(body string) string {
+func prependCurrentMissionFields(body string) string {
 	var fields []string
 	seen := map[string]bool{}
 
@@ -518,7 +567,7 @@ func prependActiveTaskFields(body string) string {
 		}
 		key := strings.TrimSpace(rest[:colon])
 		val := strings.TrimSpace(rest[colon+1:])
-		if !activeTaskKnownFields[key] || seen[key] {
+		if !currentMissionKnownFields[key] || seen[key] {
 			continue
 		}
 		seen[key] = true
@@ -530,10 +579,119 @@ func prependActiveTaskFields(body string) string {
 	}
 
 	var b strings.Builder
-	b.WriteString("<!-- Structured Fields (extracted from ACTIVE-TASK.md) -->\n")
+	b.WriteString("<!-- Structured Fields (extracted from CURRENT-MISSION.md) -->\n")
 	for _, f := range fields {
 		b.WriteString(f)
 		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(body)
+	return b.String()
+}
+
+// prependFlightRecorderFields extracts the structured rows from
+// FLIGHT-RECORDER.md's table and prepends them as indexed lines at the top
+// of the body. The raw file content is preserved verbatim below the prefix.
+//
+// Design: rows are not split into one document each. FTS5 already indexes the
+// whole file body so rows are already findable; the gain would be snippet
+// granularity only. Meanwhile MISSION-ARCHIVE.md and PROGRESS.md are also
+// tables, and splitting one table but not the others would invent an
+// inconsistency. The genuinely valuable version of this idea is ingesting
+// journal rows into the flight_recorder table so they can be queried through
+// /v1/flight-recorder — that is a real capability, it is not what the document
+// importer is for, and it is out of scope for this mission.
+func prependFlightRecorderFields(body string) string {
+	var (
+		rows    []string
+		skipped int
+	)
+
+	for _, rawLine := range strings.Split(body, "\n") {
+		line := strings.TrimSpace(rawLine)
+
+		// Skip empty lines and separator rows (contain |---|)
+		if line == "" || strings.Contains(line, "---|") {
+			continue
+		}
+
+		// Skip non-table lines (must start with |)
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		// Split on pipes, respecting escaped pipes (\|).
+		// A proper split means we split on | that is NOT preceded by \.
+		// This is fragile but works for the journal format which only escapes pipes.
+		var cells []string
+		var current strings.Builder
+		runes := []rune(line)
+		for i := 0; i < len(runes); i++ {
+			if runes[i] == '|' && (i == 0 || runes[i-1] != '\\') {
+				// Unescaped pipe: this is a cell separator
+				cells = append(cells, current.String())
+				current.Reset()
+			} else {
+				current.WriteRune(runes[i])
+			}
+		}
+		// Add the final cell (after the last pipe)
+		cells = append(cells, current.String())
+
+		// We expect exactly 8 cells: empty, cell1, cell2, cell3, cell4, cell5, cell6, empty
+		if len(cells) != 8 {
+			skipped++
+			continue
+		}
+
+		// Extract and trim the six cells
+		var (
+			timestamp = strings.TrimSpace(cells[1])
+			missionID = strings.TrimSpace(cells[2])
+			step      = strings.TrimSpace(cells[3])
+			agent     = strings.TrimSpace(cells[4])
+			event     = strings.TrimSpace(cells[5])
+			note      = strings.TrimSpace(cells[6])
+		)
+
+		// Skip the header row: first cell is "Timestamp"
+		if timestamp == "Timestamp" {
+			continue
+		}
+
+		// Unescape \| back to literal |
+		note = strings.ReplaceAll(note, "\\|", "|")
+
+		// Skip rows that don't have meaningful content
+		if timestamp == "" || missionID == "" {
+			skipped++
+			continue
+		}
+
+		// Compose a readable line from the parsed fields
+		parts := []string{
+			timestamp,
+			missionID,
+			step,
+			agent,
+			event,
+			note,
+		}
+		rows = append(rows, strings.Join(parts, " | "))
+	}
+
+	if len(rows) == 0 {
+		return body
+	}
+
+	var b strings.Builder
+	b.WriteString("<!-- Structured Journal Rows (extracted from FLIGHT-RECORDER.md) -->\n")
+	for _, row := range rows {
+		b.WriteString(row)
+		b.WriteString("\n")
+	}
+	if skipped > 0 {
+		b.WriteString(fmt.Sprintf("<!-- %d malformed rows skipped -->\n", skipped))
 	}
 	b.WriteString("\n")
 	b.WriteString(body)

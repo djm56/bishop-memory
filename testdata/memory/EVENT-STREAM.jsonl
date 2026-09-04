@@ -1,4 +1,0 @@
-{"event_type":"task-init","summary":"Initialized CONTEXT, PROGRESS, ACTIVE-TASK for bishop-memory Phase 2 (task-20260820-02)","task_id":"task-20260820-02","note":"Step 0 — bootstrap"}
-{"event_type":"step-sync","summary":"Config loader implemented","task_id":"task-20260820-02","note":"Step 1 — internal/config/config.go"}
-{"event_type":"step-sync","summary":"Store + handlers implemented","task_id":"task-20260820-02","note":"Step 2-3 — internal/store + internal/api"}
-{"event_type":"step-sync","summary":"Schema + FTS5 search handler implemented","task_id":"task-20260820-02","note":"Step 4 — documents_fts rowid = documents.id contract"}
