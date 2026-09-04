@@ -9,13 +9,13 @@
 // Agent identity is conveyed two ways:
 //
 //   - BISHOP_HARNESS env var sets the harness prefix (e.g.
-//     "opencode", "claude-code") used to compose Agent identity on
-//     write tools that capture the actor (event_append,
-//     task_run_record).
+//     "claude-code") used to compose Agent identity on
+//     write tools that capture the actor (flight_recorder_append,
+//     mission_step_record).
 //   - Each of those write tools ALSO requires a per-call `agent`
 //     argument — the caller names itself (the sub-agent within the
-//     harness, e.g. "orchestrator", "junior-developer"). mcpd then
-//     composes Agent = "<harness>:<agent>" (e.g. "opencode:orchestrator")
+//     harness, e.g. "bishop", "hicks"). mcpd then
+//     composes Agent = "<harness>:<agent>" (e.g. "claude-code:bishop")
 //     and forwards it to the bishop-memory HTTP API.
 //
 // Configuration (env vars, read with sensible defaults):
@@ -23,13 +23,13 @@
 //   - BISHOP_MEMORY_URL: base URL of the bishop-memory HTTP API
 //     (default http://127.0.0.1:8787).
 //   - BISHOP_HARNESS: harness / agent-family prefix used in the composed
-//     Agent identity (default "opencode").
+//     Agent identity (default "claude-code").
 //
-// This is the Step 3 implementation for task-20260820-03 (Phase 3,
-// ProjectMemory/bishop-memory). The 8 MCP tools are real HTTP proxies
+// This is the Step 18a implementation for mission-20260904-02 (Phase E,
+// bishop-memory MCP adapter vocabulary alignment). The 15 MCP tools are real HTTP proxies
 // with typed input schemas (matching the bishop-memory wire shapes) and
 // agent-identity composition for the two write tools that capture it
-// (event_append, task_run_record). See docs/migration-plan.md for the
+// (flight_recorder_append, mission_step_record). See docs/migration-plan.md for the
 // plan.
 package main
 
@@ -55,7 +55,7 @@ import (
 // are unset or empty.
 const (
 	defaultMemoryURL   = "http://127.0.0.1:8787"
-	defaultHarness     = "opencode"
+	defaultHarness     = "claude-code"
 	defaultHTTPTimeout = 30 * time.Second
 
 	// defaultSyncHTTPTimeout is the timeout used ONLY for documents_sync
@@ -115,7 +115,7 @@ func main() {
 	}
 }
 
-// registerTools registers the 8 bishop-memory MCP tools on the server.
+// registerTools registers the 15 bishop-memory MCP tools on the server.
 //
 // Each tool gets a typed input schema (mcp.WithString / WithInteger /
 // ...) that mirrors the underlying HTTP request shape, and a handler
@@ -140,43 +140,46 @@ func registerTools(s *server.MCPServer, c *client) {
 	)
 
 	s.AddTool(
-		mcp.NewTool("task_list",
-			mcp.WithDescription("List tasks from bishop-memory, newest-updated first. Returns {\"tasks\":[...]}."),
+		mcp.NewTool("mission_list",
+			mcp.WithDescription("List missions from bishop-memory, newest-updated first. Returns {\"missions\":[...]}."),
 		),
-		makeTaskListHandler(c),
+		makeMissionListHandler(c),
 	)
 
 	s.AddTool(
-		mcp.NewTool("task_get",
-			mcp.WithDescription("Get a single task by its ID. Returns the task JSON or a 404 if the ID is unknown."),
+		mcp.NewTool("mission_get",
+			mcp.WithDescription("Get a single mission by its ID. Returns the mission JSON or a 404 if the ID is unknown."),
 			mcp.WithString("id",
 				mcp.Required(),
-				mcp.Description("Task ID (the same value used by task_create / task_update). Required."),
+				mcp.Description("Mission ID (the same value used by mission_create / mission_update). Required."),
 			),
 		),
-		makeTaskGetHandler(c),
+		makeMissionGetHandler(c),
 	)
 
 	// --- Write tools (HTTP method varies) ---
 
-	// task_create — NO agent param this round. CreateTaskRequest is
+	// mission_create — NO agent param this round. CreateMissionRequest is
 	// plan-frozen (Phase 2); adding an agent field is a documented
-	// deferral. Agent identity on the task.created event is captured
-	// indirectly by an event_append the caller can make around this
+	// deferral. Agent identity on the mission.created event is captured
+	// indirectly by a flight_recorder_append the caller can make around this
 	// call.
 	s.AddTool(
-		mcp.NewTool("task_create",
-			mcp.WithDescription("Create a new task. Returns {\"id\":...,\"created\":true}."),
+		mcp.NewTool("mission_create",
+			mcp.WithDescription("Create a new mission. Returns {\"id\":...,\"created\":true}."),
 			mcp.WithString("id",
 				mcp.Required(),
-				mcp.Description("Unique task ID, max 128 chars. Required."),
+				mcp.Description("Unique mission ID, max 128 chars. Required."),
 			),
 			mcp.WithString("title",
 				mcp.Required(),
-				mcp.Description("Human-readable task title, max 500 chars. Required."),
+				mcp.Description("Human-readable mission title, max 500 chars. Required."),
 			),
 			mcp.WithString("status",
-				mcp.Description("One of open|active|blocked|complete|cancelled. Defaults to \"open\" server-side when omitted."),
+				mcp.Description("One of not-started|in-progress|blocked|complete. Defaults to \"not-started\" server-side when omitted."),
+			),
+			mcp.WithString("owner",
+				mcp.Description("Mission owner name, max 128 chars. Optional."),
 			),
 			mcp.WithString("priority",
 				mcp.Description("One of low|normal|high|urgent. Defaults to \"normal\" server-side when omitted."),
@@ -188,20 +191,26 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("Free-form blockers note, max 2000 chars. Optional."),
 			),
 		),
-		makeTaskCreateHandler(c),
+		makeMissionCreateHandler(c),
 	)
 
-	// task_update — NO agent param this round (UpdateTaskRequest is
-	// plan-frozen; same deferral as task_create).
+	// mission_update — NO agent param this round (UpdateMissionRequest is
+	// plan-frozen; same deferral as mission_create).
 	s.AddTool(
-		mcp.NewTool("task_update",
-			mcp.WithDescription("Update an existing task (status / priority / next_action / blockers). Returns {\"id\":...,\"updated\":true} or a 404 if the task is unknown."),
+		mcp.NewTool("mission_update",
+			mcp.WithDescription("Update an existing mission (status / owner / outcome / priority / next_action / blockers). Returns {\"id\":...,\"updated\":true} or a 404 if the mission is unknown."),
 			mcp.WithString("id",
 				mcp.Required(),
-				mcp.Description("Task ID to update. Required."),
+				mcp.Description("Mission ID to update. Required."),
 			),
 			mcp.WithString("status",
-				mcp.Description("New status, one of open|active|blocked|complete|cancelled. Omitted fields are unchanged."),
+				mcp.Description("New status, one of not-started|in-progress|blocked|complete. Omitted fields are unchanged."),
+			),
+			mcp.WithString("owner",
+				mcp.Description("New owner name. Omitted fields are unchanged."),
+			),
+			mcp.WithString("outcome",
+				mcp.Description("Mission outcome, one of done|failed. Optional, independently settable from status. Omitted fields are unchanged."),
 			),
 			mcp.WithString("priority",
 				mcp.Description("New priority, one of low|normal|high|urgent. Omitted fields are unchanged."),
@@ -213,52 +222,64 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("New blockers text. Omitted fields are unchanged."),
 			),
 		),
-		makeTaskUpdateHandler(c),
+		makeMissionUpdateHandler(c),
 	)
 
-	// event_append — agent identity IS captured on the appended event
+	// flight_recorder_append — agent identity IS captured on the appended event
 	// (composed "<harness>:<agent>"). The caller names itself via the
 	// `agent` argument.
 	s.AddTool(
-		mcp.NewTool("event_append",
-			mcp.WithDescription("Append an event to the memory log. Agent identity is composed as \"<BISHOP_HARNESS>:<agent>\" (e.g. \"opencode:orchestrator\") and stored on the event row for actor attribution. Returns {\"appended\":true,\"id\":...}."),
-			mcp.WithString("task_id",
-				mcp.Description("Optional task ID to scope the event to. Omit for system / agent-scoped events."),
+		mcp.NewTool("flight_recorder_append",
+			mcp.WithDescription("Append an event to the flight recorder (audit log). Agent identity is composed as \"<BISHOP_HARNESS>:<agent>\" (e.g. \"claude-code:bishop\") and stored on the event row for actor attribution. Returns {\"appended\":true,\"id\":...}."),
+			mcp.WithString("mission_id",
+				mcp.Description("Optional mission ID to scope the event to. Omit for system / agent-scoped events."),
 			),
-			mcp.WithString("event_type",
-				mcp.Required(),
-				mcp.Description("Dotted event discriminator, e.g. \"task.created\", \"agent.heartbeat\", max 64 chars. Required."),
+			mcp.WithString("step",
+				mcp.Description("Optional step label from PROGRESS.md (e.g., \"4a\", \"—\"), max 16 chars."),
 			),
-			mcp.WithString("summary",
+			mcp.WithString("event",
 				mcp.Required(),
-				mcp.Description("Short human-readable summary of the event, max 2000 chars. Required."),
+				mcp.Description("Dotted event discriminator, e.g. \"mission.created\", \"agent.heartbeat\", max 64 chars. Required."),
+			),
+			mcp.WithString("note",
+				mcp.Required(),
+				mcp.Description("Short human-readable note about the event, max 2000 chars. Required."),
+			),
+			mcp.WithString("occurred_at",
+				mcp.Description("Optional timestamp when the event occurred (YYYY-MM-DD HH:MM UTC format), max 64 chars."),
 			),
 			mcp.WithString("agent",
 				mcp.Required(),
-				mcp.Description("Sub-agent name (the part AFTER the harness prefix), e.g. \"orchestrator\", \"junior-developer\". Composed with BISHOP_HARNESS to form the stored actor identity (\"<harness>:<agent>\"); the SERVER enforces a 64-char cap on that composed string (events.agent), so a long agent name combined with the harness prefix may be rejected as invalid. Required."),
+				mcp.Description("Sub-agent name (the part AFTER the harness prefix), e.g. \"bishop\", \"hicks\". Composed with BISHOP_HARNESS to form the stored actor identity (\"<harness>:<agent>\"); the SERVER enforces a 64-char cap on that composed string (flight_recorder.agent), so a long agent name combined with the harness prefix may be rejected as invalid. Required."),
 			),
 		),
-		makeEventAppendHandler(c),
+		makeFlightRecorderAppendHandler(c),
 	)
 
-	// task_run_record — agent identity IS captured on the task_runs
+	// mission_step_record — agent identity IS captured on the mission_steps
 	// row (composed "<harness>:<agent>").
 	s.AddTool(
-		mcp.NewTool("task_run_record",
-			mcp.WithDescription("Record a task run (one agent execution attempt against a task). Agent identity is composed as \"<BISHOP_HARNESS>:<agent>\". Returns {\"recorded\":true,\"task_id\":...} or a 404 if the task is unknown."),
+		mcp.NewTool("mission_step_record",
+			mcp.WithDescription("Record a mission step (one agent execution attempt against a mission). Agent identity is composed as \"<BISHOP_HARNESS>:<agent>\". Returns {\"recorded\":true,\"mission_id\":...} or a 404 if the mission is unknown."),
 			mcp.WithString("id",
 				mcp.Required(),
-				mcp.Description("Task ID the run is recorded against. Required."),
+				mcp.Description("Mission ID the step is recorded against. Required."),
+			),
+			mcp.WithString("step",
+				mcp.Description("Optional step label from PROGRESS.md (e.g., \"4a\"), max 16 chars."),
+			),
+			mcp.WithString("phase",
+				mcp.Description("Optional phase label from PROGRESS.md (e.g., \"Core rename\"), max 64 chars."),
 			),
 			mcp.WithString("agent",
 				mcp.Required(),
-				mcp.Description("Sub-agent name (the part AFTER the harness prefix), e.g. \"junior-developer\", \"orchestrator\". Composed with BISHOP_HARNESS to form the stored actor identity (\"<harness>:<agent>\"); the SERVER enforces a 128-char cap on that composed string (task_runs.agent, per taskRunRequest's binding tag), so a long agent name combined with the harness prefix may be rejected as invalid. Required."),
+				mcp.Description("Sub-agent name (the part AFTER the harness prefix), e.g. \"hicks\", \"bishop\". Composed with BISHOP_HARNESS to form the stored actor identity (\"<harness>:<agent>\"); the SERVER enforces a 128-char cap on that composed string (mission_steps.agent, per missionStepRequest's binding tag), so a long agent name combined with the harness prefix may be rejected as invalid. Required."),
 			),
 			mcp.WithString("status",
-				mcp.Description("Run status, free-form, max 64 chars. E.g. \"started\", \"completed\", \"failed\"."),
+				mcp.Description("Step status, one of pending|in-progress|done|failed, max 64 chars."),
 			),
-			mcp.WithString("summary",
-				mcp.Description("Free-form summary of the run, max 2000 chars."),
+			mcp.WithString("notes",
+				mcp.Description("Free-form notes about the step, max 2000 chars."),
 			),
 			mcp.WithString("started_at",
 				mcp.Description("ISO-8601 start timestamp. Optional."),
@@ -267,7 +288,7 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("ISO-8601 end timestamp. Optional."),
 			),
 		),
-		makeTaskRunRecordHandler(c),
+		makeMissionStepRecordHandler(c),
 	)
 
 	// documents_sync — triggers an importer run. NOT an agent action
@@ -280,6 +301,144 @@ func registerTools(s *server.MCPServer, c *client) {
 			),
 		),
 		makeDocumentsSyncHandler(c),
+	)
+
+	// mission_steps_list — read tool, no agent identity required. Returns the
+	// mission's step table (PROGRESS.md view).
+	s.AddTool(
+		mcp.NewTool("mission_steps_list",
+			mcp.WithDescription("List steps for a mission. Returns {\"steps\":[...]}. Returns 404 if the mission is unknown."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("Mission ID. Required."),
+			),
+		),
+		makeMissionStepsListHandler(c),
+	)
+
+	// finding_list — read tool, no agent identity required. Returns findings
+	// newest-first; status filter is optional but validated against the schema enum.
+	// Agents can create findings but cannot change status — that belongs to the
+	// operator — so `status` here is useful for reading proposed findings awaiting
+	// approval or approved (binding) findings to apply.
+	s.AddTool(
+		mcp.NewTool("finding_list",
+			mcp.WithDescription("List findings from the improvement ledger, newest-first. Optional status filter to view findings at a particular stage (e.g., 'proposed' to see what's awaiting operator approval, or 'approved' to see binding findings). Agents can only CREATE findings; status changes belong to the human operator. Returns {\"findings\":[...]} or a validation error if the status value is unrecognized."),
+			mcp.WithString("status",
+				mcp.Description("Optional status filter: one of proposed|approved|applied|rejected|retired|superseded. Omit to list all findings regardless of status."),
+			),
+		),
+		makeFindingListHandler(c),
+	)
+
+	// pattern_list — read tool, no agent identity required. Returns patterns
+	// newest-first. Patterns are advisory and non-binding; directives win on
+	// any conflict.
+	s.AddTool(
+		mcp.NewTool("pattern_list",
+			mcp.WithDescription("List advisory patterns. Patterns are non-binding; directives win on any conflict. Returns {\"patterns\":[...]} newest-first."),
+		),
+		makePatternListHandler(c),
+	)
+
+	// service_record_list — read tool, no agent identity required. Returns service
+	// records (calibration notes about crew performance) newest-first. Optional
+	// agent filter to return only records about a specific crew member.
+	// IMPORTANT: the `agent` parameter names the SUBJECT (which crew member the
+	// records are about), not the caller — it is NOT composed with BISHOP_HARNESS.
+	s.AddTool(
+		mcp.NewTool("service_record_list",
+			mcp.WithDescription("List service records (observations about agent performance and behaviour), newest-first. Optional agent filter to view only records about a specific crew member. Agents can CREATE records but cannot change an existing record's status or other attributes. Returns {\"service_records\":[...]} or a 404 if the agent name is unknown (search yields no matches)."),
+			mcp.WithString("agent",
+				mcp.Description("Optional filter: crew member name (the subject of the records, not the caller). Omit to list all service records regardless of agent."),
+			),
+		),
+		makeServiceRecordListHandler(c),
+	)
+
+	// finding_append — write tool. Creates a finding with status='proposed' (always).
+	// Status, approver, and date_approved are never accepted; they belong to the
+	// human operator alone. Every finding starts in 'proposed' status.
+	// Note: mission_id is stored without existence checking — findings.mission_id
+	// has no foreign key constraint, so a finding outlives mission-folder cleanup.
+	s.AddTool(
+		mcp.NewTool("finding_append",
+			mcp.WithDescription("Append a finding to the findings ledger. Creates with status='proposed' — agents cannot set or advance status, approver, or date_approved. Those fields belong to the human operator. Returns {\"id\":...,\"created\":true}."),
+			mcp.WithString("suggestion",
+				mcp.Required(),
+				mcp.Description("The finding itself, max 2000 chars. Required."),
+			),
+			mcp.WithString("finding_date",
+				mcp.Description("Optional finding date, max 64 chars."),
+			),
+			mcp.WithString("target",
+				mcp.Description("Optional target entity (agent, skill, or tool concept name), max 256 chars. Passed through unchanged — not composed."),
+			),
+			mcp.WithString("rationale",
+				mcp.Description("Optional supporting rationale, max 2000 chars."),
+			),
+			mcp.WithString("mission_id",
+				mcp.Description("Optional mission ID to associate the finding with, max 128 chars. Stored without existence checking — findings outlive missions."),
+			),
+		),
+		makeFindingAppendHandler(c),
+	)
+
+	// pattern_append — write tool. Creates an advisory pattern.
+	// Patterns are non-binding; directives win on any conflict.
+	s.AddTool(
+		mcp.NewTool("pattern_append",
+			mcp.WithDescription("Append an advisory pattern to the patterns ledger. Patterns are non-binding; directives win on any conflict. Returns {\"id\":...,\"created\":true}."),
+			mcp.WithString("name",
+				mcp.Required(),
+				mcp.Description("Pattern name, max 256 chars. Required."),
+			),
+			mcp.WithString("context",
+				mcp.Description("Optional context where the pattern applies, max 2000 chars."),
+			),
+			mcp.WithString("solution",
+				mcp.Description("Optional solution or recommendation, max 2000 chars."),
+			),
+			mcp.WithString("example",
+				mcp.Description("Optional worked example, max 2000 chars."),
+			),
+			mcp.WithString("discovered_at",
+				mcp.Description("Optional discovery timestamp, max 64 chars."),
+			),
+			mcp.WithString("discovered_mission",
+				mcp.Description("Optional mission ID where the pattern was discovered, max 128 chars."),
+			),
+		),
+		makePatternAppendHandler(c),
+	)
+
+	// service_record_append — write tool. Creates an agent calibration note.
+	// Agent is a required subject identifier (the crew member the note is about),
+	// NOT the actor. Source must be 'self-reported' or 'bishop-observed' if present.
+	s.AddTool(
+		mcp.NewTool("service_record_append",
+			mcp.WithDescription("Record a service observation about an agent's performance or behaviour. Agent names the subject (which crew member the record is about). Source must be 'self-reported' or 'bishop-observed'. Returns {\"id\":...,\"created\":true}."),
+			mcp.WithString("agent",
+				mcp.Required(),
+				mcp.Description("Agent name (the crew member being recorded about), max 128 chars. Required. Passed through unchanged — not composed with harness prefix."),
+			),
+			mcp.WithString("record_date",
+				mcp.Description("Optional record date, max 64 chars."),
+			),
+			mcp.WithString("title",
+				mcp.Description("Optional title summarizing the observation, max 256 chars."),
+			),
+			mcp.WithString("note",
+				mcp.Description("Optional observation note, max 2000 chars."),
+			),
+			mcp.WithString("adjustment",
+				mcp.Description("Optional adjustment or recommendation, max 2000 chars."),
+			),
+			mcp.WithString("source",
+				mcp.Description("Optional source classification: 'self-reported' or 'bishop-observed'. Anything else is rejected with a 400 error."),
+			),
+		),
+		makeServiceRecordAppendHandler(c),
 	)
 }
 
@@ -296,6 +455,7 @@ type createMissionBody struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
 	Status     string `json:"status,omitempty"`
+	Owner      string `json:"owner,omitempty"`
 	Priority   string `json:"priority,omitempty"`
 	NextAction string `json:"next_action,omitempty"`
 	Blockers   string `json:"blockers,omitempty"`
@@ -307,6 +467,8 @@ type createMissionBody struct {
 // still a valid (no-op) update.
 type updateMissionBody struct {
 	Status     *string `json:"status,omitempty"`
+	Owner      *string `json:"owner,omitempty"`
+	Outcome    *string `json:"outcome,omitempty"`
 	Priority   *string `json:"priority,omitempty"`
 	NextAction *string `json:"next_action,omitempty"`
 	Blockers   *string `json:"blockers,omitempty"`
@@ -316,19 +478,23 @@ type updateMissionBody struct {
 // composed "<harness>:<agent>" identity (Phase 3, additive change to
 // model.AppendFlightRecorderRequest).
 type appendFlightRecorderBody struct {
-	MissionID string `json:"mission_id,omitempty"`
-	Event     string `json:"event"`
-	Note      string `json:"note"`
-	Agent     string `json:"agent,omitempty"`
+	MissionID  string `json:"mission_id,omitempty"`
+	Step       string `json:"step,omitempty"`
+	Event      string `json:"event"`
+	Note       string `json:"note"`
+	OccurredAt string `json:"occurred_at,omitempty"`
+	Agent      string `json:"agent,omitempty"`
 }
 
 // missionStepBody is the JSON body for POST /v1/missions/<id>/steps. It
 // mirrors the internal/api/missionStepRequest wire shape so mcpd can
 // build the request without importing the server's internal package.
 type missionStepBody struct {
+	Step      string  `json:"step,omitempty"`
+	Phase     string  `json:"phase,omitempty"`
 	Agent     string  `json:"agent,omitempty"`
 	Status    string  `json:"status,omitempty"`
-	Summary   string  `json:"summary,omitempty"`
+	Notes     string  `json:"notes,omitempty"`
 	StartedAt *string `json:"started_at,omitempty"`
 	EndedAt   *string `json:"ended_at,omitempty"`
 }
@@ -337,6 +503,40 @@ type missionStepBody struct {
 // optional; the server falls back to MEMORY_ROOT then "testdata/memory".
 type syncBody struct {
 	Root string `json:"root,omitempty"`
+}
+
+// createFindingBody is the JSON body for POST /v1/findings. It mirrors
+// model.CreateFindingRequest; status, approver, and date_approved are
+// deliberately omitted (agents never set them).
+type createFindingBody struct {
+	FindingDate string `json:"finding_date,omitempty"`
+	Target      string `json:"target,omitempty"`
+	Suggestion  string `json:"suggestion"`
+	Rationale   string `json:"rationale,omitempty"`
+	MissionID   string `json:"mission_id,omitempty"`
+}
+
+// createPatternBody is the JSON body for POST /v1/patterns. It mirrors
+// model.CreatePatternRequest.
+type createPatternBody struct {
+	Name              string `json:"name"`
+	Context           string `json:"context,omitempty"`
+	Solution          string `json:"solution,omitempty"`
+	Example           string `json:"example,omitempty"`
+	DiscoveredAt      string `json:"discovered_at,omitempty"`
+	DiscoveredMission string `json:"discovered_mission,omitempty"`
+}
+
+// createServiceRecordBody is the JSON body for POST /v1/service-records. It
+// mirrors model.CreateServiceRecordRequest. Agent names the subject (the crew
+// member being recorded about), not the actor writing the record.
+type createServiceRecordBody struct {
+	Agent      string `json:"agent"`
+	RecordDate string `json:"record_date,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Note       string `json:"note,omitempty"`
+	Adjustment string `json:"adjustment,omitempty"`
+	Source     string `json:"source,omitempty"`
 }
 
 // --- Tool handlers ---
@@ -378,79 +578,80 @@ func makeSearchHandler(c *client) func(ctx context.Context, req mcp.CallToolRequ
 	}
 }
 
-// makeTaskListHandler wires the task_list tool to GET /v1/missions.
-func makeTaskListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// makeMissionListHandler wires the mission_list tool to GET /v1/missions.
+func makeMissionListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("task_list: parse base URL", err), nil
+			return toolInternalErr("mission_list: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "missions")
 
 		body, status, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
 		if httpErr != nil {
-			return toolHTTPError("task_list", httpErr), nil
+			return toolHTTPError("mission_list", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("task_list", status, body), nil
+			return toolHTTPStatusError("mission_list", status, body), nil
 		}
-		return toolSuccess("task_list", body), nil
+		return toolSuccess("mission_list", body), nil
 	}
 }
 
-// makeTaskGetHandler wires the task_get tool to GET /v1/missions/<id>.
+// makeMissionGetHandler wires the mission_get tool to GET /v1/missions/<id>.
 //
 // `id` is escaped with url.PathEscape so a user-supplied ID containing
 // "/" or other URL-special bytes cannot escape the path segment. A
 // malicious or stray value yields a clean 404 from the server rather
 // than a path-injection surprise.
-func makeTaskGetHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func makeMissionGetHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := strings.TrimSpace(mcp.ParseString(req, "id", ""))
 		if id == "" {
-			return mcp.NewToolResultError("task_get: `id` is required and must not be empty/whitespace-only"), nil
+			return mcp.NewToolResultError("mission_get: `id` is required and must not be empty/whitespace-only"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`task_get: "id" must not be "." or ".." — that collapses to the list route instead of a single-mission lookup`), nil
+			return mcp.NewToolResultError(`mission_get: "id" must not be "." or ".." — that collapses to the list route instead of a single-mission lookup`), nil
 		}
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("task_get: parse base URL", err), nil
+			return toolInternalErr("mission_get: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "missions", url.PathEscape(id))
 
 		body, status, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
 		if httpErr != nil {
-			return toolHTTPError("task_get", httpErr), nil
+			return toolHTTPError("mission_get", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("task_get", status, body), nil
+			return toolHTTPStatusError("mission_get", status, body), nil
 		}
-		return toolSuccess("task_get", body), nil
+		return toolSuccess("mission_get", body), nil
 	}
 }
 
-// makeTaskCreateHandler wires the task_create tool to POST /v1/missions.
+// makeMissionCreateHandler wires the mission_create tool to POST /v1/missions.
 //
 // Per the Step 2 deferral, no agent param — CreateMissionRequest is
 // plan-frozen. The caller can attribute the surrounding mission.created
-// event via event_append if it needs an actor on the audit trail.
-func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+// event via flight_recorder_append if it needs an actor on the audit trail.
+func makeMissionCreateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := strings.TrimSpace(mcp.ParseString(req, "id", ""))
 		title := strings.TrimSpace(mcp.ParseString(req, "title", ""))
 		if id == "" {
-			return mcp.NewToolResultError("task_create: `id` is required"), nil
+			return mcp.NewToolResultError("mission_create: `id` is required"), nil
 		}
 		if title == "" {
-			return mcp.NewToolResultError("task_create: `title` is required"), nil
+			return mcp.NewToolResultError("mission_create: `title` is required"), nil
 		}
 
 		body := createMissionBody{
 			ID:         id,
 			Title:      title,
 			Status:     strings.TrimSpace(mcp.ParseString(req, "status", "")),
+			Owner:      strings.TrimSpace(mcp.ParseString(req, "owner", "")),
 			Priority:   strings.TrimSpace(mcp.ParseString(req, "priority", "")),
 			NextAction: mcp.ParseString(req, "next_action", ""),
 			Blockers:   mcp.ParseString(req, "blockers", ""),
@@ -458,39 +659,39 @@ func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("task_create: parse base URL", err), nil
+			return toolInternalErr("mission_create: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "missions")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {
-			return toolInternalErr("task_create: marshal request body", merr), nil
+			return toolInternalErr("mission_create: marshal request body", merr), nil
 		}
 		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
 		if httpErr != nil {
-			return toolHTTPError("task_create", httpErr), nil
+			return toolHTTPError("mission_create", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("task_create", status, respBody), nil
+			return toolHTTPStatusError("mission_create", status, respBody), nil
 		}
-		return toolSuccess("task_create", respBody), nil
+		return toolSuccess("mission_create", respBody), nil
 	}
 }
 
-// makeTaskUpdateHandler wires the task_update tool to PATCH /v1/missions/<id>.
+// makeMissionUpdateHandler wires the mission_update tool to PATCH /v1/missions/<id>.
 //
-// `id` is path-escaped for the same reason as task_get. Fields the
+// `id` is path-escaped for the same reason as mission_get. Fields the
 // caller did not supply are omitted from the JSON body (pointer
 // nil → `omitempty` → absent) so the server's COALESCE-based update
 // leaves them untouched.
-func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func makeMissionUpdateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := strings.TrimSpace(mcp.ParseString(req, "id", ""))
 		if id == "" {
-			return mcp.NewToolResultError("task_update: `id` is required"), nil
+			return mcp.NewToolResultError("mission_update: `id` is required"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`task_update: "id" must not be "." or ".." — that collapses to the list/no-route path instead of a single-mission update`), nil
+			return mcp.NewToolResultError(`mission_update: "id" must not be "." or ".." — that collapses to the list/no-route path instead of a single-mission update`), nil
 		}
 
 		// Build a PATCH body that only includes fields the caller
@@ -502,6 +703,14 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 		if raw, ok := args["status"]; ok {
 			s := strings.TrimSpace(fmt.Sprint(raw))
 			patch.Status = &s
+		}
+		if raw, ok := args["owner"]; ok {
+			o := strings.TrimSpace(fmt.Sprint(raw))
+			patch.Owner = &o
+		}
+		if raw, ok := args["outcome"]; ok {
+			out := strings.TrimSpace(fmt.Sprint(raw))
+			patch.Outcome = &out
 		}
 		if raw, ok := args["priority"]; ok {
 			p := strings.TrimSpace(fmt.Sprint(raw))
@@ -518,45 +727,45 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("task_update: parse base URL", err), nil
+			return toolInternalErr("mission_update: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "missions", url.PathEscape(id))
 
 		payload, merr := json.Marshal(patch)
 		if merr != nil {
-			return toolInternalErr("task_update: marshal request body", merr), nil
+			return toolInternalErr("mission_update: marshal request body", merr), nil
 		}
 		respBody, status, httpErr := c.do(ctx, http.MethodPatch, u.String(), payload)
 		if httpErr != nil {
-			return toolHTTPError("task_update", httpErr), nil
+			return toolHTTPError("mission_update", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("task_update", status, respBody), nil
+			return toolHTTPStatusError("mission_update", status, respBody), nil
 		}
-		return toolSuccess("task_update", respBody), nil
+		return toolSuccess("mission_update", respBody), nil
 	}
 }
 
-// makeEventAppendHandler wires the event_append tool to POST /v1/flight-recorder.
+// makeFlightRecorderAppendHandler wires the flight_recorder_append tool to POST /v1/flight-recorder.
 //
 // Agent identity is composed as "<harness>:<agent>" so the audit
 // trail records the originating sub-agent (the per-call `agent`
 // argument) AND the harness family (the BISHOP_HARNESS env var). The
 // caller MUST supply `agent`; the harness is sourced from the env.
-func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func makeFlightRecorderAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		event := strings.TrimSpace(mcp.ParseString(req, "event_type", ""))
-		note := strings.TrimSpace(mcp.ParseString(req, "summary", ""))
+		event := strings.TrimSpace(mcp.ParseString(req, "event", ""))
+		note := strings.TrimSpace(mcp.ParseString(req, "note", ""))
 		agentParam := strings.TrimSpace(mcp.ParseString(req, "agent", ""))
 
 		if event == "" {
-			return mcp.NewToolResultError("event_append: `event_type` is required"), nil
+			return mcp.NewToolResultError("flight_recorder_append: `event` is required"), nil
 		}
 		if note == "" {
-			return mcp.NewToolResultError("event_append: `summary` is required"), nil
+			return mcp.NewToolResultError("flight_recorder_append: `note` is required"), nil
 		}
 		if agentParam == "" {
-			return mcp.NewToolResultError("event_append: `agent` is required (the sub-agent name, composed with BISHOP_HARNESS as the actor identity)"), nil
+			return mcp.NewToolResultError("flight_recorder_append: `agent` is required (the sub-agent name, composed with BISHOP_HARNESS as the actor identity)"), nil
 		}
 
 		// Agent-identity composition (carry-forward #3): per-call
@@ -567,51 +776,53 @@ func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToo
 		agent := composeAgent(c.harness, agentParam)
 
 		body := appendFlightRecorderBody{
-			MissionID: strings.TrimSpace(mcp.ParseString(req, "task_id", "")),
-			Event:     event,
-			Note:      note,
-			Agent:     agent,
+			MissionID:  strings.TrimSpace(mcp.ParseString(req, "mission_id", "")),
+			Step:       strings.TrimSpace(mcp.ParseString(req, "step", "")),
+			Event:      event,
+			Note:       note,
+			OccurredAt: strings.TrimSpace(mcp.ParseString(req, "occurred_at", "")),
+			Agent:      agent,
 		}
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("event_append: parse base URL", err), nil
+			return toolInternalErr("flight_recorder_append: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "flight-recorder")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {
-			return toolInternalErr("event_append: marshal request body", merr), nil
+			return toolInternalErr("flight_recorder_append: marshal request body", merr), nil
 		}
 		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
 		if httpErr != nil {
-			return toolHTTPError("event_append", httpErr), nil
+			return toolHTTPError("flight_recorder_append", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("event_append", status, respBody), nil
+			return toolHTTPStatusError("flight_recorder_append", status, respBody), nil
 		}
-		return toolSuccess("event_append", respBody), nil
+		return toolSuccess("flight_recorder_append", respBody), nil
 	}
 }
 
-// makeTaskRunRecordHandler wires the task_run_record tool to
+// makeMissionStepRecordHandler wires the mission_step_record tool to
 // POST /v1/missions/<id>/steps.
 //
-// Same agent-identity composition as event_append: per-call `agent`
+// Same agent-identity composition as flight_recorder_append: per-call `agent`
 // required, BISHOP_HARNESS is the env prefix.
-func makeTaskRunRecordHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func makeMissionStepRecordHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		id := strings.TrimSpace(mcp.ParseString(req, "id", ""))
 		agentParam := strings.TrimSpace(mcp.ParseString(req, "agent", ""))
 
 		if id == "" {
-			return mcp.NewToolResultError("task_run_record: `id` is required"), nil
+			return mcp.NewToolResultError("mission_step_record: `id` is required"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`task_run_record: "id" must not be "." or ".." — that collapses the joined path onto an unintended route`), nil
+			return mcp.NewToolResultError(`mission_step_record: "id" must not be "." or ".." — that collapses the joined path onto an unintended route`), nil
 		}
 		if agentParam == "" {
-			return mcp.NewToolResultError("task_run_record: `agent` is required (the sub-agent name, composed with BISHOP_HARNESS as the actor identity)"), nil
+			return mcp.NewToolResultError("mission_step_record: `agent` is required (the sub-agent name, composed with BISHOP_HARNESS as the actor identity)"), nil
 		}
 
 		agent := composeAgent(c.harness, agentParam)
@@ -619,9 +830,11 @@ func makeTaskRunRecordHandler(c *client) func(ctx context.Context, req mcp.CallT
 		// Build the body; optional fields default to "" or are nil
 		// depending on whether the caller supplied them.
 		body := missionStepBody{
-			Agent:   agent,
-			Status:  strings.TrimSpace(mcp.ParseString(req, "status", "")),
-			Summary: mcp.ParseString(req, "summary", ""),
+			Step:   strings.TrimSpace(mcp.ParseString(req, "step", "")),
+			Phase:  strings.TrimSpace(mcp.ParseString(req, "phase", "")),
+			Agent:  agent,
+			Status: strings.TrimSpace(mcp.ParseString(req, "status", "")),
+			Notes:  mcp.ParseString(req, "notes", ""),
 		}
 		if raw, ok := req.GetArguments()["started_at"]; ok {
 			s := fmt.Sprint(raw)
@@ -634,22 +847,22 @@ func makeTaskRunRecordHandler(c *client) func(ctx context.Context, req mcp.CallT
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
-			return toolInternalErr("task_run_record: parse base URL", err), nil
+			return toolInternalErr("mission_step_record: parse base URL", err), nil
 		}
 		u = u.JoinPath("v1", "missions", url.PathEscape(id), "steps")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {
-			return toolInternalErr("task_run_record: marshal request body", merr), nil
+			return toolInternalErr("mission_step_record: marshal request body", merr), nil
 		}
 		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
 		if httpErr != nil {
-			return toolHTTPError("task_run_record", httpErr), nil
+			return toolHTTPError("mission_step_record", httpErr), nil
 		}
 		if status < 200 || status >= 300 {
-			return toolHTTPStatusError("task_run_record", status, respBody), nil
+			return toolHTTPStatusError("mission_step_record", status, respBody), nil
 		}
-		return toolSuccess("task_run_record", respBody), nil
+		return toolSuccess("mission_step_record", respBody), nil
 	}
 }
 
@@ -682,6 +895,269 @@ func makeDocumentsSyncHandler(c *client) func(ctx context.Context, req mcp.CallT
 			return toolHTTPStatusError("documents_sync", status, respBody), nil
 		}
 		return toolSuccess("documents_sync", respBody), nil
+	}
+}
+
+// makeMissionStepsListHandler wires the mission_steps_list tool to
+// GET /v1/missions/<id>/steps.
+//
+// `id` is escaped with url.PathEscape and guarded against dot segments
+// (same as mission_get and mission_update) to prevent path traversal.
+func makeMissionStepsListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := strings.TrimSpace(mcp.ParseString(req, "id", ""))
+		if id == "" {
+			return mcp.NewToolResultError("mission_steps_list: `id` is required and must not be empty/whitespace-only"), nil
+		}
+		if isDotSegment(id) {
+			return mcp.NewToolResultError(`mission_steps_list: "id" must not be "." or ".." — that collapses to the list route instead of a single-mission lookup`), nil
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("mission_steps_list: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "missions", url.PathEscape(id), "steps")
+
+		body, status, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
+		if httpErr != nil {
+			return toolHTTPError("mission_steps_list", httpErr), nil
+		}
+		if status < 200 || status >= 300 {
+			return toolHTTPStatusError("mission_steps_list", status, body), nil
+		}
+		return toolSuccess("mission_steps_list", body), nil
+	}
+}
+
+// makeFindingListHandler wires the finding_list tool to GET /v1/findings?status=<optional>.
+//
+// The optional status filter validates against the schema enum: proposed, approved,
+// applied, rejected, retired, superseded. An out-of-vocabulary value produces a
+// clean validation failure (400 from the server), matching how mission_list handles
+// its own status filter.
+func makeFindingListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("finding_list: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "findings")
+
+		// Optional status filter. If supplied, pass it through; server validates.
+		if status, ok := req.GetArguments()["status"]; ok {
+			statusStr := strings.TrimSpace(fmt.Sprint(status))
+			if statusStr != "" {
+				qry := u.Query()
+				qry.Set("status", statusStr)
+				u.RawQuery = qry.Encode()
+			}
+		}
+
+		body, httpStatus, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
+		if httpErr != nil {
+			return toolHTTPError("finding_list", httpErr), nil
+		}
+		if httpStatus < 200 || httpStatus >= 300 {
+			return toolHTTPStatusError("finding_list", httpStatus, body), nil
+		}
+		return toolSuccess("finding_list", body), nil
+	}
+}
+
+// makePatternListHandler wires the pattern_list tool to GET /v1/patterns.
+//
+// No arguments. Returns patterns newest-first.
+func makePatternListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("pattern_list: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "patterns")
+
+		body, httpStatus, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
+		if httpErr != nil {
+			return toolHTTPError("pattern_list", httpErr), nil
+		}
+		if httpStatus < 200 || httpStatus >= 300 {
+			return toolHTTPStatusError("pattern_list", httpStatus, body), nil
+		}
+		return toolSuccess("pattern_list", body), nil
+	}
+}
+
+// makeServiceRecordListHandler wires the service_record_list tool to GET /v1/service-records?agent=<optional>.
+//
+// IMPORTANT: The `agent` parameter names the SUBJECT of the records (the crew member
+// being recorded about), NOT the actor writing the record. Unlike flight_recorder_append
+// and mission_step_record which compose "<harness>:<agent>" to capture the actor,
+// service_record_list passes the agent name through UNCHANGED. This is because
+// service records are keyed by the subject's name in the filesystem mirror, and
+// composing would break that matching. The parameter name is identical to
+// composeAgent-using tools, so this comment prevents an oversight.
+func makeServiceRecordListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("service_record_list: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "service-records")
+
+		// Optional agent filter. If supplied, pass it through unchanged (no composition).
+		if agent, ok := req.GetArguments()["agent"]; ok {
+			agentStr := strings.TrimSpace(fmt.Sprint(agent))
+			if agentStr != "" {
+				qry := u.Query()
+				qry.Set("agent", agentStr)
+				u.RawQuery = qry.Encode()
+			}
+		}
+
+		body, httpStatus, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
+		if httpErr != nil {
+			return toolHTTPError("service_record_list", httpErr), nil
+		}
+		if httpStatus < 200 || httpStatus >= 300 {
+			return toolHTTPStatusError("service_record_list", httpStatus, body), nil
+		}
+		return toolSuccess("service_record_list", body), nil
+	}
+}
+
+// makeFindingAppendHandler wires the finding_append tool to POST /v1/findings.
+//
+// Status, approver, and date_approved are deliberately not accepted as arguments.
+// Every finding is created with status='proposed', and advancing that status
+// belongs to the human operator alone — the server has no write path that sets them
+// and there is no update route.
+func makeFindingAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		suggestion := strings.TrimSpace(mcp.ParseString(req, "suggestion", ""))
+		if suggestion == "" {
+			return mcp.NewToolResultError("finding_append: `suggestion` is required and must not be empty/whitespace-only"), nil
+		}
+
+		body := createFindingBody{
+			FindingDate: strings.TrimSpace(mcp.ParseString(req, "finding_date", "")),
+			Target:      strings.TrimSpace(mcp.ParseString(req, "target", "")),
+			Suggestion:  suggestion,
+			Rationale:   mcp.ParseString(req, "rationale", ""),
+			MissionID:   strings.TrimSpace(mcp.ParseString(req, "mission_id", "")),
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("finding_append: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "findings")
+
+		payload, merr := json.Marshal(body)
+		if merr != nil {
+			return toolInternalErr("finding_append: marshal request body", merr), nil
+		}
+		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
+		if httpErr != nil {
+			return toolHTTPError("finding_append", httpErr), nil
+		}
+		if status < 200 || status >= 300 {
+			return toolHTTPStatusError("finding_append", status, respBody), nil
+		}
+		return toolSuccess("finding_append", respBody), nil
+	}
+}
+
+// makePatternAppendHandler wires the pattern_append tool to POST /v1/patterns.
+//
+// Patterns are advisory and non-binding; directives win on any conflict.
+func makePatternAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		name := strings.TrimSpace(mcp.ParseString(req, "name", ""))
+		if name == "" {
+			return mcp.NewToolResultError("pattern_append: `name` is required and must not be empty/whitespace-only"), nil
+		}
+
+		body := createPatternBody{
+			Name:              name,
+			Context:           mcp.ParseString(req, "context", ""),
+			Solution:          mcp.ParseString(req, "solution", ""),
+			Example:           mcp.ParseString(req, "example", ""),
+			DiscoveredAt:      strings.TrimSpace(mcp.ParseString(req, "discovered_at", "")),
+			DiscoveredMission: strings.TrimSpace(mcp.ParseString(req, "discovered_mission", "")),
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("pattern_append: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "patterns")
+
+		payload, merr := json.Marshal(body)
+		if merr != nil {
+			return toolInternalErr("pattern_append: marshal request body", merr), nil
+		}
+		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
+		if httpErr != nil {
+			return toolHTTPError("pattern_append", httpErr), nil
+		}
+		if status < 200 || status >= 300 {
+			return toolHTTPStatusError("pattern_append", status, respBody), nil
+		}
+		return toolSuccess("pattern_append", respBody), nil
+	}
+}
+
+// makeServiceRecordAppendHandler wires the service_record_append tool to
+// POST /v1/service-records.
+//
+// IMPORTANT: The `agent` field names the SUBJECT of the record (the crew member
+// being recorded about), NOT the actor writing it. Unlike flight_recorder_append
+// and mission_step_record which compose "<harness>:<agent>" to capture the actor,
+// service_record_append passes the agent name through UNCHANGED. This is because
+// service_records/<agent-name>.md is keyed by the subject's name, not the writer.
+// If the field were composed, every record would file under "claude-code:hicks"
+// and records would stop matching the files they mirror. The field name is
+// identical to those that DO compose, so this comment prevents an oversight.
+func makeServiceRecordAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		agent := strings.TrimSpace(mcp.ParseString(req, "agent", ""))
+		if agent == "" {
+			return mcp.NewToolResultError("service_record_append: `agent` is required and must not be empty/whitespace-only"), nil
+		}
+
+		// Validate source if supplied.
+		source := strings.TrimSpace(mcp.ParseString(req, "source", ""))
+		if source != "" && source != "self-reported" && source != "bishop-observed" {
+			return mcp.NewToolResultError("service_record_append: `source` must be 'self-reported' or 'bishop-observed' (or omitted)"), nil
+		}
+
+		body := createServiceRecordBody{
+			Agent:      agent,
+			RecordDate: strings.TrimSpace(mcp.ParseString(req, "record_date", "")),
+			Title:      strings.TrimSpace(mcp.ParseString(req, "title", "")),
+			Note:       mcp.ParseString(req, "note", ""),
+			Adjustment: mcp.ParseString(req, "adjustment", ""),
+			Source:     source,
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("service_record_append: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "service-records")
+
+		payload, merr := json.Marshal(body)
+		if merr != nil {
+			return toolInternalErr("service_record_append: marshal request body", merr), nil
+		}
+		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
+		if httpErr != nil {
+			return toolHTTPError("service_record_append", httpErr), nil
+		}
+		if status < 200 || status >= 300 {
+			return toolHTTPStatusError("service_record_append", status, respBody), nil
+		}
+		return toolSuccess("service_record_append", respBody), nil
 	}
 }
 
@@ -738,13 +1214,13 @@ func doWithClient(ctx context.Context, httpClient *http.Client, method, urlStr s
 
 // composeAgent joins the harness prefix and the per-call sub-agent
 // name with ":" so the bishop-memory audit trail records BOTH the
-// agent family and the specific sub-agent (e.g. "opencode:orchestrator",
-// "claude-code:junior-developer").
+// agent family and the specific sub-agent (e.g. "claude-code:bishop",
+// "claude-code:hicks").
 //
 // The empty-harness branch below is defensive, not reachable via any
 // env var an operator can currently set: envOrDefault("BISHOP_HARNESS",
 // defaultHarness) already treats an unset OR explicitly-empty
-// BISHOP_HARNESS as unset and substitutes "opencode", so c.harness is
+// BISHOP_HARNESS as unset and substitutes "claude-code", so c.harness is
 // never "" in main()'s current wiring (Step 4 review, Review C
 // SUGGESTION 11 — this docblock previously described a scenario the
 // code as written cannot reach). The branch is kept because
@@ -819,10 +1295,10 @@ func toolSuccess(tool string, body []byte) *mcp.CallToolResult {
 // escape "." (it is an RFC 3986 unreserved character), and
 // url.URL.JoinPath lexically cleans "." / ".." segments out of the
 // joined path AFTER escaping. Reproduced live against this module's
-// go.mod (net/url stdlib): task_get/task_update with id="." escapes to
-// "." and joins "v1/tasks/." down to "v1/tasks" — the list route,
-// returning HTTP 200 with the full task list instead of a 404 for what
-// the caller thinks is a single-task lookup. id=".." joins "v1/tasks/.."
+// go.mod (net/url stdlib): mission_get/mission_update with id="." escapes to
+// "." and joins "v1/missions/." down to "v1/missions" — the list route,
+// returning HTTP 200 with the full mission list instead of a 404 for what
+// the caller thinks is a single-mission lookup. id=".." joins "v1/missions/.."
 // down to "v1", which happens to 404 today by accident of the router's
 // shape, not by design — so both are rejected here rather than relying
 // on that accident to persist.

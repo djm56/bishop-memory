@@ -44,7 +44,7 @@ func TestJoinPath_DotSegmentCollapsesToListRoute(t *testing.T) {
 	}
 }
 
-// TestTaskGetHandler_RejectsDotSegment is the Step 4 brief's required
+// TestMissionGetHandler_RejectsDotSegment is the Step 4 brief's required
 // observation for CRITICAL 1: exercise the composed URL path (via the
 // actual handler, not just isDotSegment in isolation) and confirm it no
 // longer resolves to the list route. We assert the handler returns an
@@ -53,7 +53,7 @@ func TestJoinPath_DotSegmentCollapsesToListRoute(t *testing.T) {
 // would fail with a transport error instead, not the specific "must not
 // be '.'..." message. That distinguishes "the guard fired" from
 // "the request merely failed for some other reason."
-func TestTaskGetHandler_RejectsDotSegment(t *testing.T) {
+func TestMissionGetHandler_RejectsDotSegment(t *testing.T) {
 	c := &client{
 		httpClient: nil, // deliberately nil: a nil client would panic on
 		// any attempted HTTP call, so this test also fails loudly if the
@@ -62,7 +62,7 @@ func TestTaskGetHandler_RejectsDotSegment(t *testing.T) {
 		harness: "test",
 	}
 
-	handler := makeTaskGetHandler(c)
+	handler := makeMissionGetHandler(c)
 
 	for _, id := range []string{".", ".."} {
 		req := mcp.CallToolRequest{
@@ -129,13 +129,20 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 		wantPath  string   // expected final url.Path (no leading slash)
 	}{
 		{"memory_search", "GET", []string{"v1", "memory", "search"}, "v1/memory/search"},
-		{"task_list", "GET", []string{"v1", "missions"}, "v1/missions"},
-		{"task_get", "GET", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
-		{"task_create", "POST", []string{"v1", "missions"}, "v1/missions"},
-		{"task_update", "PATCH", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
-		{"event_append", "POST", []string{"v1", "flight-recorder"}, "v1/flight-recorder"},
-		{"task_run_record", "POST", []string{"v1", "missions", "test-id", "steps"}, "v1/missions/test-id/steps"},
+		{"mission_list", "GET", []string{"v1", "missions"}, "v1/missions"},
+		{"mission_get", "GET", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
+		{"mission_create", "POST", []string{"v1", "missions"}, "v1/missions"},
+		{"mission_update", "PATCH", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
+		{"flight_recorder_append", "POST", []string{"v1", "flight-recorder"}, "v1/flight-recorder"},
+		{"mission_step_record", "POST", []string{"v1", "missions", "test-id", "steps"}, "v1/missions/test-id/steps"},
 		{"documents_sync", "POST", []string{"v1", "documents", "sync"}, "v1/documents/sync"},
+		{"mission_steps_list", "GET", []string{"v1", "missions", "test-id", "steps"}, "v1/missions/test-id/steps"},
+		{"finding_list", "GET", []string{"v1", "findings"}, "v1/findings"},
+		{"pattern_list", "GET", []string{"v1", "patterns"}, "v1/patterns"},
+		{"service_record_list", "GET", []string{"v1", "service-records"}, "v1/service-records"},
+		{"finding_append", "POST", []string{"v1", "findings"}, "v1/findings"},
+		{"pattern_append", "POST", []string{"v1", "patterns"}, "v1/patterns"},
+		{"service_record_append", "POST", []string{"v1", "service-records"}, "v1/service-records"},
 	}
 
 	for _, tc := range mcpdPaths {
