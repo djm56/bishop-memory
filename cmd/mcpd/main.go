@@ -291,8 +291,8 @@ func registerTools(s *server.MCPServer, c *client) {
 // stays decoupled from the server's internal packages, and the JSON
 // wire shapes are the documented contract.
 
-// createTaskBody is the JSON body for POST /v1/tasks.
-type createTaskBody struct {
+// createMissionBody is the JSON body for POST /v1/missions.
+type createMissionBody struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
 	Status     string `json:"status,omitempty"`
@@ -301,31 +301,31 @@ type createTaskBody struct {
 	Blockers   string `json:"blockers,omitempty"`
 }
 
-// updateTaskBody is the JSON body for PATCH /v1/tasks/<id>. Fields
-// mirror model.UpdateTaskRequest; *string pointers carry
+// updateMissionBody is the JSON body for PATCH /v1/missions/<id>. Fields
+// mirror model.UpdateMissionRequest; *string pointers carry
 // "omitted vs explicit null" semantics so a PATCH with no fields is
 // still a valid (no-op) update.
-type updateTaskBody struct {
+type updateMissionBody struct {
 	Status     *string `json:"status,omitempty"`
 	Priority   *string `json:"priority,omitempty"`
 	NextAction *string `json:"next_action,omitempty"`
 	Blockers   *string `json:"blockers,omitempty"`
 }
 
-// appendEventBody is the JSON body for POST /v1/events. Agent is the
+// appendFlightRecorderBody is the JSON body for POST /v1/flight-recorder. Agent is the
 // composed "<harness>:<agent>" identity (Phase 3, additive change to
-// model.AppendEventRequest).
-type appendEventBody struct {
-	TaskID    string `json:"task_id,omitempty"`
-	EventType string `json:"event_type"`
-	Summary   string `json:"summary"`
+// model.AppendFlightRecorderRequest).
+type appendFlightRecorderBody struct {
+	MissionID string `json:"mission_id,omitempty"`
+	Event     string `json:"event"`
+	Note      string `json:"note"`
 	Agent     string `json:"agent,omitempty"`
 }
 
-// taskRunBody is the JSON body for POST /v1/tasks/<id>/runs. It
-// mirrors the internal/api/taskRunRequest wire shape so mcpd can
+// missionStepBody is the JSON body for POST /v1/missions/<id>/steps. It
+// mirrors the internal/api/missionStepRequest wire shape so mcpd can
 // build the request without importing the server's internal package.
-type taskRunBody struct {
+type missionStepBody struct {
 	Agent     string  `json:"agent,omitempty"`
 	Status    string  `json:"status,omitempty"`
 	Summary   string  `json:"summary,omitempty"`
@@ -378,14 +378,14 @@ func makeSearchHandler(c *client) func(ctx context.Context, req mcp.CallToolRequ
 	}
 }
 
-// makeTaskListHandler wires the task_list tool to GET /v1/tasks.
+// makeTaskListHandler wires the task_list tool to GET /v1/missions.
 func makeTaskListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
 			return toolInternalErr("task_list: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "tasks")
+		u = u.JoinPath("v1", "missions")
 
 		body, status, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
 		if httpErr != nil {
@@ -398,7 +398,7 @@ func makeTaskListHandler(c *client) func(ctx context.Context, req mcp.CallToolRe
 	}
 }
 
-// makeTaskGetHandler wires the task_get tool to GET /v1/tasks/<id>.
+// makeTaskGetHandler wires the task_get tool to GET /v1/missions/<id>.
 //
 // `id` is escaped with url.PathEscape so a user-supplied ID containing
 // "/" or other URL-special bytes cannot escape the path segment. A
@@ -411,14 +411,14 @@ func makeTaskGetHandler(c *client) func(ctx context.Context, req mcp.CallToolReq
 			return mcp.NewToolResultError("task_get: `id` is required and must not be empty/whitespace-only"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`task_get: "id" must not be "." or ".." — that collapses to the list route instead of a single-task lookup`), nil
+			return mcp.NewToolResultError(`task_get: "id" must not be "." or ".." — that collapses to the list route instead of a single-mission lookup`), nil
 		}
 
 		u, err := url.Parse(c.baseURL)
 		if err != nil {
 			return toolInternalErr("task_get: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "tasks", url.PathEscape(id))
+		u = u.JoinPath("v1", "missions", url.PathEscape(id))
 
 		body, status, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
 		if httpErr != nil {
@@ -431,10 +431,10 @@ func makeTaskGetHandler(c *client) func(ctx context.Context, req mcp.CallToolReq
 	}
 }
 
-// makeTaskCreateHandler wires the task_create tool to POST /v1/tasks.
+// makeTaskCreateHandler wires the task_create tool to POST /v1/missions.
 //
-// Per the Step 2 deferral, no agent param — CreateTaskRequest is
-// plan-frozen. The caller can attribute the surrounding task.created
+// Per the Step 2 deferral, no agent param — CreateMissionRequest is
+// plan-frozen. The caller can attribute the surrounding mission.created
 // event via event_append if it needs an actor on the audit trail.
 func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -447,7 +447,7 @@ func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 			return mcp.NewToolResultError("task_create: `title` is required"), nil
 		}
 
-		body := createTaskBody{
+		body := createMissionBody{
 			ID:         id,
 			Title:      title,
 			Status:     strings.TrimSpace(mcp.ParseString(req, "status", "")),
@@ -460,7 +460,7 @@ func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 		if err != nil {
 			return toolInternalErr("task_create: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "tasks")
+		u = u.JoinPath("v1", "missions")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {
@@ -477,7 +477,7 @@ func makeTaskCreateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 	}
 }
 
-// makeTaskUpdateHandler wires the task_update tool to PATCH /v1/tasks/<id>.
+// makeTaskUpdateHandler wires the task_update tool to PATCH /v1/missions/<id>.
 //
 // `id` is path-escaped for the same reason as task_get. Fields the
 // caller did not supply are omitted from the JSON body (pointer
@@ -490,7 +490,7 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 			return mcp.NewToolResultError("task_update: `id` is required"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`task_update: "id" must not be "." or ".." — that collapses to the list/no-route path instead of a single-task update`), nil
+			return mcp.NewToolResultError(`task_update: "id" must not be "." or ".." — that collapses to the list/no-route path instead of a single-mission update`), nil
 		}
 
 		// Build a PATCH body that only includes fields the caller
@@ -498,7 +498,7 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 		// is missing; we use a presence check via GetArguments so an
 		// explicit "" (clear-the-field) still gets forwarded.
 		args := req.GetArguments()
-		patch := updateTaskBody{}
+		patch := updateMissionBody{}
 		if raw, ok := args["status"]; ok {
 			s := strings.TrimSpace(fmt.Sprint(raw))
 			patch.Status = &s
@@ -520,7 +520,7 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 		if err != nil {
 			return toolInternalErr("task_update: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "tasks", url.PathEscape(id))
+		u = u.JoinPath("v1", "missions", url.PathEscape(id))
 
 		payload, merr := json.Marshal(patch)
 		if merr != nil {
@@ -537,7 +537,7 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 	}
 }
 
-// makeEventAppendHandler wires the event_append tool to POST /v1/events.
+// makeEventAppendHandler wires the event_append tool to POST /v1/flight-recorder.
 //
 // Agent identity is composed as "<harness>:<agent>" so the audit
 // trail records the originating sub-agent (the per-call `agent`
@@ -545,14 +545,14 @@ func makeTaskUpdateHandler(c *client) func(ctx context.Context, req mcp.CallTool
 // caller MUST supply `agent`; the harness is sourced from the env.
 func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		eventType := strings.TrimSpace(mcp.ParseString(req, "event_type", ""))
-		summary := strings.TrimSpace(mcp.ParseString(req, "summary", ""))
+		event := strings.TrimSpace(mcp.ParseString(req, "event_type", ""))
+		note := strings.TrimSpace(mcp.ParseString(req, "summary", ""))
 		agentParam := strings.TrimSpace(mcp.ParseString(req, "agent", ""))
 
-		if eventType == "" {
+		if event == "" {
 			return mcp.NewToolResultError("event_append: `event_type` is required"), nil
 		}
-		if summary == "" {
+		if note == "" {
 			return mcp.NewToolResultError("event_append: `summary` is required"), nil
 		}
 		if agentParam == "" {
@@ -566,10 +566,10 @@ func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToo
 		// the server side never sees a malformed identity.
 		agent := composeAgent(c.harness, agentParam)
 
-		body := appendEventBody{
-			TaskID:    strings.TrimSpace(mcp.ParseString(req, "task_id", "")),
-			EventType: eventType,
-			Summary:   summary,
+		body := appendFlightRecorderBody{
+			MissionID: strings.TrimSpace(mcp.ParseString(req, "task_id", "")),
+			Event:     event,
+			Note:      note,
 			Agent:     agent,
 		}
 
@@ -577,7 +577,7 @@ func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToo
 		if err != nil {
 			return toolInternalErr("event_append: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "events")
+		u = u.JoinPath("v1", "flight-recorder")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {
@@ -595,7 +595,7 @@ func makeEventAppendHandler(c *client) func(ctx context.Context, req mcp.CallToo
 }
 
 // makeTaskRunRecordHandler wires the task_run_record tool to
-// POST /v1/tasks/<id>/runs.
+// POST /v1/missions/<id>/steps.
 //
 // Same agent-identity composition as event_append: per-call `agent`
 // required, BISHOP_HARNESS is the env prefix.
@@ -618,7 +618,7 @@ func makeTaskRunRecordHandler(c *client) func(ctx context.Context, req mcp.CallT
 
 		// Build the body; optional fields default to "" or are nil
 		// depending on whether the caller supplied them.
-		body := taskRunBody{
+		body := missionStepBody{
 			Agent:   agent,
 			Status:  strings.TrimSpace(mcp.ParseString(req, "status", "")),
 			Summary: mcp.ParseString(req, "summary", ""),
@@ -636,7 +636,7 @@ func makeTaskRunRecordHandler(c *client) func(ctx context.Context, req mcp.CallT
 		if err != nil {
 			return toolInternalErr("task_run_record: parse base URL", err), nil
 		}
-		u = u.JoinPath("v1", "tasks", url.PathEscape(id), "runs")
+		u = u.JoinPath("v1", "missions", url.PathEscape(id), "steps")
 
 		payload, merr := json.Marshal(body)
 		if merr != nil {

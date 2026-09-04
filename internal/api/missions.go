@@ -14,15 +14,19 @@ import (
 	"bishop-memory/internal/model"
 )
 
-// taskStatuses is the shared, single-source-of-truth value set for the
+// missionStatuses is the shared, single-source-of-truth value set for the
 // `status` column. It mirrors the `oneof` binding tags on
-// model.CreateTaskRequest / model.UpdateTaskRequest and the CHECK
+// model.CreateMissionRequest / model.UpdateMissionRequest and the CHECK
 // constraint in db/schema.sql (CONV-028: one implementation per
-// contract) — listTasksHandler's optional ?status= filter validates
-// against taskStatuses instead of re-listing the five literals inline.
-// There is no equivalent ?priority= filter today, so no taskPriorities
+// contract) — listMissionsHandler's optional ?status= filter validates
+// against missionStatuses instead of re-listing the four literals inline.
+// There is no equivalent ?priority= filter today, so no missionPriorities
 // counterpart is declared until one exists to consume it.
-var taskStatuses = []string{"open", "active", "blocked", "complete", "cancelled"}
+var missionStatuses = []string{"not-started", "in-progress", "blocked", "complete"}
+
+// stepStatuses is the valid status values for mission steps.
+// Validates the optional status field on step-creation requests.
+var stepStatuses = []string{"pending", "in-progress", "done", "failed"}
 
 // isOneOf reports whether value is present in allowed.
 func isOneOf(value string, allowed []string) bool {
@@ -34,7 +38,7 @@ func isOneOf(value string, allowed []string) bool {
 	return false
 }
 
-func listTasksHandler(db *sql.DB) gin.HandlerFunc {
+func listMissionsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		status := strings.TrimSpace(c.Query("status"))
 
@@ -43,17 +47,17 @@ func listTasksHandler(db *sql.DB) gin.HandlerFunc {
 		// oneof binding tags already enforce on write, so a typo'd
 		// filter value (e.g. "?status=complet") gets a 400 telling the
 		// caller their filter is invalid, rather than a silent 200
-		// with an empty "tasks" list indistinguishable from "no tasks
+		// with an empty "missions" list indistinguishable from "no missions
 		// match".
-		if status != "" && !isOneOf(status, taskStatuses) {
-			validationError(c, errors.New("status must be one of: open, active, blocked, complete, cancelled"))
+		if status != "" && !isOneOf(status, missionStatuses) {
+			validationError(c, errors.New("status must be one of: not-started, in-progress, blocked, complete"))
 			return
 		}
 
 		query := `
-			SELECT id, title, status, priority, next_action, blockers,
+			SELECT id, title, status, outcome, owner, priority, next_action, blockers,
 			       opened_at, closed_at, created_at, updated_at
-			FROM tasks
+			FROM missions
 		`
 		args := []any{}
 
@@ -71,15 +75,15 @@ func listTasksHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		defer rows.Close()
 
-		tasks := make([]model.Task, 0)
+		missions := make([]model.Mission, 0)
 
 		for rows.Next() {
-			task, err := scanTask(rows)
+			mission, err := scanMission(rows)
 			if err != nil {
 				internalError(c, err)
 				return
 			}
-			tasks = append(tasks, task)
+			missions = append(missions, mission)
 		}
 
 		if err := rows.Err(); err != nil {
@@ -87,27 +91,27 @@ func listTasksHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"tasks": tasks})
+		c.JSON(http.StatusOK, gin.H{"missions": missions})
 	}
 }
 
-func getTaskHandler(db *sql.DB) gin.HandlerFunc {
+func getMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		taskID := c.Param("taskID")
+		missionID := c.Param("missionID")
 
 		row := db.QueryRowContext(
 			c.Request.Context(),
-			`SELECT id, title, status, priority, next_action, blockers,
+			`SELECT id, title, status, outcome, owner, priority, next_action, blockers,
 			        opened_at, closed_at, created_at, updated_at
-			 FROM tasks
+			 FROM missions
 			 WHERE id = ?`,
-			taskID,
+			missionID,
 		)
 
-		task, err := scanTask(row)
+		mission, err := scanMission(row)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "task not found",
+				"error": "mission not found",
 			})
 			return
 		}
@@ -116,13 +120,13 @@ func getTaskHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, task)
+		c.JSON(http.StatusOK, mission)
 	}
 }
 
-func createTaskHandler(db *sql.DB) gin.HandlerFunc {
+func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var request model.CreateTaskRequest
+		var request model.CreateMissionRequest
 
 		if err := c.ShouldBindJSON(&request); err != nil {
 			validationError(c, err)
@@ -133,7 +137,7 @@ func createTaskHandler(db *sql.DB) gin.HandlerFunc {
 		request.Title = strings.TrimSpace(request.Title)
 
 		if request.Status == "" {
-			request.Status = "open"
+			request.Status = "not-started"
 		}
 		if request.Priority == "" {
 			request.Priority = "normal"
@@ -148,7 +152,7 @@ func createTaskHandler(db *sql.DB) gin.HandlerFunc {
 
 		_, err = tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO tasks (
+			`INSERT INTO missions (
 				id, title, status, priority, next_action, blockers
 			) VALUES (?, ?, ?, ?, ?, ?)`,
 			request.ID,
@@ -182,11 +186,11 @@ func createTaskHandler(db *sql.DB) gin.HandlerFunc {
 
 		_, err = tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO events (
-				task_id, event_type, summary
-			) VALUES (?, 'task.created', ?)`,
+			`INSERT INTO flight_recorder (
+				mission_id, event, note
+			) VALUES (?, 'mission.created', ?)`,
 			request.ID,
-			"Task created: "+request.Title,
+			"Mission created: "+request.Title,
 		)
 		if err != nil {
 			internalError(c, err)
@@ -205,19 +209,19 @@ func createTaskHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-func updateTaskHandler(db *sql.DB) gin.HandlerFunc {
+func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		taskID := c.Param("taskID")
+		missionID := c.Param("missionID")
 
-		var request model.UpdateTaskRequest
+		var request model.UpdateMissionRequest
 		if err := c.ShouldBindJSON(&request); err != nil {
 			validationError(c, err)
 			return
 		}
 
-		// Step 4 review fix (Review B, WARNING W2): createTaskHandler
+		// Step 4 review fix (Review B, WARNING W2): createMissionHandler
 		// normalises next_action/blockers via nullIfEmpty (a
-		// whitespace-only value stores NULL). updateTaskHandler had no
+		// whitespace-only value stores NULL). updateMissionHandler had no
 		// equivalent, so a PATCH of {"next_action": "   "} stored three
 		// literal spaces instead of NULL — the same conceptual field
 		// behaving differently across the two write paths. Trim ONLY
@@ -244,14 +248,14 @@ func updateTaskHandler(db *sql.DB) gin.HandlerFunc {
 
 		result, err := tx.ExecContext(
 			c.Request.Context(),
-			`UPDATE tasks
+			`UPDATE missions
 			 SET
 				status = COALESCE(?, status),
 				priority = COALESCE(?, priority),
 				next_action = COALESCE(?, next_action),
 				blockers = COALESCE(?, blockers),
 				closed_at = CASE
-					WHEN ? IN ('complete', 'cancelled') THEN CURRENT_TIMESTAMP
+					WHEN ? = 'complete' THEN CURRENT_TIMESTAMP
 					ELSE closed_at
 				END,
 				updated_at = CURRENT_TIMESTAMP
@@ -261,7 +265,7 @@ func updateTaskHandler(db *sql.DB) gin.HandlerFunc {
 			request.NextAction,
 			request.Blockers,
 			request.Status,
-			taskID,
+			missionID,
 		)
 		if err != nil {
 			internalError(c, err)
@@ -275,17 +279,17 @@ func updateTaskHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		if affected == 0 {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "task not found",
+				"error": "mission not found",
 			})
 			return
 		}
 
 		_, err = tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO events (
-				task_id, event_type, summary
-			) VALUES (?, 'task.updated', 'Task updated')`,
-			taskID,
+			`INSERT INTO flight_recorder (
+				mission_id, event, note
+			) VALUES (?, 'mission.updated', 'Mission updated')`,
+			missionID,
 		)
 		if err != nil {
 			internalError(c, err)
@@ -298,7 +302,7 @@ func updateTaskHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"id":      taskID,
+			"id":      missionID,
 			"updated": true,
 		})
 	}
@@ -308,23 +312,25 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func scanTask(row scanner) (model.Task, error) {
-	var task model.Task
+func scanMission(row scanner) (model.Mission, error) {
+	var mission model.Mission
 
 	err := row.Scan(
-		&task.ID,
-		&task.Title,
-		&task.Status,
-		&task.Priority,
-		&task.NextAction,
-		&task.Blockers,
-		&task.OpenedAt,
-		&task.ClosedAt,
-		&task.CreatedAt,
-		&task.UpdatedAt,
+		&mission.ID,
+		&mission.Title,
+		&mission.Status,
+		&mission.Outcome,
+		&mission.Owner,
+		&mission.Priority,
+		&mission.NextAction,
+		&mission.Blockers,
+		&mission.OpenedAt,
+		&mission.ClosedAt,
+		&mission.CreatedAt,
+		&mission.UpdatedAt,
 	)
 
-	return task, err
+	return mission, err
 }
 
 func nullIfEmpty(value string) any {
@@ -335,44 +341,58 @@ func nullIfEmpty(value string) any {
 	return value
 }
 
-// taskRunRequest is the JSON body for POST /v1/tasks/:taskID/runs. It is
-// intentionally unexported and local to tasks.go; agent and status are
-// free-form at this stage (agents register dynamically and the run-status
-// vocabulary will tighten once the Phase 3 renderer lands).
-type taskRunRequest struct {
+// missionStepRequest is the JSON body for POST /v1/missions/:missionID/steps. It is
+// intentionally unexported and local to missions.go; agent is free-form
+// (agents register dynamically) and status must be one of the validated
+// step-status values to match the database CHECK constraint.
+type missionStepRequest struct {
 	Agent     string  `json:"agent" binding:"omitempty,max=128"`
-	Status    string  `json:"status" binding:"omitempty,max=64"`
+	Status    string  `json:"status" binding:"omitempty,oneof=pending in-progress done failed"`
 	Summary   string  `json:"summary" binding:"omitempty,max=2000"`
 	StartedAt *string `json:"started_at,omitempty"`
 	EndedAt   *string `json:"ended_at,omitempty"`
 }
 
-// createTaskRunHandler handles POST /v1/tasks/:taskID/runs. It records
-// one agent execution attempt against a task: it verifies the task exists
+// createMissionStepHandler handles POST /v1/missions/:missionID/steps. It records
+// one agent execution attempt against a mission: it verifies the mission exists
 // (clean 404 rather than surfacing an FK violation), inserts into
-// task_runs, appends a task.run event for the audit trail, and commits.
+// mission_steps, appends a mission.step event for the audit trail, and commits.
 //
-// The transaction mirrors createTaskHandler / updateTaskHandler so the
-// run + event are atomic.
-func createTaskRunHandler(db *sql.DB) gin.HandlerFunc {
+// The transaction mirrors createMissionHandler / updateMissionHandler so the
+// step + event are atomic.
+func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		taskID := c.Param("taskID")
+		missionID := c.Param("missionID")
 
-		var request taskRunRequest
+		var request missionStepRequest
 		if err := c.ShouldBindJSON(&request); err != nil {
 			validationError(c, err)
 			return
 		}
 
 		// Trim free-form string fields consistently with
-		// createTaskHandler (which trims ID / Title) and appendEventHandler
-		// (which trims event_type / summary). agent and status are
+		// createMissionHandler (which trims ID / Title) and appendFlightRecorderHandler
+		// (which trims event / note). agent and status are
 		// free-form so we don't enforce non-empty here, but we DO strip
 		// surrounding whitespace so "opencode " and "opencode" are stored
 		// identically and a stray " " agent name doesn't sneak through.
 		request.Agent = strings.TrimSpace(request.Agent)
 		request.Status = strings.TrimSpace(request.Status)
 		request.Summary = strings.TrimSpace(request.Summary)
+
+		// Step 4 fix (CRITICAL 2): convert empty optional pointer fields to nil
+		// for database storage. status is CHECK-constrained to NULL or
+		// a valid enum, so "" fails the CHECK and returns 500; agent,
+		// summary, started_at, and ended_at have no CHECK but are the
+		// same defect class (should be NULL, not empty string). String fields
+		// are handled via nullIfEmpty in the INSERT; pointers require explicit
+		// nil conversion.
+		if request.StartedAt != nil && strings.TrimSpace(*request.StartedAt) == "" {
+			request.StartedAt = nil
+		}
+		if request.EndedAt != nil && strings.TrimSpace(*request.EndedAt) == "" {
+			request.EndedAt = nil
+		}
 
 		tx, err := db.BeginTx(c.Request.Context(), nil)
 		if err != nil {
@@ -381,17 +401,17 @@ func createTaskRunHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		// Verify the task exists so an unknown task yields a clean 404
+		// Verify the mission exists so an unknown mission yields a clean 404
 		// rather than an FK-violation error from the INSERT below.
 		var exists int
 		err = tx.QueryRowContext(
 			c.Request.Context(),
-			`SELECT 1 FROM tasks WHERE id = ?`,
-			taskID,
+			`SELECT 1 FROM missions WHERE id = ?`,
+			missionID,
 		).Scan(&exists)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "task not found",
+				"error": "mission not found",
 			})
 			return
 		}
@@ -402,15 +422,15 @@ func createTaskRunHandler(db *sql.DB) gin.HandlerFunc {
 
 		_, err = tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO task_runs (
-				task_id, agent, status, started_at, ended_at, summary
+			`INSERT INTO mission_steps (
+				mission_id, agent, status, started_at, ended_at, summary
 			) VALUES (?, ?, ?, ?, ?, ?)`,
-			taskID,
-			request.Agent,
-			request.Status,
+			missionID,
+			nullIfEmpty(request.Agent),
+			nullIfEmpty(request.Status),
 			request.StartedAt,
 			request.EndedAt,
-			request.Summary,
+			nullIfEmpty(request.Summary),
 		)
 		if err != nil {
 			internalError(c, err)
@@ -419,11 +439,11 @@ func createTaskRunHandler(db *sql.DB) gin.HandlerFunc {
 
 		_, err = tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO events (
-				task_id, event_type, summary
-			) VALUES (?, 'task.run', ?)`,
-			taskID,
-			"Task run recorded",
+			`INSERT INTO flight_recorder (
+				mission_id, event, note
+			) VALUES (?, 'mission.step', ?)`,
+			missionID,
+			"Mission step recorded",
 		)
 		if err != nil {
 			internalError(c, err)
@@ -436,8 +456,8 @@ func createTaskRunHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusCreated, gin.H{
-			"task_id":  taskID,
-			"recorded": true,
+			"mission_id": missionID,
+			"recorded":   true,
 		})
 	}
 }

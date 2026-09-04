@@ -27,17 +27,17 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 
 	v1 := router.Group("/v1")
 	{
-		tasks := v1.Group("/tasks")
+		missions := v1.Group("/missions")
 		{
-			tasks.GET("", listTasksHandler(db))
-			tasks.POST("", createTaskHandler(db))
-			tasks.GET("/:taskID", getTaskHandler(db))
-			tasks.PATCH("/:taskID", updateTaskHandler(db))
-			tasks.POST("/:taskID/runs", createTaskRunHandler(db))
+			missions.GET("", listMissionsHandler(db))
+			missions.POST("", createMissionHandler(db))
+			missions.GET("/:missionID", getMissionHandler(db))
+			missions.PATCH("/:missionID", updateMissionHandler(db))
+			missions.POST("/:missionID/steps", createMissionStepHandler(db))
 		}
 
-		v1.POST("/events", appendEventHandler(db))
-		v1.GET("/events", listEventsHandler(db))
+		v1.POST("/flight-recorder", appendFlightRecorderHandler(db))
+		v1.GET("/flight-recorder", listFlightRecorderHandler(db))
 
 		memory := v1.Group("/memory")
 		{

@@ -1,7 +1,7 @@
-// Package api — HTTP handlers for /v1/events and /v1/documents/sync.
+// Package api — HTTP handlers for /v1/flight-recorder and /v1/documents/sync.
 //
-// appendEventHandler appends a durable agent/system event.
-// listEventsHandler reads recent events, optionally filtered by task.
+// appendFlightRecorderHandler appends a durable agent/system event.
+// listFlightRecorderHandler reads recent events, optionally filtered by mission.
 // syncDocumentsHandler triggers an explicit Markdown/JSONL import of the
 // agent's memory tree into the documents + FTS5 tables via the importer.
 package api
@@ -22,48 +22,48 @@ import (
 	"bishop-memory/internal/model"
 )
 
-// appendEventHandler handles POST /v1/events.
+// appendFlightRecorderHandler handles POST /v1/flight-recorder.
 //
-// It binds an AppendEventRequest, inserts one row into the events table
-// (task_id and agent are nullable for system/agent-scoped events), and
+// It binds an AppendFlightRecorderRequest, inserts one row into the flight_recorder table
+// (mission_id and agent are nullable for system/agent-scoped events), and
 // returns the new event id. Validation is driven by the binding tags on
-// model.AppendEventRequest (event_type + summary required).
+// model.AppendFlightRecorderRequest (event + note required).
 //
 // Agent identity (Phase 3): the mcpd HTTP proxy composes
 // Agent = "<harness>:<sub-agent>" (e.g. "opencode:orchestrator") and
 // forwards it here so the audit trail records who emitted each event.
-// Agent is optional; system / non-agent callers (and the task-lifecycle
-// event INSERTs in createTaskHandler / updateTaskHandler /
-// createTaskRunHandler) leave it NULL.
-func appendEventHandler(db *sql.DB) gin.HandlerFunc {
+// Agent is optional; system / non-agent callers (and the mission-lifecycle
+// event INSERTs in createMissionHandler / updateMissionHandler /
+// createMissionStepHandler) leave it NULL.
+func appendFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var request model.AppendEventRequest
+		var request model.AppendFlightRecorderRequest
 
 		if err := c.ShouldBindJSON(&request); err != nil {
 			validationError(c, err)
 			return
 		}
 
-		request.EventType = strings.TrimSpace(request.EventType)
-		request.Summary = strings.TrimSpace(request.Summary)
-		// Trim agent for parity with event_type / summary so a stray " "
+		request.Event = strings.TrimSpace(request.Event)
+		request.Note = strings.TrimSpace(request.Note)
+		// Trim agent for parity with event / note so a stray " "
 		// in the composed "<harness>:<agent>" string does not leak
-		// through; the events.agent column is a free-form TEXT.
+		// through; the flight_recorder.agent column is a free-form TEXT.
 		request.Agent = strings.TrimSpace(request.Agent)
 
-		// Post-trim non-empty guard: a JSON body of {"event_type":"   "}
-		// (or {"summary":""}) passes binding:"required" because the field
-		// IS present, but the events table columns are NOT NULL TEXT. A
+		// Post-trim non-empty guard: a JSON body of {"event":"   "}
+		// (or {"note":""}) passes binding:"required" because the field
+		// IS present, but the flight_recorder table columns are NOT NULL TEXT. A
 		// whitespace-only or empty value would surface as a 500 (driver
 		// constraint violation) instead of a clean 400. Validate after
-		// the trim so legitimate "task.created" / "task.updated" event
+		// the trim so legitimate "mission.created" / "mission.updated" event
 		// types with surrounding whitespace still get through cleanly.
-		if request.EventType == "" {
-			validationError(c, errors.New("event_type must not be empty or whitespace-only"))
+		if request.Event == "" {
+			validationError(c, errors.New("event must not be empty or whitespace-only"))
 			return
 		}
-		if request.Summary == "" {
-			validationError(c, errors.New("summary must not be empty or whitespace-only"))
+		if request.Note == "" {
+			validationError(c, errors.New("note must not be empty or whitespace-only"))
 			return
 		}
 
@@ -75,23 +75,23 @@ func appendEventHandler(db *sql.DB) gin.HandlerFunc {
 		defer tx.Rollback()
 
 		// Step 4 review fix (Review B, WARNING W1): mirror
-		// createTaskRunHandler's existence check. Without it, a
-		// non-empty but unknown task_id fails the
-		// events.task_id REFERENCES tasks(id) foreign key and falls
+		// createMissionStepHandler's existence check. Without it, a
+		// non-empty but unknown mission_id fails the
+		// flight_recorder.mission_id REFERENCES missions(id) foreign key and falls
 		// into the generic internalError 500 path — a client input
 		// error surfacing as a server fault. Skip the check when
-		// task_id is empty: nullIfEmpty already turns that into an
+		// mission_id is empty: nullIfEmpty already turns that into an
 		// unconstrained NULL event, so there is nothing to verify.
-		if strings.TrimSpace(request.TaskID) != "" {
+		if strings.TrimSpace(request.MissionID) != "" {
 			var exists int
 			err = tx.QueryRowContext(
 				c.Request.Context(),
-				`SELECT 1 FROM tasks WHERE id = ?`,
-				request.TaskID,
+				`SELECT 1 FROM missions WHERE id = ?`,
+				request.MissionID,
 			).Scan(&exists)
 			if errors.Is(err, sql.ErrNoRows) {
 				c.JSON(http.StatusNotFound, gin.H{
-					"error": "task not found",
+					"error": "mission not found",
 				})
 				return
 			}
@@ -103,12 +103,12 @@ func appendEventHandler(db *sql.DB) gin.HandlerFunc {
 
 		result, err := tx.ExecContext(
 			c.Request.Context(),
-			`INSERT INTO events (
-				task_id, event_type, summary, agent
+			`INSERT INTO flight_recorder (
+				mission_id, event, note, agent
 			) VALUES (?, ?, ?, ?)`,
-			nullIfEmpty(request.TaskID),
-			request.EventType,
-			request.Summary,
+			nullIfEmpty(request.MissionID),
+			request.Event,
+			request.Note,
 			nullIfEmpty(request.Agent),
 		)
 		if err != nil {
@@ -134,17 +134,17 @@ func appendEventHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
-// listEventsHandler handles GET /v1/events.
+// listFlightRecorderHandler handles GET /v1/flight-recorder.
 //
 // Optional query params:
 //
-//	task_id — filter to events for one task (NULL task_id events excluded)
-//	limit   — cap at 100, default 50
+//	mission_id — filter to events for one mission (NULL mission_id events excluded)
+//	limit      — cap at 100, default 50
 //
 // Events are returned newest-first (ORDER BY created_at DESC).
-func listEventsHandler(db *sql.DB) gin.HandlerFunc {
+func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		taskID := strings.TrimSpace(c.Query("task_id"))
+		missionID := strings.TrimSpace(c.Query("mission_id"))
 
 		limit := 50
 		if raw := c.Query("limit"); raw != "" {
@@ -157,14 +157,14 @@ func listEventsHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		query := `
-			SELECT id, task_id, event_type, summary, agent, created_at
-			FROM events
+			SELECT id, mission_id, event, note, agent, created_at
+			FROM flight_recorder
 		`
 		args := []any{}
 
-		if taskID != "" {
-			query += ` WHERE task_id = ?`
-			args = append(args, taskID)
+		if missionID != "" {
+			query += ` WHERE mission_id = ?`
+			args = append(args, missionID)
 		}
 
 		query += ` ORDER BY created_at DESC LIMIT ?`
@@ -177,27 +177,27 @@ func listEventsHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		defer rows.Close()
 
-		events := make([]model.Event, 0)
+		entries := make([]model.FlightRecorderEntry, 0)
 
 		for rows.Next() {
-			var event model.Event
-			var taskID sql.NullString
+			var entry model.FlightRecorderEntry
+			var missionID sql.NullString
 			var agent sql.NullString
 
 			if err := rows.Scan(
-				&event.ID,
-				&taskID,
-				&event.EventType,
-				&event.Summary,
+				&entry.ID,
+				&missionID,
+				&entry.Event,
+				&entry.Note,
 				&agent,
-				&event.CreatedAt,
+				&entry.CreatedAt,
 			); err != nil {
 				internalError(c, err)
 				return
 			}
-			event.TaskID = taskID.String
-			event.Agent = agent.String
-			events = append(events, event)
+			entry.MissionID = missionID.String
+			entry.Agent = agent.String
+			entries = append(entries, entry)
 		}
 
 		if err := rows.Err(); err != nil {
@@ -205,7 +205,7 @@ func listEventsHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"events": events})
+		c.JSON(http.StatusOK, gin.H{"flight_recorder": entries})
 	}
 }
 
