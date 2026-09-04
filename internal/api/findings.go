@@ -2,6 +2,8 @@
 //
 // Findings are the improvement ledger (mirrors .claude/memory/findings/FINDINGS.md).
 // Status, approver, and date_approved are human-only and never settable through the API.
+// The API exposes no write path for these fields; if supplied in a request, they are
+// silently dropped (standard JSON unmarshalling of unrecognised keys).
 // No PATCH or PUT route exists — agents have no mechanism to update a finding's status.
 package api
 

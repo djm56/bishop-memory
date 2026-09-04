@@ -79,8 +79,10 @@ CREATE TABLE IF NOT EXISTS mission_steps (
 );
 
 -- flight_recorder — audit log for the harness, append-only BY APPLICATION
--- CONVENTION ONLY (not enforced at schema level). Mirrors the structure of
--- FLIGHT-RECORDER.md with two discriminator kinds:
+-- CONVENTION ONLY (not enforced at schema level). No triggers exist because
+-- internal/store/schema.go's splitSQLStatements cannot parse semicolons inside
+-- BEGIN...END blocks, so adding a trigger would break schema bootstrap. Mirrors
+-- the structure of FLIGHT-RECORDER.md with two discriminator kinds:
 --
 -- Journal rows (harness state machine):
 --   event: 'step-sync', 'complete', 'blocked'

@@ -50,16 +50,16 @@
 //   - JSONL files (*.jsonl) are split line by line; each non-blank line
 //     becomes one document with kind="flight-recorder". Title is the parsed
 //     event (or the filename if parsing fails); body is a
-//     structured composition of step, agent, note, and mission_id fields
-//     (or the raw line as a fallback); source_path is "<abspath>:<line-number>"
-//     so each line is unique across all roots.
+//     structured composition of mission_id, step, agent, event, note, and
+//     occurred_at fields (or the raw line as a fallback); source_path is
+//     "<abspath>:<line-number>" so each line is unique per filesystem location.
 //
 // What does NOT get imported:
 //
-//   - The events, tasks, task_runs, agents, and improvements tables are
-//     owned by the live HTTP API (POST /v1/events, /v1/tasks, etc.).
-//     The importer only populates the search index — it never writes
-//     to those tables.
+//   - The flight_recorder, missions, mission_steps, crew, findings, patterns,
+//     service_records, and directives tables are owned by the live HTTP API
+//     (POST /v1/flight-recorder, /v1/missions, etc.). The importer only
+//     populates documents and documents_fts — it never writes to those tables.
 //
 // Idempotency:
 //
@@ -109,7 +109,7 @@ import (
 
 // MaxJSONLLineBytes is the largest single line a JSONL file may have
 // before the line scanner gives up. 16 MiB matches bufio.Scanner's
-// default maximum plus headroom for large event summaries.
+// default maximum plus headroom for large notes.
 const MaxJSONLLineBytes = 16 * 1024 * 1024
 
 // Sync walks the memory tree at root and imports its contents into the
@@ -157,7 +157,7 @@ func Sync(db *sql.DB, root string) error {
 	// produce paths that start with the symlink's leaf name, which then
 	// fail the cleanRoot prefix check below (and which would also break
 	// the kind mapping, since the relpath would not match the documented
-	// "state/", "tasks/<id>/", etc. layout).
+	// memory tree structure: state/, missions/<id>/, findings/, reference/, etc.).
 	walkErr := filepath.WalkDir(resolvedRoot, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -203,8 +203,9 @@ func Sync(db *sql.DB, root string) error {
 
 		// relPath is computed from the RESOLVED root (same as WalkDir's
 		// starting directory above) so a symlinked root produces a
-		// well-formed "state/...", "tasks/<id>/CONTEXT.md" relpath
-		// instead of one prefixed with the symlink's leaf name.
+		// well-formed relpath matching the memory tree structure (e.g.,
+		// "state/...", "missions/<id>/PROGRESS.md") instead of one prefixed
+		// with the symlink's leaf name.
 		relPath, err := filepath.Rel(resolvedRoot, cleanPath)
 		if err != nil {
 			return fmt.Errorf("relative path %s: %w", path, err)
@@ -274,7 +275,7 @@ func importJSONL(db *sql.DB, absPath, relPath string) error {
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
-	// Larger buffer than the 64 KiB default — event summaries can be long.
+	// Larger buffer than the 64 KiB default — notes can be long.
 	scanner.Buffer(make([]byte, 1024*1024), MaxJSONLLineBytes)
 
 	fallbackTitle := strings.TrimSuffix(filepath.Base(relPath), filepath.Ext(relPath))
@@ -593,6 +594,12 @@ func prependCurrentMissionFields(body string) string {
 // FLIGHT-RECORDER.md's table and prepends them as indexed lines at the top
 // of the body. The raw file content is preserved verbatim below the prefix.
 //
+// Escaping rule (applied uniformly in one pass):
+//   - \\ → literal backslash; the following character is NOT treated as escaped
+//   - \| → literal pipe (not a delimiter)
+//   - \ followed by anything else → literal backslash and that character
+//   - bare, unescaped | → cell delimiter
+//
 // Design: rows are not split into one document each. FTS5 already indexes the
 // whole file body so rows are already findable; the gain would be snippet
 // granularity only. Meanwhile MISSION-ARCHIVE.md and PROGRESS.md are also
@@ -610,8 +617,8 @@ func prependFlightRecorderFields(body string) string {
 	for _, rawLine := range strings.Split(body, "\n") {
 		line := strings.TrimSpace(rawLine)
 
-		// Skip empty lines and separator rows (contain |---|)
-		if line == "" || strings.Contains(line, "---|") {
+		// Skip empty lines
+		if line == "" {
 			continue
 		}
 
@@ -620,23 +627,14 @@ func prependFlightRecorderFields(body string) string {
 			continue
 		}
 
-		// Split on pipes, respecting escaped pipes (\|).
-		// A proper split means we split on | that is NOT preceded by \.
-		// This is fragile but works for the journal format which only escapes pipes.
-		var cells []string
-		var current strings.Builder
-		runes := []rune(line)
-		for i := 0; i < len(runes); i++ {
-			if runes[i] == '|' && (i == 0 || runes[i-1] != '\\') {
-				// Unescaped pipe: this is a cell separator
-				cells = append(cells, current.String())
-				current.Reset()
-			} else {
-				current.WriteRune(runes[i])
-			}
+		// Check if this is a separator row: split the line into cells,
+		// then verify each cell (trimmed) consists only of - and : characters.
+		// This handles GitHub-flavoured Markdown separators like:
+		//   |-|-|, |--|--|, | :--- | ---: |, etc.
+		cells := splitFlightRecorderCells(line)
+		if isSeparatorRow(cells) {
+			continue
 		}
-		// Add the final cell (after the last pipe)
-		cells = append(cells, current.String())
 
 		// We expect exactly 8 cells: empty, cell1, cell2, cell3, cell4, cell5, cell6, empty
 		if len(cells) != 8 {
@@ -659,9 +657,6 @@ func prependFlightRecorderFields(body string) string {
 			continue
 		}
 
-		// Unescape \| back to literal |
-		note = strings.ReplaceAll(note, "\\|", "|")
-
 		// Skip rows that don't have meaningful content
 		if timestamp == "" || missionID == "" {
 			skipped++
@@ -680,7 +675,9 @@ func prependFlightRecorderFields(body string) string {
 		rows = append(rows, strings.Join(parts, " | "))
 	}
 
-	if len(rows) == 0 {
+	// Always emit the skipped marker if rows were skipped, even if no rows parsed.
+	// Only skip emitting the marker if nothing was skipped AND no rows parsed.
+	if len(rows) == 0 && skipped == 0 {
 		return body
 	}
 
@@ -691,9 +688,114 @@ func prependFlightRecorderFields(body string) string {
 		b.WriteString("\n")
 	}
 	if skipped > 0 {
-		b.WriteString(fmt.Sprintf("<!-- %d malformed rows skipped -->\n", skipped))
+		noun := "row"
+		if skipped > 1 {
+			noun = "rows"
+		}
+		b.WriteString(fmt.Sprintf("<!-- %d malformed %s skipped -->\n", skipped, noun))
 	}
 	b.WriteString("\n")
 	b.WriteString(body)
 	return b.String()
+}
+
+// splitFlightRecorderCells splits a flight recorder table row on pipes,
+// applying standard backslash escaping in a single pass. This handles:
+//   - \\ → literal backslash (next character is not treated as escaped)
+//   - \| → literal pipe (not a delimiter)
+//   - \ followed by anything else → both backslash and character, literally
+//   - bare | → cell delimiter
+func splitFlightRecorderCells(line string) []string {
+	var cells []string
+	var current strings.Builder
+	runes := []rune(line)
+
+	for i := 0; i < len(runes); i++ {
+		ch := runes[i]
+
+		// Handle backslash escaping
+		if ch == '\\' && i+1 < len(runes) {
+			next := runes[i+1]
+			if next == '\\' {
+				// \\ → literal backslash; skip the escape sequence and
+				// do not treat what follows as escaped
+				current.WriteRune('\\')
+				i++ // skip the second backslash
+			} else if next == '|' {
+				// \| → literal pipe (not a delimiter)
+				current.WriteRune('|')
+				i++ // skip the pipe
+			} else {
+				// \ followed by anything else → both characters literally
+				current.WriteRune('\\')
+				current.WriteRune(next)
+				i++ // skip the next character
+			}
+		} else if ch == '|' {
+			// Unescaped pipe: this is a cell delimiter
+			cells = append(cells, current.String())
+			current.Reset()
+		} else {
+			current.WriteRune(ch)
+		}
+	}
+
+	// Add the final cell (after the last pipe)
+	cells = append(cells, current.String())
+	return cells
+}
+
+// isSeparatorRow checks whether the given cells constitute a Markdown table
+// separator row. A separator row has at least 1 cell (after trimming leading
+// and trailing empty cells from the | delimiters), and each non-empty cell
+// (trimmed) consists only of dashes (-) and colons (:), with at least one dash.
+//
+// NOTE: This function performs structural validation regardless of position in
+// the file. A pipe-delimited line matching the separator pattern anywhere in the
+// content would be treated as a separator row. However, this is unreachable
+// against real FLIGHT-RECORDER.md journal content because the template uses
+// em-dash (—) for the Step cell on complete and blocked rows, not ASCII hyphens.
+// The limitation is documented rather than adding positional anchoring, which
+// would add complexity for an unreachable case.
+func isSeparatorRow(cells []string) bool {
+	// A valid table has at least 3 cells (leading empty, content, trailing empty).
+	if len(cells) < 3 {
+		return false
+	}
+
+	// Trim leading and trailing empty cells
+	start := 0
+	for start < len(cells) && strings.TrimSpace(cells[start]) == "" {
+		start++
+	}
+	end := len(cells) - 1
+	for end >= 0 && strings.TrimSpace(cells[end]) == "" {
+		end--
+	}
+
+	// After trimming empties, we need at least one content cell
+	if start > end {
+		return false
+	}
+
+	// Every remaining cell must be a valid separator: only - and :, with at least one -
+	for i := start; i <= end; i++ {
+		trimmed := strings.TrimSpace(cells[i])
+		if trimmed == "" {
+			return false // empty cell in the middle
+		}
+		hasDash := false
+		for _, r := range trimmed {
+			if r == '-' {
+				hasDash = true
+			} else if r != ':' {
+				return false // invalid character
+			}
+		}
+		if !hasDash {
+			return false // no dash at all
+		}
+	}
+
+	return true
 }

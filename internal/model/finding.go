@@ -22,8 +22,9 @@ type Finding struct {
 // CreateFindingRequest is the JSON body for POST /v1/findings.
 //
 // Status, approver, and date_approved are deliberately not accepted; they belong
-// to the human operator alone. Every finding is created with status='proposed'.
-// No agent may set these fields, and no route exists to update them.
+// to the human operator alone. If supplied in a request, they are silently dropped
+// (standard JSON unmarshalling of unrecognised keys). Every finding is created with
+// status='proposed'. No agent may set these fields, and no route exists to update them.
 type CreateFindingRequest struct {
 	FindingDate string `json:"finding_date" binding:"omitempty,max=64"`
 	Target      string `json:"target" binding:"omitempty,max=256"`

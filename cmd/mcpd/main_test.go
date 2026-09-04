@@ -167,7 +167,9 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 		// /v1/missions/:missionID, we check that a pattern exists; for
 		// literal paths, we check exact match. Note: server routes have
 		// leading slash (e.g., /v1/missions) but mcpd paths don't (e.g., v1/missions).
-		found := false
+		// Assert exactly one match to prevent future routes from accidentally
+		// satisfying the check with multiple ambiguous matches.
+		var matchingRoutes []string
 		for routeKey := range registeredRoutes {
 			// Route key is "METHOD:/path"
 			parts := strings.SplitN(routeKey, ":", 2)
@@ -192,14 +194,13 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 			// - parameter segments (starting with :) are present where mcpd
 			//   constructed literal IDs
 			if routeMatchesMCPDPath(serverPathNormalized, actualPath) {
-				found = true
-				break
+				matchingRoutes = append(matchingRoutes, routeKey)
 			}
 		}
 
-		if !found {
-			t.Fatalf("tool=%s: method=%s path=%q not found in server router. Registered routes: %v",
-				tc.toolName, tc.method, actualPath, registeredRoutes)
+		if len(matchingRoutes) != 1 {
+			t.Fatalf("tool=%s: method=%s path=%q matched %d server routes (want exactly 1). Matches: %v. Registered routes: %v",
+				tc.toolName, tc.method, actualPath, len(matchingRoutes), matchingRoutes, registeredRoutes)
 		}
 	}
 }

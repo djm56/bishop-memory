@@ -24,17 +24,13 @@ type Document struct {
 	// Title is the document heading (first H1 for Markdown) when present.
 	Title string `json:"title,omitempty"`
 
-	// Kind classifies the source. For Markdown, it is the top-level
-	// directory name under the memory root ("graph", "reference",
-	// "improvements", "agent-documents", "state", ...), or the
-	// special-cased "context" / "progress" for exactly
-	// tasks/<id>/{CONTEXT,PROGRESS}.md, or the fallback "document" for a
-	// bare top-level file. Every JSONL line gets the fixed kind "event".
-	// See internal/importer/importer.go kindFromPath for the exact
-	// mapping — this list is illustrative, not exhaustive, and "kind"
-	// values are never "active-task" or "event-stream" (those do not
-	// occur; state/ACTIVE-TASK.md's kind is "state", and JSONL lines
-	// are "event").
+	// Kind classifies the source document. For Markdown files, Kind is derived
+	// from the document's path relative to root by kindFromPath
+	// (see internal/importer/importer.go, the authoritative implementation).
+	// Specific filenames at specific nesting depths get their own Kind values
+	// (e.g. BRIEF.md, PROGRESS.md, DEBRIEF.md for missions/<id>/ paths), while
+	// everything else takes its top-level directory name as Kind. Bare top-level
+	// files fall back to Kind="document". Every JSONL line gets Kind="flight-recorder".
 	Kind string `json:"kind,omitempty"`
 
 	// Body is the full indexed content (Markdown body or JSONL line).

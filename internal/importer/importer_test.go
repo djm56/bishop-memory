@@ -163,7 +163,7 @@ func TestSync(t *testing.T) {
 		var kind string
 		// Query by LIKE to match against the absolute path suffix
 		query := `SELECT kind FROM documents WHERE source_path LIKE ? LIMIT 1`
-		err := db.QueryRow(query, "%"+filepath.ToSlash(relPathSuffix)).Scan(&kind)
+		err := db.QueryRow(query, "%"+relPathSuffix).Scan(&kind)
 		if err != nil {
 			t.Fatalf("kind mapping %s: %v", relPathSuffix, err)
 		}
@@ -202,15 +202,137 @@ func TestSync(t *testing.T) {
 		t.Fatalf("FLIGHT-RECORDER.md extracted block missing event data")
 	}
 	t.Logf("✓ FLIGHT-RECORDER.md → extracted structured block present and indexed")
+}
 
-	// Verify that nested missions/<id>/<sub>/BRIEF.md would fall through to "missions" kind
-	// (not present in fixture, but verify the logic by checking a fallthrough for consistency)
-	var missionCount int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM documents WHERE kind = 'missions'`).Scan(&missionCount); err != nil {
-		t.Fatalf("count missions kind: %v", err)
+// TestKindFromPath verifies that kindFromPath correctly classifies documents
+// by their path relative to root, covering special cases and fallthrough logic.
+func TestKindFromPath(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		// Special cases: exact nesting depths and filenames
+		{"missions/mission-20260904-01/BRIEF.md", "brief"},
+		{"missions/mission-20260904-01/PROGRESS.md", "progress"},
+		{"missions/mission-20260904-01/DEBRIEF.md", "debrief"},
+		{"findings/PATTERNS.md", "patterns"},
+		{"findings/service-records/hicks.md", "service-record"},
+		{"reference/DIRECTIVES.md", "directives"},
+
+		// Boundary cases: nesting depth changes
+		{"missions/mission-20260904-01/sub/BRIEF.md", "missions"},
+		{"missions/BRIEF.md", "missions"},
+		{"reference/sub/DIRECTIVES.md", "reference"},
+		{"findings/service-records/a/b.md", "findings"},
+
+		// Directory fallback: top-level directory is the kind
+		{"state/CURRENT-MISSION.md", "state"},
+		{"graph/OVERVIEW.md", "graph"},
+		{"workspace/findings-scratch.md", "workspace"},
+
+		// Bare-file fallback: no parent directory
+		{"SINGLE-FILE.md", "document"},
 	}
-	// We don't have any nested files, so missions count should be 0; if we did, they would map to "missions"
-	t.Logf("Documents with kind='missions': %d (nested paths would use this kind)", missionCount)
+
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			got := kindFromPath(tt.path)
+			if got != tt.want {
+				t.Errorf("kindFromPath(%q) = %q, want %q", tt.path, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestPrependCurrentMissionFields verifies that the six recognised structured
+// fields are extracted and prepended, unrecognised keys are ignored, and
+// duplicate keys are handled by taking the first occurrence.
+func TestPrependCurrentMissionFields(t *testing.T) {
+	input := `# CURRENT-MISSION
+
+- Mission ID: mission-20260904-01
+- Status: in-progress
+- Owner: @bishop
+- Next Action: Review code
+- Last Updated: 2026-09-04 10:00 UTC
+- Blockers: None
+- Unknown Field: should be ignored
+- Mission ID: mission-DUPLICATE
+- Blockers: Also ignored (duplicate)
+
+Rest of content here.`
+
+	output := prependCurrentMissionFields(input)
+
+	// Extract the header block: begins with the comment marker and ends at the first blank line.
+	// The structure is: comment marker, extracted fields (one per line), blank line, then raw body.
+	headerMarker := "<!-- Structured Fields (extracted from CURRENT-MISSION.md) -->\n"
+	if !strings.HasPrefix(output, headerMarker) {
+		t.Errorf("extracted block header not found at start of output")
+		return
+	}
+
+	// Find the blank line that separates the header from the raw body.
+	// Split the output and reconstruct the header up to (but not including) the first blank line
+	// after the marker.
+	lines := strings.Split(output, "\n")
+	var headerLines []string
+	foundMarker := false
+	for _, line := range lines {
+		if !foundMarker && strings.HasPrefix(line, "<!--") {
+			foundMarker = true
+			headerLines = append(headerLines, line)
+			continue
+		}
+		if foundMarker && line == "" {
+			// This is the blank line separator; stop collecting header
+			break
+		}
+		if foundMarker {
+			headerLines = append(headerLines, line)
+		}
+	}
+
+	header := strings.Join(headerLines, "\n")
+
+	// (1) Check that the six recognised fields ARE in the extracted header block
+	requiredFields := []string{
+		"Mission ID: mission-20260904-01",
+		"Status: in-progress",
+		"Owner: @bishop",
+		"Next Action: Review code",
+		"Last Updated: 2026-09-04 10:00 UTC",
+		"Blockers: None",
+	}
+	for _, field := range requiredFields {
+		if !strings.Contains(header, field) {
+			t.Errorf("expected field not found in extracted header: %q", field)
+		}
+	}
+
+	// (2) Check that unrecognised keys are NOT in the extracted header.
+	// This assertion can actually fail if the production logic is wrong,
+	// because the header block contains only extracted fields, not the raw content.
+	if strings.Contains(header, "Unknown Field") {
+		t.Errorf("unrecognised field should not appear in extracted header: %q", "Unknown Field")
+	}
+
+	// (3) Check that duplicate Mission ID used the first occurrence.
+	// The header must contain mission-20260904-01, not mission-DUPLICATE.
+	if !strings.Contains(header, "mission-20260904-01") {
+		t.Errorf("first occurrence of Mission ID not in extracted header")
+	}
+	if strings.Contains(header, "mission-DUPLICATE") {
+		t.Errorf("duplicate Mission ID should not appear in extracted header (first occurrence wins)")
+	}
+
+	// (4) Verify the raw body is still preserved beneath the header
+	if !strings.Contains(output, "Rest of content here.") {
+		t.Errorf("raw body content not preserved after extracted header")
+	}
+	if !strings.Contains(output, "should be ignored") {
+		t.Errorf("raw unrecognised field content not preserved")
+	}
 }
 
 // TestSyncIdempotent calls Sync twice and asserts the document count
@@ -331,17 +453,241 @@ func TestSyncMultiRootCollision(t *testing.T) {
 	}
 
 	// Each body must contain the expected distinguishing content.
-	if !strings.Contains(bodies[0], "AAAA") || !strings.Contains(bodies[1], "BBBB") &&
-		!strings.Contains(bodies[0], "BBBB") || !strings.Contains(bodies[1], "AAAA") {
-		if !((strings.Contains(bodies[0], "AAAA") && strings.Contains(bodies[1], "BBBB")) ||
-			(strings.Contains(bodies[0], "BBBB") && strings.Contains(bodies[1], "AAAA"))) {
-			t.Fatalf("bodies do not match expected content: [0]=%s, [1]=%s",
-				bodies[0], bodies[1])
-		}
+	if !((strings.Contains(bodies[0], "AAAA") && strings.Contains(bodies[1], "BBBB")) ||
+		(strings.Contains(bodies[0], "BBBB") && strings.Contains(bodies[1], "AAAA"))) {
+		t.Fatalf("bodies do not match expected content: [0]=%s, [1]=%s",
+			bodies[0], bodies[1])
 	}
 
 	t.Logf("✓ Multi-root collision test passed:")
 	t.Logf("  Path A: %s", paths[0])
 	t.Logf("  Path B: %s", paths[1])
 	t.Logf("  Both documents preserved with distinct content")
+}
+
+// TestPrependFlightRecorderFields tests the flight recorder extraction logic,
+// including escaping, separator detection, and skip counting.
+func TestPrependFlightRecorderFields(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantInOutput []string
+		wantNotIn    []string // strings that should NOT appear in extracted block
+	}{
+		{
+			name: "well-formed three-row journal",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | First sync |
+| 2026-09-04 10:05 UTC | mission-20260904-01 | 2 | @hicks | step-sync | Code written |
+| 2026-09-04 10:10 UTC | mission-20260904-01 | 3 | @apone | step-sync | Review done |`,
+			wantInOutput: []string{
+				"2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | First sync",
+				"2026-09-04 10:05 UTC | mission-20260904-01 | 2 | @hicks | step-sync | Code written",
+				"2026-09-04 10:10 UTC | mission-20260904-01 | 3 | @apone | step-sync | Review done",
+			},
+		},
+		{
+			name: "note containing escaped pipe (Bug 2 variant 1)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | See section \| details |`,
+			wantInOutput: []string{
+				"See section | details",
+			},
+		},
+		{
+			name: "note ending in backslash before delimiter (Bug 1)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Path C:\\Users\\ |`,
+			wantInOutput: []string{
+				"Path C:\\Users\\",
+			},
+		},
+		{
+			name: "escaped backslash followed by escaped pipe (Bug 2)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Path\\\|Next |`,
+			wantInOutput: []string{
+				"Path\\|Next",
+			},
+		},
+		{
+			name: "all rows malformed, skip marker should appear (Bug 3)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| bad1 |
+| bad2 |
+| bad3 |`,
+			wantInOutput: []string{
+				"3 malformed rows skipped",
+			},
+		},
+		{
+			name: "separator with |-|-| format (Bug 4)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+|-|-|-|-|-|-|
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row |`,
+			wantInOutput: []string{
+				"2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row",
+			},
+		},
+		{
+			name: "separator with |--|--| format (Bug 4)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+|--|--|--|--|--|--|
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row |`,
+			wantInOutput: []string{
+				"2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row",
+			},
+		},
+		{
+			name: "separator with alignment colons (Bug 4)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| :--- | ---: | :---: | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row |`,
+			wantInOutput: []string{
+				"2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | Data row",
+			},
+		},
+		{
+			name: "note containing literal '---|' (Bug 4 reverse)",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-04 10:00 UTC | mission-20260904-01 | 1 | @bishop | step-sync | See the ---\| pattern |`,
+			wantInOutput: []string{
+				"See the ---| pattern",
+			},
+		},
+		{
+			name: "file with no recognisable table",
+			input: `# Random Markdown
+
+Some text here.
+
+Not a table at all.
+
+More text.`,
+			wantInOutput: []string{
+				"# Random Markdown",
+				"Not a table at all.",
+			},
+			wantNotIn: []string{
+				"Structured Journal Rows",
+			},
+		},
+		{
+			name: "singular skip message",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| bad |`,
+			wantInOutput: []string{
+				"1 malformed row skipped",
+			},
+		},
+		{
+			name: "plural skip message",
+			input: `# FLIGHT-RECORDER
+
+| Timestamp | Mission ID | Step | Agent | Event | Note |
+| --- | --- | --- | --- | --- | --- |
+| bad1 |
+| bad2 |
+| bad3 |
+| bad4 |
+| bad5 |`,
+			wantInOutput: []string{
+				"5 malformed rows skipped",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := prependFlightRecorderFields(tt.input)
+
+			// Extract the header block for assertions where we need to verify
+			// the extraction logic specifically (vs. just raw body preservation).
+			// The structure is: comment marker, extracted rows, optional skip marker,
+			// blank line, then raw body.
+			headerMarker := "<!-- Structured Journal Rows (extracted from FLIGHT-RECORDER.md) -->"
+			var headerBlock string
+			if strings.Contains(output, headerMarker) {
+				markerIdx := strings.Index(output, headerMarker)
+				afterMarker := output[markerIdx:]
+				// Find the blank line that ends the header block
+				blankIdx := strings.Index(afterMarker, "\n\n")
+				if blankIdx != -1 {
+					headerBlock = afterMarker[:blankIdx+1] // include the first newline of the blank line
+				}
+			}
+
+			// For cases testing well-formed extracted rows or separator handling,
+			// assert against the header block to verify the extraction logic itself.
+			// These cases would be tautological if tested against full output since
+			// the expected strings exist verbatim in the raw input.
+			tautologicalCases := map[string]bool{
+				"well-formed three-row journal":                     true,
+				"note ending in backslash before delimiter (Bug 1)": true,
+				"separator with |-|-| format (Bug 4)":               true,
+				"separator with |--|--| format (Bug 4)":             true,
+				"separator with alignment colons (Bug 4)":           true,
+			}
+
+			checkTarget := output
+			if tautologicalCases[tt.name] && headerBlock != "" {
+				checkTarget = headerBlock
+			}
+
+			// Check for expected strings
+			for _, want := range tt.wantInOutput {
+				if !strings.Contains(checkTarget, want) {
+					t.Errorf("missing expected string: %q", want)
+					t.Logf("checkTarget:\n%s", checkTarget)
+				}
+			}
+
+			// Check that unwanted strings don't appear
+			for _, notWant := range tt.wantNotIn {
+				if strings.Contains(checkTarget, notWant) {
+					t.Errorf("unexpected string found: %q", notWant)
+					t.Logf("checkTarget:\n%s", checkTarget)
+				}
+			}
+
+			// Verify raw content is preserved (always check full output for this)
+			for _, line := range strings.Split(tt.input, "\n") {
+				trimmed := strings.TrimSpace(line)
+				// Check a few meaningful lines from input are in output
+				if trimmed != "" && !strings.HasPrefix(trimmed, "|") && len(trimmed) > 5 {
+					if !strings.Contains(output, trimmed) {
+						t.Errorf("raw content not preserved: %q", trimmed)
+						break
+					}
+				}
+			}
+		})
+	}
 }

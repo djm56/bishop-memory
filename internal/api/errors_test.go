@@ -45,8 +45,8 @@ func TestValidationError_PreservesHandAuthoredMessages(t *testing.T) {
 		{"missions.go status filter", &staticErr{"status must be one of: not-started, in-progress, blocked, complete"}, "status must be one of: not-started, in-progress, blocked, complete"},
 		{"search.go q required", &staticErr{"q is required"}, "q is required"},
 		{"search.go FTS5 syntax error (static, post-step-7a)", &staticErr{"invalid search query syntax"}, "invalid search query syntax"},
-		{"events.go event_type empty", &staticErr{"event_type must not be empty or whitespace-only"}, "event_type must not be empty or whitespace-only"},
-		{"events.go summary empty", &staticErr{"summary must not be empty or whitespace-only"}, "summary must not be empty or whitespace-only"},
+		{"flight_recorder.go event empty", &staticErr{"event must not be empty or whitespace-only"}, "event must not be empty or whitespace-only"},
+		{"flight_recorder.go note empty", &staticErr{"note must not be empty or whitespace-only"}, "note must not be empty or whitespace-only"},
 		{"flight_recorder.go root is filesystem root", &staticErr{"root must not be the filesystem root"}, "root must not be the filesystem root"},
 	}
 

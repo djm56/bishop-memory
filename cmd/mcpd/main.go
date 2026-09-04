@@ -25,12 +25,10 @@
 //   - BISHOP_HARNESS: harness / agent-family prefix used in the composed
 //     Agent identity (default "claude-code").
 //
-// This is the Step 18a implementation for mission-20260904-02 (Phase E,
-// bishop-memory MCP adapter vocabulary alignment). The 15 MCP tools are real HTTP proxies
-// with typed input schemas (matching the bishop-memory wire shapes) and
-// agent-identity composition for the two write tools that capture it
-// (flight_recorder_append, mission_step_record). See docs/migration-plan.md for the
-// plan.
+// The 15 MCP tools are real HTTP proxies with typed input schemas
+// (matching the bishop-memory wire shapes) and agent-identity composition
+// for the two write tools that capture it (flight_recorder_append,
+// mission_step_record). See docs/migration-plan.md for the plan.
 package main
 
 import (
@@ -54,7 +52,13 @@ import (
 // Default configuration values used when the corresponding env vars
 // are unset or empty.
 const (
-	defaultMemoryURL   = "http://127.0.0.1:8787"
+	defaultMemoryURL = "http://127.0.0.1:8787"
+	// defaultHarness is "claude-code" by deliberate design: this is the
+	// bishop-harness project, and claude-code is the intended default harness.
+	// The install scripts explicitly set the BISHOP_HARNESS env var (to
+	// "claude-code" or "opencode" depending on which installer ran), so the
+	// default is only reached by a bare invocation. For this project, the
+	// claude-code default is correct.
 	defaultHarness     = "claude-code"
 	defaultHTTPTimeout = 30 * time.Second
 
@@ -207,7 +211,7 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("New status, one of not-started|in-progress|blocked|complete. Omitted fields are unchanged."),
 			),
 			mcp.WithString("owner",
-				mcp.Description("New owner name. Omitted fields are unchanged."),
+				mcp.Description("New owner name, max 128 chars. Omitted fields are unchanged."),
 			),
 			mcp.WithString("outcome",
 				mcp.Description("Mission outcome, one of done|failed. Optional, independently settable from status. Omitted fields are unchanged."),
@@ -276,10 +280,13 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("Sub-agent name (the part AFTER the harness prefix), e.g. \"hicks\", \"bishop\". Composed with BISHOP_HARNESS to form the stored actor identity (\"<harness>:<agent>\"); the SERVER enforces a 128-char cap on that composed string (mission_steps.agent, per missionStepRequest's binding tag), so a long agent name combined with the harness prefix may be rejected as invalid. Required."),
 			),
 			mcp.WithString("status",
-				mcp.Description("Step status, one of pending|in-progress|done|failed, max 64 chars."),
+				mcp.Description("Step status, one of pending|in-progress|done|failed."),
 			),
 			mcp.WithString("notes",
 				mcp.Description("Free-form notes about the step, max 2000 chars."),
+			),
+			mcp.WithString("summary",
+				mcp.Description("Free-form summary of the step outcome, max 2000 chars. Independently set from notes: use summary for a brief result statement, notes for detailed observations."),
 			),
 			mcp.WithString("started_at",
 				mcp.Description("ISO-8601 start timestamp. Optional."),
@@ -348,7 +355,7 @@ func registerTools(s *server.MCPServer, c *client) {
 	// records are about), not the caller — it is NOT composed with BISHOP_HARNESS.
 	s.AddTool(
 		mcp.NewTool("service_record_list",
-			mcp.WithDescription("List service records (observations about agent performance and behaviour), newest-first. Optional agent filter to view only records about a specific crew member. Agents can CREATE records but cannot change an existing record's status or other attributes. Returns {\"service_records\":[...]} or a 404 if the agent name is unknown (search yields no matches)."),
+			mcp.WithDescription("List service records (observations about agent performance and behaviour), newest-first. Optional agent filter to view only records about a specific crew member (returns empty list if no matches). Agents can CREATE records only; no update route exists. Returns {\"service_records\":[...]}."),
 			mcp.WithString("agent",
 				mcp.Description("Optional filter: crew member name (the subject of the records, not the caller). Omit to list all service records regardless of agent."),
 			),
@@ -372,7 +379,7 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("Optional finding date, max 64 chars."),
 			),
 			mcp.WithString("target",
-				mcp.Description("Optional target entity (agent, skill, or tool concept name), max 256 chars. Passed through unchanged — not composed."),
+				mcp.Description("Optional target entity (agent, skill, or tool concept name), max 256 chars. Passed through unchanged — target names the subject the finding is ABOUT, not the caller. Not composed with harness prefix."),
 			),
 			mcp.WithString("rationale",
 				mcp.Description("Optional supporting rationale, max 2000 chars."),
@@ -495,6 +502,7 @@ type missionStepBody struct {
 	Agent     string  `json:"agent,omitempty"`
 	Status    string  `json:"status,omitempty"`
 	Notes     string  `json:"notes,omitempty"`
+	Summary   string  `json:"summary,omitempty"`
 	StartedAt *string `json:"started_at,omitempty"`
 	EndedAt   *string `json:"ended_at,omitempty"`
 }
@@ -506,8 +514,10 @@ type syncBody struct {
 }
 
 // createFindingBody is the JSON body for POST /v1/findings. It mirrors
-// model.CreateFindingRequest; status, approver, and date_approved are
-// deliberately omitted (agents never set them).
+// model.CreateFindingRequest. Status, approver, and date_approved are
+// deliberately omitted (agents never set them). Target names the subject
+// (the agent, skill, or tool concept the finding is about), not the actor
+// writing the finding.
 type createFindingBody struct {
 	FindingDate string `json:"finding_date,omitempty"`
 	Target      string `json:"target,omitempty"`
@@ -830,11 +840,12 @@ func makeMissionStepRecordHandler(c *client) func(ctx context.Context, req mcp.C
 		// Build the body; optional fields default to "" or are nil
 		// depending on whether the caller supplied them.
 		body := missionStepBody{
-			Step:   strings.TrimSpace(mcp.ParseString(req, "step", "")),
-			Phase:  strings.TrimSpace(mcp.ParseString(req, "phase", "")),
-			Agent:  agent,
-			Status: strings.TrimSpace(mcp.ParseString(req, "status", "")),
-			Notes:  mcp.ParseString(req, "notes", ""),
+			Step:    strings.TrimSpace(mcp.ParseString(req, "step", "")),
+			Phase:   strings.TrimSpace(mcp.ParseString(req, "phase", "")),
+			Agent:   agent,
+			Status:  strings.TrimSpace(mcp.ParseString(req, "status", "")),
+			Notes:   mcp.ParseString(req, "notes", ""),
+			Summary: mcp.ParseString(req, "summary", ""),
 		}
 		if raw, ok := req.GetArguments()["started_at"]; ok {
 			s := fmt.Sprint(raw)
@@ -910,7 +921,7 @@ func makeMissionStepsListHandler(c *client) func(ctx context.Context, req mcp.Ca
 			return mcp.NewToolResultError("mission_steps_list: `id` is required and must not be empty/whitespace-only"), nil
 		}
 		if isDotSegment(id) {
-			return mcp.NewToolResultError(`mission_steps_list: "id" must not be "." or ".." — that collapses to the list route instead of a single-mission lookup`), nil
+			return mcp.NewToolResultError(`mission_steps_list: "id" must not be "." or ".." — that collapses the joined path onto an unintended route`), nil
 		}
 
 		u, err := url.Parse(c.baseURL)
@@ -934,8 +945,7 @@ func makeMissionStepsListHandler(c *client) func(ctx context.Context, req mcp.Ca
 //
 // The optional status filter validates against the schema enum: proposed, approved,
 // applied, rejected, retired, superseded. An out-of-vocabulary value produces a
-// clean validation failure (400 from the server), matching how mission_list handles
-// its own status filter.
+// clean validation failure (400 from the server).
 func makeFindingListHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		u, err := url.Parse(c.baseURL)
@@ -1031,6 +1041,11 @@ func makeServiceRecordListHandler(c *client) func(ctx context.Context, req mcp.C
 // Every finding is created with status='proposed', and advancing that status
 // belongs to the human operator alone — the server has no write path that sets them
 // and there is no update route.
+//
+// finding_append passes the target name through UNCHANGED. Target names the subject
+// of the finding (what it is about), not the writer — it is data about a subject,
+// not actor attribution. The field name is identical to those that DO compose
+// with harness prefix, so this comment prevents an oversight.
 func makeFindingAppendHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		suggestion := strings.TrimSpace(mcp.ParseString(req, "suggestion", ""))
@@ -1114,7 +1129,7 @@ func makePatternAppendHandler(c *client) func(ctx context.Context, req mcp.CallT
 // being recorded about), NOT the actor writing it. Unlike flight_recorder_append
 // and mission_step_record which compose "<harness>:<agent>" to capture the actor,
 // service_record_append passes the agent name through UNCHANGED. This is because
-// service_records/<agent-name>.md is keyed by the subject's name, not the writer.
+// findings/service-records/<agent-name>.md is keyed by the subject's name, not the writer.
 // If the field were composed, every record would file under "claude-code:hicks"
 // and records would stop matching the files they mirror. The field name is
 // identical to those that DO compose, so this comment prevents an oversight.

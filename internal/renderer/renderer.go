@@ -1,4 +1,4 @@
-// Package renderer emits Markdown / JSONL views (e.g. CURRENT-MISSION.md,
+// Package renderer will emit Markdown / JSONL views (e.g. CURRENT-MISSION.md,
 // FLIGHT-RECORDER.md) from the SQLite-backed state so older agent
 // runtimes that read files directly keep working during the Phase 3
 // transition.

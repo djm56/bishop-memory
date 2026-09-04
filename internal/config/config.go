@@ -19,7 +19,7 @@ import (
 type Config struct {
 	// HTTPHost is the interface bishop-memory's HTTP listener binds
 	// to. Defaults to loopback-only ("127.0.0.1") because this service
-	// has NO authentication of any kind: every task/event endpoint is
+	// has NO authentication of any kind: every endpoint is
 	// open read/write to any caller that can reach it, and
 	// POST /v1/documents/sync accepts a caller-supplied filesystem
 	// root. README.md and docs/api-contract.md both describe

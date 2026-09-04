@@ -30,7 +30,7 @@ func Open(path string) (*sql.DB, error) {
 	// without running `make init-db` first.
 	//
 	// Step 4 review fix (Review A, SUGGESTION 4): 0o700 rather than the
-	// previous 0o755 — the database holds task/event content that may
+	// previous 0o755 — the database holds mission data that may
 	// be worth restricting to the owner on a shared machine. The SQLite
 	// file itself (created by the driver on first write, not by this
 	// function) still inherits the process umask; there is no portable

@@ -1,6 +1,9 @@
 # --- Go build artifacts ---
 # Default binary name (when running `go build` without -o).
 /bishop-memory
+# Per-command build binaries (from `go build ./cmd/memoryd` etc. in module root).
+/memoryd
+/mcpd
 # Everything the Makefile's `build` and `dist-linux*` targets produce
 # (bin/memoryd, bin/memoryd-linux-amd64, bin/memoryd-linux-arm64, and
 # any future platform/arch this project adds a dist-* target for) —
@@ -45,12 +48,13 @@ data/*.sqlite-shm
 # throwaway SQLite database, but both live under t.TempDir() (an
 # OS-managed temp directory outside this repo, removed automatically
 # when the test finishes) — nothing it writes ever lands inside this
-# tree, so no dedicated ignore rule is needed for it. Verified empirically
-# (task-20260821-02 step 6, Job 5): a full `go build ./... && make
-# dist-linux && go vet ./... && gofmt -l . && go test ./... -count=1 &&
-# go test -race ./... -count=1` run against a scratch git-initialized
-# copy of this tree left `git status --porcelain` reporting only the
-# real source tree — no stray binary or database file.
+# tree, so no dedicated ignore rule is needed for it.
+#
+# WARNING: this test does NOT exercise `go build ./cmd/...` in the module
+# root. Manual `go build ./cmd/memoryd` and `go build ./cmd/mcpd` writes
+# binaries to the module root, which are now covered by the explicit
+# /memoryd and /mcpd rules above. A full build-all-commands verification
+# must clean those binaries after building.
 
 # --- Editor / OS scratch ---
 .DS_Store

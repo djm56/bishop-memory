@@ -24,10 +24,6 @@ import (
 // counterpart is declared until one exists to consume it.
 var missionStatuses = []string{"not-started", "in-progress", "blocked", "complete"}
 
-// stepStatuses is the valid status values for mission steps.
-// Validates the optional status field on step-creation requests.
-var stepStatuses = []string{"pending", "in-progress", "done", "failed"}
-
 // isOneOf reports whether value is present in allowed.
 func isOneOf(value string, allowed []string) bool {
 	for _, v := range allowed {
@@ -177,7 +173,7 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 				(sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE ||
 					sqliteErr.Code() == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY) {
 				c.JSON(http.StatusConflict, gin.H{
-					"error": "task could not be created",
+					"error": "mission could not be created",
 				})
 				return
 			}
@@ -216,6 +212,16 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 // "complete" at one step and MISSION-ARCHIVE.md records the outcome at a later
 // one — so a mission may legitimately sit at status="complete" with outcome=NULL
 // for a period. This API mirrors that behaviour.
+//
+// CLEARING SEMANTICS for owner, next_action, blockers (CONV-030):
+// These fields use COALESCE(?, existing_value) after trimming, so:
+//   - Omitting a field in the PATCH leaves it unchanged (nil → skip via omitempty)
+//   - Explicitly sending "" (empty string) stores "" in the database
+//
+// There is no update path back to SQL NULL once a value is set — only another
+// value or an empty string. This limitation is accepted; the documented contract
+// specifies empty-string clearing as the mechanism, and changing COALESCE semantics
+// this late would alter a documented contract for no operational need.
 func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		missionID := c.Param("missionID")
@@ -408,11 +414,23 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		// same defect class (should be NULL, not empty string). String fields
 		// are handled via nullIfEmpty in the INSERT; pointers require explicit
 		// nil conversion.
-		if request.StartedAt != nil && strings.TrimSpace(*request.StartedAt) == "" {
-			request.StartedAt = nil
+		// Agent and Summary are trimmed like other free-form fields (lines 398-402);
+		// StartedAt and EndedAt are also trimmed to match that consistency.
+		if request.StartedAt != nil {
+			trimmed := strings.TrimSpace(*request.StartedAt)
+			if trimmed == "" {
+				request.StartedAt = nil
+			} else {
+				request.StartedAt = &trimmed
+			}
 		}
-		if request.EndedAt != nil && strings.TrimSpace(*request.EndedAt) == "" {
-			request.EndedAt = nil
+		if request.EndedAt != nil {
+			trimmed := strings.TrimSpace(*request.EndedAt)
+			if trimmed == "" {
+				request.EndedAt = nil
+			} else {
+				request.EndedAt = &trimmed
+			}
 		}
 
 		tx, err := db.BeginTx(c.Request.Context(), nil)
