@@ -17,6 +17,15 @@ type FlightRecorderEntry struct {
 	// events that do not belong to a single mission).
 	MissionID string `json:"mission_id,omitempty"`
 
+	// Step is the harness step label (e.g., "4a", "—"), present on journal rows
+	// (step-sync, complete, blocked) and null on handler-emitted audit rows.
+	Step *string `json:"step,omitempty"`
+
+	// OccurredAt is the caller-supplied event timestamp from the harness
+	// (authoritative timestamp), separate from CreatedAt which is the row
+	// insert time. Null on handler-emitted audit rows.
+	OccurredAt *string `json:"occurred_at,omitempty"`
+
 	// Event is a dotted discriminator (mission.created, mission.updated,
 	// mission.step, agent.*, improvement.*).
 	Event string `json:"event"`
@@ -46,12 +55,22 @@ type AppendFlightRecorderRequest struct {
 	// and does not link to a mission row.
 	MissionID string `json:"mission_id,omitempty"`
 
+	// Step is the harness step label (e.g., "4a", "—"). Optional; null
+	// on handler-emitted audit rows.
+	Step string `json:"step" binding:"omitempty,max=16"`
+
 	// Event is required and bounded to 64 chars (the discriminator
 	// is short by convention: "mission.created", "agent.heartbeat", ...).
 	Event string `json:"event" binding:"required,max=64"`
 
 	// Note is required and bounded to 2000 chars.
 	Note string `json:"note" binding:"required,max=2000"`
+
+	// OccurredAt is the caller-supplied event timestamp (expected format:
+	// YYYY-MM-DD HH:MM UTC). No format validation is applied; this field
+	// is free-form to match the unvalidated timestamp fields started_at
+	// and ended_at already in the schema. Null on handler-emitted audit rows.
+	OccurredAt string `json:"occurred_at" binding:"omitempty,max=64"`
 
 	// Agent is the actor attribution for the event. Optional so system /
 	// non-agent callers can still post events without naming an agent.

@@ -50,6 +50,8 @@ func appendFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 		// in the composed "<harness>:<agent>" string does not leak
 		// through; the flight_recorder.agent column is a free-form TEXT.
 		request.Agent = strings.TrimSpace(request.Agent)
+		request.Step = strings.TrimSpace(request.Step)
+		request.OccurredAt = strings.TrimSpace(request.OccurredAt)
 
 		// Post-trim non-empty guard: a JSON body of {"event":"   "}
 		// (or {"note":""}) passes binding:"required" because the field
@@ -104,11 +106,13 @@ func appendFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 		result, err := tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO flight_recorder (
-				mission_id, event, note, agent
-			) VALUES (?, ?, ?, ?)`,
+				mission_id, step, event, note, occurred_at, agent
+			) VALUES (?, ?, ?, ?, ?, ?)`,
 			nullIfEmpty(request.MissionID),
+			nullIfEmpty(request.Step),
 			request.Event,
 			request.Note,
+			nullIfEmpty(request.OccurredAt),
 			nullIfEmpty(request.Agent),
 		)
 		if err != nil {
@@ -157,7 +161,7 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		query := `
-			SELECT id, mission_id, event, note, agent, created_at
+			SELECT id, mission_id, step, occurred_at, event, note, agent, created_at
 			FROM flight_recorder
 		`
 		args := []any{}
@@ -182,11 +186,15 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 		for rows.Next() {
 			var entry model.FlightRecorderEntry
 			var missionID sql.NullString
+			var step sql.NullString
+			var occurredAt sql.NullString
 			var agent sql.NullString
 
 			if err := rows.Scan(
 				&entry.ID,
 				&missionID,
+				&step,
+				&occurredAt,
 				&entry.Event,
 				&entry.Note,
 				&agent,
@@ -196,6 +204,12 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 				return
 			}
 			entry.MissionID = missionID.String
+			if step.Valid {
+				entry.Step = &step.String
+			}
+			if occurredAt.Valid {
+				entry.OccurredAt = &occurredAt.String
+			}
 			entry.Agent = agent.String
 			entries = append(entries, entry)
 		}

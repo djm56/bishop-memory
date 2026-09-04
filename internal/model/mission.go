@@ -19,6 +19,7 @@ type CreateMissionRequest struct {
 	ID         string `json:"id" binding:"required,max=128"`
 	Title      string `json:"title" binding:"required,max=500"`
 	Status     string `json:"status" binding:"omitempty,oneof=not-started in-progress blocked complete"`
+	Owner      string `json:"owner" binding:"omitempty,max=128"`
 	Priority   string `json:"priority" binding:"omitempty,oneof=low normal high urgent"`
 	NextAction string `json:"next_action" binding:"omitempty,max=2000"`
 	Blockers   string `json:"blockers" binding:"omitempty,max=2000"`
@@ -26,6 +27,8 @@ type CreateMissionRequest struct {
 
 type UpdateMissionRequest struct {
 	Status     *string `json:"status" binding:"omitempty,oneof=not-started in-progress blocked complete"`
+	Owner      *string `json:"owner" binding:"omitempty,max=128"`
+	Outcome    *string `json:"outcome" binding:"omitempty,oneof=done failed"`
 	Priority   *string `json:"priority" binding:"omitempty,oneof=low normal high urgent"`
 	NextAction *string `json:"next_action" binding:"omitempty,max=2000"`
 	Blockers   *string `json:"blockers" binding:"omitempty,max=2000"`

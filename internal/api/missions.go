@@ -153,11 +153,12 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO missions (
-				id, title, status, priority, next_action, blockers
-			) VALUES (?, ?, ?, ?, ?, ?)`,
+				id, title, status, owner, priority, next_action, blockers
+			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			request.ID,
 			request.Title,
 			request.Status,
+			nullIfEmpty(request.Owner),
 			request.Priority,
 			nullIfEmpty(request.NextAction),
 			nullIfEmpty(request.Blockers),
@@ -209,6 +210,12 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// updateMissionHandler handles PATCH /v1/missions/:missionID. The outcome field is
+// independently settable and is NOT required when status becomes "complete".
+// The harness sets them at different moments — CURRENT-MISSION.md goes to
+// "complete" at one step and MISSION-ARCHIVE.md records the outcome at a later
+// one — so a mission may legitimately sit at status="complete" with outcome=NULL
+// for a period. This API mirrors that behaviour.
 func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		missionID := c.Param("missionID")
@@ -230,6 +237,10 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 		// pattern depends on for "clear the field" semantics (CONV-030)
 		// — we are not replacing an absent value with anything, only
 		// normalising a present one before it is written.
+		if request.Owner != nil {
+			trimmed := strings.TrimSpace(*request.Owner)
+			request.Owner = &trimmed
+		}
 		if request.NextAction != nil {
 			trimmed := strings.TrimSpace(*request.NextAction)
 			request.NextAction = &trimmed
@@ -251,6 +262,8 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 			`UPDATE missions
 			 SET
 				status = COALESCE(?, status),
+				owner = COALESCE(?, owner),
+				outcome = COALESCE(?, outcome),
 				priority = COALESCE(?, priority),
 				next_action = COALESCE(?, next_action),
 				blockers = COALESCE(?, blockers),
@@ -261,6 +274,8 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 				updated_at = CURRENT_TIMESTAMP
 			 WHERE id = ?`,
 			request.Status,
+			request.Owner,
+			request.Outcome,
 			request.Priority,
 			request.NextAction,
 			request.Blockers,
@@ -346,8 +361,11 @@ func nullIfEmpty(value string) any {
 // (agents register dynamically) and status must be one of the validated
 // step-status values to match the database CHECK constraint.
 type missionStepRequest struct {
+	Step      string  `json:"step" binding:"omitempty,max=16"`
+	Phase     string  `json:"phase" binding:"omitempty,max=64"`
 	Agent     string  `json:"agent" binding:"omitempty,max=128"`
 	Status    string  `json:"status" binding:"omitempty,oneof=pending in-progress done failed"`
+	Notes     string  `json:"notes" binding:"omitempty,max=2000"`
 	Summary   string  `json:"summary" binding:"omitempty,max=2000"`
 	StartedAt *string `json:"started_at,omitempty"`
 	EndedAt   *string `json:"ended_at,omitempty"`
@@ -376,8 +394,11 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		// free-form so we don't enforce non-empty here, but we DO strip
 		// surrounding whitespace so "opencode " and "opencode" are stored
 		// identically and a stray " " agent name doesn't sneak through.
+		request.Step = strings.TrimSpace(request.Step)
+		request.Phase = strings.TrimSpace(request.Phase)
 		request.Agent = strings.TrimSpace(request.Agent)
 		request.Status = strings.TrimSpace(request.Status)
+		request.Notes = strings.TrimSpace(request.Notes)
 		request.Summary = strings.TrimSpace(request.Summary)
 
 		// Step 4 fix (CRITICAL 2): convert empty optional pointer fields to nil
@@ -423,11 +444,14 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO mission_steps (
-				mission_id, agent, status, started_at, ended_at, summary
-			) VALUES (?, ?, ?, ?, ?, ?)`,
+				mission_id, step, phase, agent, status, notes, started_at, ended_at, summary
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			missionID,
+			nullIfEmpty(request.Step),
+			nullIfEmpty(request.Phase),
 			nullIfEmpty(request.Agent),
 			nullIfEmpty(request.Status),
+			nullIfEmpty(request.Notes),
 			request.StartedAt,
 			request.EndedAt,
 			nullIfEmpty(request.Summary),
@@ -459,5 +483,115 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 			"mission_id": missionID,
 			"recorded":   true,
 		})
+	}
+}
+
+// listMissionStepsHandler handles GET /v1/missions/:missionID/steps. It returns
+// all steps for a mission in PROGRESS.md order (insertion order, ORDER BY id ASC).
+// Returns 404 if the mission does not exist.
+func listMissionStepsHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		missionID := c.Param("missionID")
+
+		tx, err := db.BeginTx(c.Request.Context(), nil)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		defer tx.Rollback()
+
+		// Verify the mission exists so an unknown mission yields a clean 404.
+		var exists int
+		err = tx.QueryRowContext(
+			c.Request.Context(),
+			`SELECT 1 FROM missions WHERE id = ?`,
+			missionID,
+		).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "mission not found",
+			})
+			return
+		}
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+
+		rows, err := tx.QueryContext(
+			c.Request.Context(),
+			`SELECT id, mission_id, step, phase, agent, status, notes, started_at, ended_at, summary, created_at
+			 FROM mission_steps
+			 WHERE mission_id = ?
+			 ORDER BY id ASC`,
+			missionID,
+		)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		defer rows.Close()
+
+		steps := make([]model.MissionStep, 0)
+
+		for rows.Next() {
+			var step model.MissionStep
+			var stepVal sql.NullString
+			var phaseVal sql.NullString
+			var agentVal sql.NullString
+			var statusVal sql.NullString
+			var notesVal sql.NullString
+			var summaryVal sql.NullString
+
+			if err := rows.Scan(
+				&step.ID,
+				&step.MissionID,
+				&stepVal,
+				&phaseVal,
+				&agentVal,
+				&statusVal,
+				&notesVal,
+				&step.StartedAt,
+				&step.EndedAt,
+				&summaryVal,
+				&step.CreatedAt,
+			); err != nil {
+				internalError(c, err)
+				return
+			}
+
+			if stepVal.Valid {
+				step.Step = &stepVal.String
+			}
+			if phaseVal.Valid {
+				step.Phase = &phaseVal.String
+			}
+			if agentVal.Valid {
+				step.Agent = &agentVal.String
+			}
+			if statusVal.Valid {
+				step.Status = &statusVal.String
+			}
+			if notesVal.Valid {
+				step.Notes = &notesVal.String
+			}
+			if summaryVal.Valid {
+				step.Summary = &summaryVal.String
+			}
+
+			steps = append(steps, step)
+		}
+
+		if err := rows.Err(); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"steps": steps})
 	}
 }

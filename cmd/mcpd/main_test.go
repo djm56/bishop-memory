@@ -123,10 +123,10 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 	// slash in the base) returns the path without a leading slash, but
 	// url.URL.String() includes the slash; we compare url.URL.Path values.
 	mcpdPaths := []struct {
-		toolName   string
-		method     string
-		pathParts  []string // arguments to url.JoinPath
-		wantPath   string   // expected final url.Path (no leading slash)
+		toolName  string
+		method    string
+		pathParts []string // arguments to url.JoinPath
+		wantPath  string   // expected final url.Path (no leading slash)
 	}{
 		{"memory_search", "GET", []string{"v1", "memory", "search"}, "v1/memory/search"},
 		{"task_list", "GET", []string{"v1", "missions"}, "v1/missions"},

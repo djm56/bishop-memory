@@ -33,6 +33,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 			missions.POST("", createMissionHandler(db))
 			missions.GET("/:missionID", getMissionHandler(db))
 			missions.PATCH("/:missionID", updateMissionHandler(db))
+			missions.GET("/:missionID/steps", listMissionStepsHandler(db))
 			missions.POST("/:missionID/steps", createMissionStepHandler(db))
 		}
 
