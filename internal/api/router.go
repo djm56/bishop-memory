@@ -40,6 +40,20 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		v1.POST("/flight-recorder", appendFlightRecorderHandler(db))
 		v1.GET("/flight-recorder", listFlightRecorderHandler(db))
 
+		// Knowledge surface: findings, patterns, service records, and directives.
+		v1.GET("/findings", listFindingsHandler(db))
+		v1.POST("/findings", createFindingHandler(db))
+
+		v1.GET("/patterns", listPatternsHandler(db))
+		v1.POST("/patterns", createPatternHandler(db))
+
+		v1.GET("/service-records", listServiceRecordsHandler(db))
+		v1.POST("/service-records", createServiceRecordHandler(db))
+
+		v1.GET("/directives", listDirectivesHandler(db))
+		// Note: No POST, PATCH, or DELETE for directives. Directives are read-only
+		// by design — agents must have no mechanism to write a directive.
+
 		memory := v1.Group("/memory")
 		{
 			memory.GET("/search", searchMemoryHandler(db))
