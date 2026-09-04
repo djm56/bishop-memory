@@ -27,7 +27,7 @@
 # Every hardening directive below carries its own justification comment
 # so a future maintainer does not have to reverse-engineer intent before
 # touching this file (a hardening directive nobody can explain gets
-# removed by the next maintainer — see this task's brief).
+# removed by the next maintainer).
 
 [Unit]
 Description=bishop-memory — locally-bound memory service for AI agents
@@ -132,9 +132,9 @@ ProtectKernelLogs=true
 # never manages cgroups (that is systemd's own job).
 ProtectControlGroups=true
 # ProtectClock: blocks changing the system clock. This service reads
-# timestamps for its own event/task records; it never has a reason to
-# set the clock, and blocking it closes off a timestamp-tampering vector
-# for a compromised process.
+# timestamps for missions, mission steps, and flight-recorder rows; it never
+# has a reason to set the clock, and blocking it closes off a
+# timestamp-tampering vector for a compromised process.
 ProtectClock=true
 
 # --- Hardening: privilege / capability surface ---------------------------
@@ -188,7 +188,7 @@ IPAddressDeny=any
 IPAddressAllow=127.0.0.0/8 ::1/128
 # SystemCallFilter: systemd's own curated "@system-service" allow-list
 # (ordinary daemon behaviour — file I/O, networking, threading, time)
-# rather than a hand-picked list this task would have to maintain.
+# rather than maintaining a hand-picked list.
 # SystemCallErrorNumber=EPERM makes a denied syscall fail cleanly
 # (visible in logs) instead of killing the process outright.
 SystemCallFilter=@system-service

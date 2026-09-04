@@ -67,24 +67,24 @@ comment density will be asked to add it before merge.
 
 ## Deliberate stubs — do not "helpfully" implement these
 
-Four files are intentionally incomplete. Each says so in its own
+Two files are intentionally incomplete. Each says so in its own
 package comment, but it is worth stating plainly here too, because a
 contributor skimming the tree can otherwise mistake "empty" for
 "forgotten":
 
-- `internal/store/tasks.go`
-- `internal/store/events.go`
-- `internal/store/documents.go`
+- `internal/store/missions.go`
 - `internal/renderer/renderer.go`
 
 These are Phase 2/Phase 3 groundwork placeholders (see each file's own
-`// TODO: implement in Phase 2/3` comment and `README.md`'s roadmap
-section). The current architecture deliberately keeps the SQL inline
-in `internal/api/*.go` for Phase 2; moving it into typed store helpers,
-and building the Markdown/JSONL renderer, are separately-scoped future
-phases with their own design decisions still to be made. **Do not
-implement these as part of an unrelated change** — if you have a real
-need to move this work forward, open that as its own scoped
+`// TODO: implement in Phase 2/3` comment and `docs/migration-plan.md`'s
+completion record). The current architecture deliberately keeps the SQL
+inline in `internal/api/*.go`; moving it into typed store helpers, and
+building the Markdown/JSONL renderer (for bidirectional sync), are
+separately-scoped future work with their own design decisions still to
+be made. The renderer in particular was deferred — the service
+intentionally remains read-only to avoid bidirectional sync complexity.
+**Do not implement these as part of an unrelated change** — if you have a
+real need to move this work forward, open that as its own scoped
 change/discussion first rather than folding it into a fix for
 something else.
 

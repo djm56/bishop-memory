@@ -1,6 +1,6 @@
 ---
 name: memory
-description: bishop-memory — shared central memory server (localhost:8787) for tasks, events, and document search. Use the 8 bishop-memory MCP tools instead of writing Markdown/JSONL files locally.
+description: bishop-memory — shared central memory server (localhost:8787) for missions, findings, service records, and document search. Use the 15 bishop-memory MCP tools instead of writing Markdown files locally.
 license: MIT
 compatibility: opencode
 metadata:
@@ -12,25 +12,25 @@ metadata:
 # bishop-memory — shared central memory
 
 bishop-memory is the project's shared central memory service. It runs as a
-local HTTP daemon (`memoryd`) on `http://127.0.0.1:8787` and stores tasks,
-events, task runs, agents, improvements, and imported documents in a single
-SQLite database with an FTS5 search index.
+local HTTP daemon (`memoryd`) on `http://127.0.0.1:8787` and stores missions,
+flight-recorder events, findings, patterns, service records, and imported
+documents in a single SQLite database with an FTS5 search index.
 
 This skill documents how to talk to bishop-memory from an opencode sub-agent
-via the MCP adapter (`mcpd`), how the 8 tools compose, and the agent-identity
-convention that ties audit events back to the calling sub-agent.
+via the MCP adapter (`mcpd`), what the 15 tools do, and the agent-identity
+convention that ties write events back to the calling sub-agent.
 
 ## What bishop-memory is
 
 - **Local HTTP service**, not a remote API. Bound to `127.0.0.1:8787`.
 - **SQLite + FTS5** store; `modernc.org/sqlite` driver (CGo-free).
-- **Append-only audit log** of every state mutation (task created/updated,
-  event appended, run recorded, document imported).
-- **FTS5 document index** over imported Markdown/JSONL so the crew can search
-  prior knowledge without re-reading the filesystem.
-- **Replaces file-based memory** (`ACTIVE-TASK.md`, `EVENT-LOG.jsonl`,
-  `EVENT-STREAM.jsonl`) — the API is the source of truth, files are a Phase 3
-  read-only mirror.
+- **Append-only audit journal** (flight-recorder) of every state mutation.
+- **FTS5 document index** over imported Markdown so the crew can search prior
+  knowledge without re-reading the filesystem.
+- **Mission tracker** with status (`not-started`/`in-progress`/`blocked`/`complete`)
+  and outcome (`done`/`failed`).
+- **Findings ledger** for observations and improvements (status set by operator only).
+- **Service records** for observations about agent performance and behaviour.
 
 ## The MCP adapter — `mcpd`
 
@@ -45,70 +45,135 @@ registers `mcpd` under the `mcp.bishop-memory` key in `opencode.json` with:
 mcpd reads `BISHOP_HARNESS` to compose agent identity (see below). `BISHOP_MEMORY_URL`
 defaults to `http://127.0.0.1:8787` if unset.
 
-## The 8 MCP tools — when to call
+## The 15 MCP tools
 
-| Tool | When to call |
-|------|--------------|
-| `memory_search` | Before coding, search imported documents (Markdown/JSONL) for relevant context — same way you consult graphify. |
-| `task_list` | When you need an up-to-date view of all tasks and their status/priority. |
-| `task_get` | When you need one specific task by ID (the orchestrator hands you the ID in the brief). |
-| `task_create` | When the orchestrator (or your brief) tells you to create a new durable task record. |
-| `task_update` | When status / priority / next_action / blockers change on an existing task. |
-| `event_append` | When something durable happened that should be in the audit log (task.*, agent.*, improvement.*). |
-| `task_run_record` | When you (or another sub-agent) completed an attempt against a task. |
-| `documents_sync` | When the operator (or the orchestrator) explicitly asks to re-import the memory tree. |
+### Read tools (search and retrieval — no identity required)
 
-All 8 tools return MCP text. Read tools (`memory_search`, `task_list`,
-`task_get`) return JSON result bodies. Write tools (`task_create`,
-`task_update`, `event_append`, `task_run_record`, `documents_sync`) return
-a small `{"id":...,"created":true}` / `{"appended":true,"id":...}` /
-`{"recorded":true,"task_id":...}` / `{"root":...,"synced":true}` envelope.
+| Tool | Purpose |
+|------|---------|
+| `memory_search` | Search imported documents (FTS5) by query string. Returns ranked hits with snippets. Optional cap on results (the server caps at 20). Currently advisory only — the server always returns its internal LIMIT 20. |
+| `mission_list` | List all missions, newest-updated first. |
+| `mission_get` | Get a single mission by ID. |
+| `mission_steps_list` | List mission steps (PROGRESS.md rows) for a mission. |
+| `finding_list` | List findings, newest-first. Optional status filter (`proposed`, `approved`, `applied`, `rejected`, `retired`, `superseded`). |
+| `pattern_list` | List advisory patterns, newest-first. Patterns are non-binding; directives win on any conflict. |
+| `service_record_list` | List service records (observations about agent performance), newest-first. Optional agent filter by subject name. |
 
-## Agent identity convention
+### Write tools (state mutations — agent identity on exactly 2)
 
-Two of the write tools (`event_append`, `task_run_record`) capture actor
-identity. The other write tools (`task_create`, `task_update`,
-`documents_sync`) do **not** capture an agent this round — they are
-plan-frozen from Phase 2 and adding an agent field is a documented
-deferral.
+| Tool | Purpose | Identity |
+|------|---------|----------|
+| `mission_create` | Create a new mission. | None (plan-frozen deferral) |
+| `mission_update` | Update mission status/outcome/owner/priority/notes. | None (plan-frozen deferral) |
+| `flight_recorder_append` | Append an audit event. Actor is composed `<BISHOP_HARNESS>:<agent>`. | **YES** (actor) |
+| `mission_step_record` | Record a mission step attempt. Actor is composed `<BISHOP_HARNESS>:<agent>`. | **YES** (actor) |
+| `documents_sync` | Trigger document import from the memory root into the FTS5 index. | None (system action) |
+| `finding_append` | Append a finding to the findings ledger. Always created `proposed`. | None (status is operator-only) |
+| `pattern_append` | Append an advisory pattern. | None |
+| `service_record_append` | Record an observation about an agent's performance. | None (subject name only) |
 
-When you call a tool that captures identity, you must pass an `agent`
-argument. That argument is your **sub-agent name** (the part AFTER the
-harness prefix): `"orchestrator"`, `"junior-developer"`,
-`"senior-developer"`, `"code-reviewer"`, `"documentation-writer"`,
-`"research-specialist"`.
+## Agent identity convention — exactly 2 tools need it
 
-`mcpd` then composes the stored identity as `"<BISHOP_HARNESS>:<agent>"`:
+**Only `flight_recorder_append` and `mission_step_record` capture the actor.**
+They do this by composing `"<BISHOP_HARNESS>:<agent>"` and storing the composed
+identity on the audit trail.
 
-- opencode + orchestrator → `opencode:orchestrator`
-- opencode + junior-developer → `opencode:junior-developer`
+When you call one of these tools, pass an `agent` argument with your sub-agent
+name (the part AFTER the harness prefix). Crew members are: `bishop`, `hicks`,
+`vasquez`, `apone`, `lambert`.
 
-Two tools need it:
+Examples:
+- opencode + bishop → `opencode:bishop`
+- opencode + hicks → `opencode:hicks`
 
-- `event_append` — pass `agent: "<your-sub-agent-name>"`
-- `task_run_record` — pass `agent: "<your-sub-agent-name>"`
+**Identity composition failure mode:** Passing the composed identity
+(e.g., `"opencode:hicks"`) instead of just the agent name (e.g., `"hicks"`)
+causes records to be stored under the wrong identity — for example, all records
+under `service_record_append` tagged with `"opencode:hicks"` instead of
+`"hicks"` will not match filters searching for agent `hicks`, and the record
+files stop mirroring what the tools return. Compose identity on exactly these
+two tools by passing the sub-agent name alone.
 
-`task_create` and `task_update` have **NO agent param** this round. If you
-need actor attribution on a task mutation, capture it indirectly by
-making a surrounding `event_append` call (the orchestrator pattern).
+**Tools that capture agent identity:**
 
-`documents_sync` is a system trigger, not an agent action — no identity
-composition.
+- `flight_recorder_append` — pass `agent: "<sub-agent-name>"` (e.g. `"bishop"`, `"hicks"`)
+- `mission_step_record` — pass `agent: "<sub-agent-name>"` (e.g. `"hicks"`)
 
-## When to consult memory (before coding)
+**Tools that do NOT capture identity (or pass agent as subject, not actor):**
 
-Just like the graphify rule, before you start a coding task you should
-search bishop-memory for prior knowledge:
+- `mission_create` and `mission_update` — no agent param (plan-frozen).
+  If you need actor attribution on a mission mutation, record it indirectly
+  via a surrounding `flight_recorder_append` call.
+- `documents_sync` — system-triggered, no actor.
+- `finding_append` — no actor; findings are created `proposed` and status
+  changes belong to the human operator alone (no API write path exists
+  for status/approver/date_approved).
+- `pattern_append` — no actor.
+- `service_record_append` — `agent` argument names the **subject** (which crew
+  member the record is about), not the caller. Passed through unchanged to match
+  the filesystem service-records layout.
+- `service_record_list` — `agent` filter parameter names the **subject**, not
+  the caller. Passed through unchanged.
 
-1. **First check graphify** for code-level structure (the existing rule).
-2. **Then call `memory_search`** for higher-level context: prior tasks,
-   prior improvements, imported Markdown/JSONL notes, design rationale,
-   operator preferences.
-3. If `memory_search` returns hits, **read the top result before coding**
-   — it often short-circuits a "should I do X?" question with a precedent
-   set by an earlier task.
+## Finding status and approvals
 
-The orchestrator already does this. Sub-agents should too when the brief
+Findings are created with status `proposed`. Agents **cannot set or change**
+status, approver, or date_approved — these fields belong to the human operator.
+
+The `finding_list` tool lets you read findings at a specific status (`proposed`
+to see what's awaiting approval, `approved` to see binding findings, etc.).
+Advancing a finding's status from `proposed` to `approved` is done by the
+operator, not through the API.
+
+## Directives are read-only
+
+Directives (binding, human-ratified rules) are exposed via `memory_search` so
+agents can read the rules that bind them. There is **no write endpoint** and
+**no MCP write tool** for directives — they are too important to modify
+programmatically.
+
+## Mission vocabulary
+
+A mission has two independent fields:
+
+- **status**: one of `not-started`, `in-progress`, `blocked`, `complete`
+- **outcome**: one of `done`, `failed`, or null
+
+A mission can be `complete` with a null `outcome` while Bishop is still
+setting the outcome field (part of the closing sequence), so be prepared for
+missions at `complete` status to later gain an outcome.
+
+**Governance distinction**: `mission.outcome` is set by the harness during its
+closing sequence via `mission_update` — agents (including the primary agent
+Bishop) may call this to advance it. `finding.status`, by contrast, is never
+settable through the API by anyone; the operator advances it outside the
+service. Do not confuse the two fields' governance models.
+
+## Memory tree structure
+
+bishop-memory imports markdown and JSONL from your harness memory root:
+
+- `state/` — mission and flight-recorder state files
+- `missions/<mission-id>/` — mission briefs, progress, and debriefs
+- `findings/` — findings ledger
+- `findings/service-records/` — service records keyed by agent name
+- `reference/` — directives and reference material
+- `workspace/` — scratch and working documents during a mission
+
+All are indexed by FTS5; `memory_search` returns hits across the full tree.
+
+## When to consult memory (before working)
+
+Before you start a mission or coding task, search bishop-memory for prior
+knowledge:
+
+1. Check graphify for code-level structure (if available).
+2. Call `memory_search` for higher-level context: prior missions, findings,
+   design notes, operator preferences.
+3. If results come back, read the top one — it often answers "should I do X?"
+   with a precedent set by an earlier mission.
+
+Bishop already does this. Sub-agents should too when the brief
 is ambiguous, touches a system you've never touched, or asks for a
 non-trivial decision.
 
@@ -134,28 +199,18 @@ curl http://127.0.0.1:8787/healthz
 # Search imported documents
 memory_search(q: "importer path escape")
 
-# Record a run completion
-task_run_record(id: "task-20260820-03", agent: "junior-developer", status: "completed", summary: "Step 5 deliverable shipped")
+# Create a new mission
+mission_create(id: "mission-20260905-01", title: "Refactor harness vocabulary", status: "not-started")
 
-# Append an audit event from a sub-agent
-event_append(task_id: "task-20260820-03", event_type: "agent.heartbeat", summary: "Step 5 complete — scripts + templates delivered", agent: "junior-developer")
+# Record a mission step attempt
+mission_step_record(id: "mission-20260905-01", step: "29", agent: "hicks", status: "done", summary: "Templates rewritten")
+
+# Append an audit event
+flight_recorder_append(mission_id: "mission-20260905-01", step: "29", event: "step-sync", note: "Step 29 complete", agent: "bishop")
+
+# Append a finding (always proposed — operator approves it)
+finding_append(suggestion: "Agent identity should be composed for exactly 2 tools", target: "mcpd", mission_id: "mission-20260905-01")
+
+# Record an observation about agent performance
+service_record_append(agent: "hicks", title: "Performance note", note: "Completed step 29 within time budget", source: "bishop-observed")
 ```
-
-## Migration / Existing DBs
-
-> **Existing Phase 2 databases** (created before task-20260820-03) lack the
-> `events.agent` column. Before agent-identity capture works on such a DB,
-> run:
->
-> ```bash
-> sqlite3 data/memory.db 'ALTER TABLE events ADD COLUMN agent TEXT;'
-> ```
->
-> Clean-env installs (task-20260820-03 onward) are unaffected — the column
-> is in `db/schema.sql`.
-
-This is a **carry-forward from Step 4** of task-20260820-03 (Phase 3): the
-agent-identity composition only lands once every store writes the column.
-The schema migration is a one-line `ALTER TABLE` and is safe to run on a
-live DB (the column is added as nullable, existing rows default to `NULL`,
-which the audit reader treats as "system / unknown actor").

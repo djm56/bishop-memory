@@ -9,13 +9,29 @@ here ahead of an actual release.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Complete vocabulary refactor: harness vocabulary replaces legacy task/event model.** The 10-table schema, 18 HTTP routes, and 15 MCP tools use unified harness terminology. **Every database would need rebuilding — no migration script exists because there is no legacy data; the service is new and this was chosen as a clean break.** All changes are breaking:
+  - `tasks` table → `missions`; task ID format → mission ID format (mission-YYYYMMDD-NN)
+  - `task_runs` table → `mission_steps`
+  - `events` table → `flight_recorder`
+  - `agents` table → `crew`
+  - `improvements` table → split into `findings` + `patterns`
+  - New tables: `service_records` (per-agent calibration), `directives` (read-only binding rules)
+  - Old routes `/v1/tasks`, `/v1/events` → `/v1/missions`, `/v1/flight-recorder`; old tools `task_*`, `event_*` → `mission_*`, `flight_recorder_*`
+  - Updated MCP tool count: 8 → 15 tools (added finding/pattern/service-record read/write, clarified mission/step terminology)
+  - `docs/MEMORY-SETUP.md` completely rewritten: 7 tables → 10 tables, document-kind mapping updated for new structure, day-to-day workflows rewritten for mission/flight-recorder terminology, Phase 3 section clarified (renderer deferred, service remains read-only)
+  - `README.md` MCP tool table rewritten with correct tool names and argument schemas
+  - `CONTRIBUTING.md` updated: stub file references (`internal/store/tasks.go` → `internal/store/missions.go`, etc.)
+  - `.env.example` security warning updated: endpoint names changed, substance preserved (no authentication, open read/write, filesystem sync accepts caller root)
+
 ### Security
 
 - **HTTP listener now defaults to loopback-only (`127.0.0.1`).**
   `internal/config/config.go` previously composed the listen address as
   `":" + PORT`, which binds every interface on the host. bishop-memory
-  has no authentication of any kind — every task/event endpoint is open
-  read/write to any caller that can reach it, and
+  has no authentication of any kind — every mission/flight-recorder/findings
+  endpoint is open read/write to any caller that can reach it, and
   `POST /v1/documents/sync` accepts a caller-supplied filesystem root —
   so binding all interfaces contradicted the "locally-bound" security
   model every doc in this repository already describes. A new

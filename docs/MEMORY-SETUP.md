@@ -4,15 +4,18 @@ This guide covers how bishop-memory stores and retrieves agent memory, and how t
 
 ## What Gets Stored
 
-The service maintains **seven tables** in SQLite:
+The service maintains **ten tables** in SQLite:
 
 | Table | Purpose | Rows | Notes |
 |-------|---------|------|-------|
-| `tasks` | Durable task records (the API's primary object) | ~1 per agent task | Title, status (open/active/blocked/complete/cancelled), priority, next_action, blockers, timestamps |
-| `task_runs` | One row per agent execution attempt against a task | ~1 per step in a task | Agent identity, status (e.g., started, completed, failed), optional timestamps |
-| `events` | Append-only audit log (task.*, agent.*, improvement.* events) | ~N per day | Event type (dotted discriminator), summary, optional agent identity, timestamps |
-| `agents` | Registered agent identities | ~10 | Name, role, registration timestamp. Phase 3 stub. |
-| `improvements` | Durable improvement records (mirrors `.claude/memory/improvements`) | ~20-50 | Title, status, body, timestamps. Phase 3 stub. |
+| `missions` | Durable mission records (replaces legacy tasks) | ~1 per harness mission | Title, status (not-started/in-progress/blocked/complete), outcome (done/failed), priority, next_action, blockers, timestamps |
+| `mission_steps` | One row per step in PROGRESS.md (replaces task_runs) | ~1 per step in a mission | Step label, phase, agent identity, status (pending/in-progress/done/failed), notes, summary, optional timestamps |
+| `flight_recorder` | Append-only audit log for the harness | ~N per day | Event type (dotted discriminator), mission scope, step label, agent identity, note, timestamps (occurred_at and created_at separate) |
+| `crew` | Registered agent identities (replaces agents table) | ~10 | Name, role, registration timestamp |
+| `findings` | Durable findings ledger (mirrors `.claude/memory/findings/FINDINGS.md`) | ~20-100 | Target, suggestion, rationale, status (proposed/approved/applied/rejected/retired/superseded), approver, timestamps |
+| `patterns` | Advisory reusable patterns (mirrors `.claude/memory/findings/PATTERNS.md`) | ~10-50 | Name, context, solution, example, discovery timestamp/mission |
+| `service_records` | Per-agent calibration observations | ~20-100 | Agent (subject), title, note, adjustment, source (self-reported/bishop-observed), timestamps |
+| `directives` | Binding, human-ratified rules (mirrors `.claude/memory/reference/DIRECTIVES.md`) | ~5-20 | Title, rule, rationale, directive ID (natural key), timestamps. Read-only via API. |
 | `documents` | Imported Markdown/JSONL files and their lines | ~100-1000+ | Source path, title, kind (document type), body (full text), SHA-256 hash, timestamps |
 | `documents_fts` | FTS5 search index over documents | ~100-1000+ | Virtual table (no separate storage) — allows full-text search via `memory_search` |
 
@@ -20,22 +23,31 @@ The `documents` and `documents_fts` tables are populated by the **importer** (se
 
 ### Document Kinds
 
-When the importer walks your memory tree, it assigns a **kind** to each document based on its path:
+When the importer walks your memory tree, it assigns a **kind** to each document based on its path. The mapping is implemented in `internal/importer/importer.go` (`kindFromPath` function):
 
-| Path | Kind | Example |
-|------|------|---------|
-| `state/ACTIVE-TASK.md` | `state` | Current task metadata |
-| `state/EVENT-LOG.md` | `state` | Event log snapshot |
-| `tasks/<id>/CONTEXT.md` | `context` | Task context (only exact match) |
-| `tasks/<id>/PROGRESS.md` | `progress` | Task progress tracker |
-| `improvements/IMPROVEMENTS.md` | `improvements` | Improvement records |
-| `graph/<file>.md` | `graph` | Project dependency graphs and symbols |
-| `reference/<file>.md` | `reference` | Conventions, patterns, style guides |
-| `agent-documents/<file>.md` | `agent-documents` | Temporary task-working documents |
-| `<top-level>/<file>.md` | `<top-level>` | Directory-based fallback (e.g., `README.md` → `README`) |
-| `<root>/<file>.md` | `document` | Fallback for top-level Markdown files |
+| Path | Kind | Notes |
+|------|------|-------|
+| `state/CURRENT-MISSION.md` | `state` | Mission state file; structured field prefix prepended during import for searchability |
+| `state/FLIGHT-RECORDER.md` | `state` | Audit journal; structured field prefix prepended during import |
+| `state/MISSION-ARCHIVE.md` | `state` | Mission archive index |
+| `missions/<id>/BRIEF.md` | `brief` | Mission brief (exactly one per mission folder only) |
+| `missions/<id>/PROGRESS.md` | `progress` | Mission progress tracker — PROGRESS.md rows (exactly one per mission folder only) |
+| `missions/<id>/DEBRIEF.md` | `debrief` | Mission completion debrief (exactly one per mission folder only) |
+| `findings/FINDINGS.md` | `findings` | Findings ledger |
+| `findings/PATTERNS.md` | `patterns` | Advisory patterns |
+| `findings/service-records/<name>.md` | `service-record` | Per-agent service history (exactly at 3-level nesting under findings/service-records/) |
+| `reference/DIRECTIVES.md` | `directives` | Binding rules (exactly at 2-level nesting) |
+| `graph/<file>.md` | `graph` | Project graphs and symbols (directory-based fallback) |
+| `reference/<file>.md` | `reference` | Conventions, patterns, guides (directory-based fallback, except DIRECTIVES.md which is special-cased) |
+| `workspace/<file>.md` | `workspace` | Working artifacts and scratch files (directory-based fallback) |
+| `<top-level>/<file>.md` | `<top-level>` | Directory-based fallback (e.g., `README.md` → kind `README`) |
+| `<root>/<file>.md` | `document` | Bare files at the root with no parent directory |
 
-The `context` and `progress` kinds apply **only** to exactly `tasks/<id>/CONTEXT.md` and `tasks/<id>/PROGRESS.md`. Nested variants (e.g., `tasks/<id>/sub/CONTEXT.md`) fall through to the directory-name kind.
+**Special cases:**
+- `missions/<id>/BRIEF.md`, `missions/<id>/PROGRESS.md`, `missions/<id>/DEBRIEF.md` are recognized **only** when at exactly 3-level nesting (segments = 3, first = "missions"). A `missions/<id>/sub/BRIEF.md` (deeper nested) or bare `missions/BRIEF.md` (missing <id>) falls through to the directory-based kind ("missions").
+- `findings/service-records/<name>.md` is recognized **only** at exactly 3-level nesting (segments = 3, first = "findings", second = "service-records").
+- `reference/DIRECTIVES.md` is recognized **only** at exactly 2-level nesting (segments = 2, first = "reference").
+- All other files use the top-level directory name as the kind, or "document" as a fallback for bare files at the root.
 
 ## Seeding the Index from Existing Memory
 
@@ -87,7 +99,7 @@ The importer uses **SHA-256 content hashing** to avoid re-processing unchanged f
 
 ### Triggering Re-Sync
 
-After you manually edit your memory files (e.g., updating `ACTIVE-TASK.md` or appending to `IMPROVEMENTS.md`), re-sync to pick up the changes:
+After you manually edit your memory files (e.g., updating `CURRENT-MISSION.md` or appending to `FINDINGS.md`), re-sync to pick up the changes:
 
 ```bash
 curl -X POST http://127.0.0.1:8787/v1/documents/sync \
@@ -139,110 +151,131 @@ Unicode handling means accented characters, quotes, and dashes are tokenized cor
 
 ### Search Results
 
-`memory_search` returns up to **20 results** per query, ranked by relevance. Each result includes:
+`memory_search` returns up to **20 results** per query, ranked by relevance using FTS5 BM25 scoring. Each result includes:
 
 ```json
 {
   "id": 42,
-  "source_path": "improvements/IMPROVEMENTS.md",
-  "kind": "improvements",
-  "title": "Add request validation",
+  "source_path": "/absolute/path/to/findings/FINDINGS.md",
+  "kind": "findings",
+  "title": "First heading from the file",
   "snippet": "... every handler validates its input. Request-supplied paths are ...",
-  "score": 4.5
+  "rank": 4.5
 }
 ```
 
-The `snippet` is a short excerpt highlighting the matched text. The `score` reflects relevance (higher = more relevant).
+The `snippet` is a short excerpt highlighting the matched text with `<mark>` tags. The `rank` field is the FTS5 BM25 score (lower = more relevant).
 
 ## Day-to-Day Agent Usage
 
-### Scenario 1: Agent Starts a New Task
+### Scenario 1: Bishop Creates a New Mission
 
-An agent calls the MCP tool `task_create`:
+Bishop calls `mission_create` to start a mission:
 
 ```json
 {
-  "id": "task-20260821-01",
-  "title": "Implement search filtering",
-  "status": "open",
+  "id": "mission-20260821-01",
+  "title": "Refactor search API",
+  "status": "not-started",
   "priority": "high",
-  "next_action": "Draft API contract"
+  "owner": "claude-code:bishop",
+  "next_action": "Delegate to junior developer"
 }
 ```
 
-This inserts a row into the `tasks` table. The agent can then:
+This inserts a row into the `missions` table. Bishop can then update the mission as work progresses with `mission_update` (status, next_action, blockers, outcome).
 
-- Update status: `task_update` with new status
-- Record execution: `task_run_record` to log "started", "in progress", "completed"
-- Append events: `event_append` to record "task.created", "task.updated", etc.
+### Scenario 2: Agent Searches for Context Before Starting
 
-### Scenario 2: Agent Searches for Context
-
-Before starting work, an agent searches the memory index:
+Before starting work, an agent calls `memory_search` to find prior work in the same domain:
 
 ```bash
 tool: memory_search
-arg q: "search filtering"
+args:
+  q: "search filtering"
+  limit: 20
 ```
 
-Returns documents matching the query, ranked by relevance. The agent reads snippets and sources to understand prior work.
+Returns documents matching the query, ranked by FTS5 BM25 score (lower = more relevant). The agent reads snippets and source paths to understand prior patterns and decisions.
 
-### Scenario 3: Agent Records Execution
+### Scenario 3: Agent Records a Step Execution
 
-At each step, an agent calls `task_run_record`:
+At each step, an agent calls `mission_step_record` to log progress:
 
 ```json
 {
-  "id": "task-20260821-01",
-  "agent": "junior-developer",
+  "id": "mission-20260821-01",
+  "step": "1",
+  "phase": "Implementation",
+  "agent": "hicks",
   "status": "in-progress",
-  "summary": "Implemented search endpoint with date filtering",
+  "summary": "Drafted search endpoint and wrote 15 unit tests",
+  "notes": "Deferred date-range filtering to step 2 per Bishop request",
   "started_at": "2026-08-21T14:30:00Z",
   "ended_at": "2026-08-21T15:45:00Z"
 }
 ```
 
-This logs when the agent worked, what it did, and how long it took. Multiple runs against the same task build an audit trail.
+This logs the step's execution history. Multiple `mission_step_record` calls build a detailed execution timeline for the mission.
 
-### Scenario 4: Agent Appends an Event
+### Scenario 4: Agent Appends an Event to the Flight Recorder
 
-An agent calls `event_append` for noteworthy events:
+An agent calls `flight_recorder_append` for noteworthy harness-level events:
 
 ```json
 {
-  "event_type": "task.completed",
-  "summary": "Search filtering task complete — all tests passing",
-  "task_id": "task-20260821-01",
-  "agent": "junior-developer"
+  "mission_id": "mission-20260821-01",
+  "step": "1",
+  "event": "step.complete",
+  "note": "Code review found 2 issues; marked as fix-round 1 of 2",
+  "agent": "hicks",
+  "occurred_at": "2026-08-21T15:45 UTC"
 }
 ```
 
-This creates a durable audit-trail entry with the agent's identity. The event appears in `task_list` (recent events) and in `/v1/events?task_id=...` (task-scoped events).
+This creates a durable audit-trail entry scoped to the mission and step. The event includes agent identity and occurred_at timestamp (separate from created_at for audit traceability).
 
-### Scenario 5: Sync Updated Memory Files
+### Scenario 5: Agent Proposes a Finding
 
-If the agent modifies `.claude/memory/` files directly (e.g., appends to `IMPROVEMENTS.md`), it triggers a re-sync:
+An agent calls `finding_append` to propose an improvement:
 
-```bash
-curl -X POST http://127.0.0.1:8787/v1/documents/sync -H 'Content-Type: application/json' -d '{}'
+```json
+{
+  "suggestion": "Schema validation should reject out-of-range priority values at the SQL layer, not the application layer",
+  "rationale": "Prevents silent data corruption if the API layer somehow bypasses validation",
+  "target": "schema.sql",
+  "mission_id": "mission-20260821-01",
+  "finding_date": "2026-08-21"
+}
 ```
 
-The importer walks the tree, computes hashes, updates changed documents, and rebuilds the search index. Unchanged files are skipped.
+This creates a finding with status='proposed' (always). Only the human operator can advance status. The agent can never write or change approver/date_approved fields — those belong to the human.
 
-## Phase 3: Generated Views (Not Yet Implemented)
+### Scenario 6: Sync Updated Memory Files
 
-**Currently, `ACTIVE-TASK.md` and `EVENT-STREAM.jsonl` remain hand-written files** in your `.claude/memory/` tree. Agents read and write them directly.
+If the harness modifies `.claude/memory/` files directly (e.g., appends to `FINDINGS.md` or updates `PROGRESS.md`), the agent calls `documents_sync` to import the changes:
 
-**Phase 3 will invert this:** These files become **generated views** produced by `internal/renderer` from the database. Agents will only call the HTTP API (`/v1/tasks`, `/v1/events`), and the files will be automatically regenerated from the database state.
+```bash
+tool: documents_sync
+args:
+  root: "/path/to/.claude/memory"
+```
 
-This change does **not happen in this task** — Phase 3 is future work. For now:
+The importer walks the tree, computes hashes, updates changed documents, and rebuilds the FTS5 search index. Unchanged files are skipped. Sync is idempotent and safe to run frequently.
 
-- Continue writing `ACTIVE-TASK.md` and `EVENT-STREAM.jsonl` as you do today.
-- The importer ingests them into the database for searchability.
-- The service does not yet generate them back.
+## Current Architecture: Read-Only Importer
+
+The harness owns the `.claude/memory/` tree — it reads and writes files directly (PROGRESS.md, FLIGHT-RECORDER.md, FINDINGS.md, etc.). The bishop-memory service **imports but does not write back**. This deliberate separation of concerns provides:
+
+- **Harness authority:** The harness is the authoritative source; files are the ground truth.
+- **Service visibility:** The service provides search, query, and HTTP API access for agents.
+- **Auditability:** Every event passes through the HTTP API with agent identity captured.
+
+The `internal/renderer` is a deliberate stub. A Phase 3 plan to generate Markdown/JSONL views from the database was considered but deferred — keeping the service read-only simplifies the architecture and avoids bidirectional sync complexity. If future work requires bidirectional sync, that design decision will be revisited explicitly.
 
 ## References
 
+- **`INSTALL.md`** — Complete installation and setup guide (daemon, MCP registration, index seeding, troubleshooting).
 - **`../README.md`** — Installation, configuration, service management.
 - **`../CHANGELOG.md`** — Notable changes and fixes.
 - **`api-contract.md`** — Full HTTP API request/response details.

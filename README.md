@@ -89,145 +89,39 @@ See [Network Model](#network-model) below for the recommended topology.
 
 ## Installing as a Service
 
-### macOS (launchd)
+**See `docs/INSTALL.md` for the complete installation guide** — it covers build, service setup (daemon installation), MCP registration, index seeding, verification, and troubleshooting end-to-end.
 
-Register the service to start at login and restart on exit:
+Quick start for the impatient:
+
+### macOS (launchd)
 
 ```bash
 scripts/install-daemon.sh
 ```
 
-To preview without installing:
-
-```bash
-scripts/install-daemon.sh --dry-run
-```
-
-The script:
-- Builds `memoryd` into `./bin/memoryd`.
-- Renders and installs the plist to `~/Library/LaunchAgents/com.bishop-memory.memoryd.plist`.
-- Backs up any existing plist to `*.bak` (first run only).
-- Loads the service with `launchctl`.
-
-Check status with:
-
-```bash
-launchctl list | grep com.bishop-memory.memoryd
-log stream --predicate 'process == "memoryd"'  # tail logs
-```
-
 ### Linux (systemd)
-
-Install as a system service running under a dedicated non-root account:
 
 ```bash
 sudo scripts/install-daemon-linux.sh
 ```
 
-Or preview first:
-
-```bash
-scripts/install-daemon-linux.sh --dry-run
-```
-
-The script:
-- **Detects platform, init system, and CPU architecture** rather than assuming (checks for `/run/systemd/system`, maps `uname -m` to Go `GOARCH`).
-- **Never elevates its own privilege** — it prints the exact `useradd`, `groupadd`, and `systemctl` commands that need root and exits if not already root.
-- Builds `memoryd` into `./bin/memoryd` (or uses `./bin/memoryd-linux-<arch>` if Go is not available).
-- Creates a dedicated `bishop-memory` system user and group.
-- Installs the systemd unit to `/etc/systemd/system/bishop-memory.service`.
-- Grants the service account **exactly** the permissions it needs: read/execute on `./bin/memoryd`, read on `./db/schema.sql`, and traversal on the directory chain leading to both.
-- Runs a **post-start health check** (polls `systemctl is-active` + `journalctl` for logs on failure).
-
-**Note:** The installer does not grant traversal *above* the checkout root, so if the checkout is in a restrictive home directory (e.g., `/root/...` with narrow permissions on `/root`), the service may fail to start. The health check will catch this and log the error.
-
-Check status with:
-
-```bash
-systemctl status bishop-memory.service
-journalctl -u bishop-memory.service -f  # tail logs
-```
+For full details, options, preview modes, and troubleshooting, see `docs/INSTALL.md`.
 
 ## Deploying to a Remote Server
 
-### Step 1: Build for your target platform
+**See `docs/INSTALL.md` for the complete remote deployment guide** — it covers building cross-compiled binaries, transfer options, and running the installer on the server.
 
-Build the binary on any host with Go installed:
-
-```bash
-# For x86-64 Linux (from any host)
-make dist-linux-amd64
-
-# For ARM64 Linux (from any host)
-make dist-linux-arm64
-
-# For both
-make dist-linux
-```
-
-The resulting binaries in `./bin/` are **statically linked** with no runtime dependency — they do not require Go, libc, or any shared libraries on the target host. Only the Linux kernel and systemd are required.
-
-### Step 2: Transfer the checkout to your server
-
-The installer script (`scripts/install-daemon-linux.sh`) requires the full checkout directory to be present on the server. Choose one of these approaches:
-
-**Option A: Clone on the server, then transfer the prebuilt binary** (for servers without Go)
-
-**Prerequisite:** `/opt` is typically root-owned, so the initial `git clone` (run interactively on the server, where you can escalate) needs either `sudo mkdir -p /opt/bishop-memory && sudo chown "$USER" /opt/bishop-memory` run first, or an existing `/opt/bishop-memory` already writable by your account. The `scp` step below runs from your local machine as `user@server` with no chance to escalate mid-transfer, so that account must already own (or have write access to) `/opt/bishop-memory/bin` — i.e. it must be the same account that ran the clone, or one granted write access to it.
+Quick reference:
 
 ```bash
-# On the server:
-git clone <your-repo-url> /opt/bishop-memory
-mkdir -p /opt/bishop-memory/bin
+# Build for your target
+make dist-linux-amd64  # or dist-linux-arm64
+make dist-linux        # both architectures
 
-# On your local machine (after building):
-# Transfer for x86-64:
-scp ./bin/memoryd-linux-amd64 user@server:/opt/bishop-memory/bin/memoryd-linux-amd64
-# Or for ARM64:
-scp ./bin/memoryd-linux-arm64 user@server:/opt/bishop-memory/bin/memoryd-linux-arm64
-```
-
-The installer detects your architecture and uses the matching prebuilt binary if Go is not installed.
-
-**Option B: Transfer the entire checkout with rsync** (for servers without Go)
-
-**Prerequisite:** unlike Option A, this is a single non-interactive command run from your local machine over SSH — there is no interactive session on the server in which to `sudo`. `/opt/bishop-memory` MUST already exist and be writable by the `user` account named in the command before you run `rsync`; create it and hand it over first with a separate step such as `ssh user@server 'sudo mkdir -p /opt/bishop-memory && sudo chown user /opt/bishop-memory'`.
-
-```bash
-rsync -a --exclude='.git' . user@server:/opt/bishop-memory/
-```
-
-This transfers the entire source tree **including the prebuilt binaries** that you built in Step 1. The installer will use them if Go is not installed on the server.
-
-**Option C: Clone and build on the server** (requires Go 1.25+)
-
-**Prerequisite:** as in Option A, the initial `git clone` runs interactively on the server, so `/opt` being root-owned means you need either a prior `sudo mkdir -p /opt/bishop-memory && sudo chown "$USER" /opt/bishop-memory`, or an already-writable `/opt/bishop-memory`. Unlike Option A, write access must persist past the clone: `make build` writes the compiled binary into that same tree, so the account doing the clone must keep write access through the build step too.
-
-```bash
-# On the server:
-git clone <your-repo-url> /opt/bishop-memory
-cd /opt/bishop-memory
-make build
-```
-
-This is the simplest option if the server already has Go installed — it rebuilds the binary locally from the current source.
-
-The installer needs the following files and directories to be present:
-- `scripts/install-daemon-linux.sh` — the installer script
-- `scripts/bishop-memory.service` — the systemd unit template
-- `db/schema.sql` — the database schema (read at runtime by the daemon)
-- One of: `bin/memoryd` (from `make build` on the server) OR `bin/memoryd-linux-amd64` or `bin/memoryd-linux-arm64` (prebuilt binaries from Step 1)
-
-### Step 3: Run the installer
-
-Once the checkout and binary are on the server:
-
-```bash
-cd /opt/bishop-memory
+# Transfer and install (see INSTALL.md for full details)
+# Then on the server:
 sudo scripts/install-daemon-linux.sh
 ```
-
-Then follow the "Linux (systemd)" section above for status checks and log tailing.
 
 ## Network Model
 
@@ -257,24 +151,23 @@ The loopback + SSH-tunnel topology provides **encryption** (SSH), **authenticati
 
 ## Registering the MCP
 
-bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that agents such as Claude Code and opencode can call as a tool-providing server.
+bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that Claude Code and opencode agents can call as a tool-providing server.
+
+**See `docs/INSTALL.md` for the complete registration and configuration guide.**
+
+Quick reference:
 
 ### Claude Code
 
 ```bash
-scripts/install-claude.sh --project-root /path/to/your/project
+scripts/install-claude.sh --project-root /path/to/bishop-harness
 ```
 
-The script:
-- Builds `mcpd` into `./bin/mcpd`.
-- Registers bishop-memory with Claude Code via the `claude` CLI (if available) or by patching `claude.json` directly.
-- Appends a `## bishop-memory` section to your project's `CLAUDE.md` (or creates it).
-- Is idempotent — re-runs detect existing registrations and skip.
+Builds `mcpd`, registers it with Claude Code (via `claude` CLI or `claude.json`), and appends configuration to `CLAUDE.md`.
 
-Set these environment variables for the MCP to work:
-
-- `BISHOP_MEMORY_URL`: Base URL of the bishop-memory HTTP API (default: `http://127.0.0.1:8787`).
-- `BISHOP_HARNESS`: Harness prefix for agent identity (default: `claude-code`). The MCP composes actor as `<BISHOP_HARNESS>:<agent>`, so agents must pass an `agent` argument to identify themselves.
+Environment variables set automatically:
+- `BISHOP_MEMORY_URL`: `http://127.0.0.1:8787` (configurable).
+- `BISHOP_HARNESS`: `claude-code` (the harness prefix for agent identity).
 
 ### opencode
 
@@ -282,38 +175,37 @@ Set these environment variables for the MCP to work:
 scripts/install-opencode.sh --opencode-root /path/to/.opencode
 ```
 
-The script:
-- Builds `mcpd` into `./bin/mcpd`.
-- Registers the MCP under `mcp.bishop-memory` in `opencode.json`.
-- Installs the `memory` skill to `skills/memory/SKILL.md`.
-- Patches the 5 standard agent AGENT.md files (orchestrator, junior-developer, senior-developer, code-reviewer, documentation-writer).
-- Is idempotent — re-runs detect existing entries and skip.
+Registers the MCP in `opencode.json` and patches agent files.
 
-Environment variables:
-
-- `BISHOP_MEMORY_URL`: Base URL of the bishop-memory HTTP API (default: `http://127.0.0.1:8787`).
-- `BISHOP_HARNESS`: Harness prefix (default: `opencode`). Agents compose identity as `<BISHOP_HARNESS>:<agent>`.
+For all details, options, and the `--project-root` warning, see `docs/INSTALL.md`.
 
 ## MCP Tool Surface
 
-The bishop-memory MCP adapter (`cmd/mcpd`) exposes **8 tools**:
+The bishop-memory MCP adapter (`cmd/mcpd`) exposes **15 tools**:
 
 ### Read Tools (no agent identity required)
 
 | Tool | Purpose | Arguments |
 |------|---------|-----------|
 | `memory_search` | Search imported documents (FTS5 index) by query string. Returns ranked hits with snippets. Empty index = empty results. | `q` (required): FTS5 query string. Multi-word is implicit AND; wrap phrases in `"quotes"`; `*` is a prefix wildcard. `limit` (optional): cap on results (server always caps at 20). |
-| `task_list` | List all tasks, newest-updated first. Returns `{"tasks":[...]}`. | None. |
-| `task_get` | Fetch a single task by ID. Returns task JSON or HTTP 404. | `id` (required): Task ID. |
+| `mission_list` | List all missions, newest-updated first. Returns `{"missions":[...]}`. | None. |
+| `mission_get` | Fetch a single mission by ID. Returns mission JSON or HTTP 404. | `id` (required): Mission ID. |
+| `mission_steps_list` | List steps for a mission (PROGRESS.md rows). Returns `{"steps":[...]}`. | `id` (required): Mission ID. |
+| `finding_list` | List findings from the ledger, newest-first. Optional status filter. Returns `{"findings":[...]}`. | `status` (optional): Filter by status (proposed/approved/applied/rejected/retired/superseded). |
+| `pattern_list` | List advisory patterns, newest-first. Returns `{"patterns":[...]}`. | None. |
+| `service_record_list` | List service records (observations about agent performance). Optional agent filter. Returns `{"service_records":[...]}`. | `agent` (optional): Filter by agent name (subject of the records). |
 
 ### Write Tools (HTTP method varies; agent identity composed from `BISHOP_HARNESS:<agent>`)
 
 | Tool | Purpose | Arguments | HTTP Method |
 |------|---------|-----------|-------------|
-| `task_create` | Create a new task. Returns `{"id":...,"created":true}`. | `id` (required, max 128 chars): Unique task ID. `title` (required, max 500 chars): Human-readable title. `status`, `priority`, `next_action`, `blockers` (all optional): Task fields. | POST |
-| `task_update` | Update an existing task (status, priority, next_action, blockers). Returns `{"id":...,"updated":true}` or HTTP 404. | `id` (required): Task ID. Omitted fields are unchanged. | PATCH |
-| `event_append` | Append an event to the audit log. Agent identity is composed as `<BISHOP_HARNESS>:<agent>`. Returns `{"appended":true,"id":...}`. | `event_type` (required, max 64 chars): Dotted discriminator (e.g. `task.created`, `agent.heartbeat`). `summary` (required, max 2000 chars): Human-readable summary. `agent` (required): Sub-agent name (e.g. `orchestrator`, `junior-developer`). Composed with `BISHOP_HARNESS` to form the stored actor identity. `task_id` (optional): Scope the event to a task. | POST |
-| `task_run_record` | Record an agent execution attempt against a task. Agent identity is composed. Returns `{"recorded":true,"task_id":...}` or HTTP 404. | `id` (required): Task ID. `agent` (required): Sub-agent name. `status` (optional, max 64 chars): Run status (e.g. `started`, `completed`, `failed`). `summary` (optional, max 2000 chars): Free-form summary. `started_at`, `ended_at` (optional): ISO-8601 timestamps. | POST |
+| `mission_create` | Create a new mission. Returns `{"id":...,"created":true}`. | `id` (required, max 128 chars): Unique mission ID. `title` (required, max 500 chars): Human-readable title. `status`, `owner`, `priority`, `next_action`, `blockers` (all optional): Mission fields. | POST |
+| `mission_update` | Update an existing mission (status, owner, outcome, priority, next_action, blockers). Returns `{"id":...,"updated":true}` or HTTP 404. | `id` (required): Mission ID. Omitted fields are unchanged. | PATCH |
+| `flight_recorder_append` | Append an event to the flight recorder (audit log). Agent identity is composed as `<BISHOP_HARNESS>:<agent>`. Returns `{"appended":true,"id":...}`. | `mission_id` (optional): Scope the event to a mission. `step` (optional): Step label from PROGRESS.md. `event` (required, max 64 chars): Dotted event discriminator (e.g. `step.complete`, `agent.heartbeat`). `note` (required, max 2000 chars): Human-readable note. `occurred_at` (optional): Event timestamp in `YYYY-MM-DD HH:MM UTC` format. `agent` (required): Sub-agent name (e.g. `bishop`, `hicks`). Composed with `BISHOP_HARNESS`. | POST |
+| `mission_step_record` | Record a mission step (one agent execution). Agent identity is composed. Returns `{"recorded":true,"mission_id":...}` or HTTP 404. | `id` (required): Mission ID. `step` (optional, max 16 chars): Step label from PROGRESS.md (e.g. `4a`, `—`). `phase` (optional, max 64 chars): Phase label. `agent` (required): Sub-agent name. Composed with `BISHOP_HARNESS`. `status` (optional): Step status (pending/in-progress/done/failed). `notes`, `summary` (optional, max 2000 chars): Free-form notes and summary. `started_at`, `ended_at` (optional): ISO-8601 timestamps. | POST |
+| `finding_append` | Append a finding to the findings ledger. Status is always 'proposed'; only humans can advance it. Returns `{"id":...,"created":true}`. | `suggestion` (required, max 2000 chars): The finding itself. `finding_date` (optional, max 64 chars): Finding date. `target` (optional, max 256 chars): Target entity (agent, skill, tool name). `rationale` (optional, max 2000 chars): Supporting rationale. `mission_id` (optional, max 128 chars): Associated mission. | POST |
+| `pattern_append` | Append an advisory pattern. Returns `{"id":...,"created":true}`. | `name` (required, max 256 chars): Pattern name. `context`, `solution`, `example` (optional, max 2000 chars): Context, solution, worked example. `discovered_at` (optional, max 64 chars): Discovery timestamp. `discovered_mission` (optional, max 128 chars): Discovery mission ID. | POST |
+| `service_record_append` | Record a service observation about an agent. Returns `{"id":...,"created":true}`. | `agent` (required, max 128 chars): Agent name (subject of the record). `record_date` (optional, max 64 chars): Record date. `title`, `note`, `adjustment` (optional, max 2000 chars): Title, note, adjustment. `source` (optional): 'self-reported' or 'bishop-observed'. | POST |
 | `documents_sync` | Trigger an import of Markdown/JSONL files into the search index. Returns `{"root":...,"synced":true}` or HTTP 502 if import fails. | `root` (optional): Override the memory root. Falls back to `MEMORY_ROOT` env var, then `testdata/memory` default. | POST |
 
 For full request/response details, see `docs/api-contract.md`.
@@ -456,10 +348,10 @@ Then restart the service.
 
 ## References
 
+- **`docs/INSTALL.md`** — Complete installation, registration, and MCP setup guide.
 - **`docs/architecture.md`** — Architecture overview, layering, component responsibilities.
-- **`docs/migration-plan.md`** — Phase 2/3/4 roadmap.
+- **`docs/migration-plan.md`** — Completion record of the four-phase migration (Phase 1–4 all complete).
 - **`docs/api-contract.md`** — Full HTTP API contract (request/response examples).
 - **`docs/MEMORY-SETUP.md`** — Memory system setup and usage guide.
 - **`CHANGELOG.md`** — Version history and notable changes.
 - **`CONTRIBUTING.md`** — Contribution guidelines and development process.
-- **Authoritative plan:** tracked outside this repository; `docs/migration-plan.md` is the in-tree phase roadmap.

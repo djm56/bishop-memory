@@ -20,8 +20,8 @@
 #   Creating the dedicated "bishop-memory" system account and writing
 #   the unit file under /etc/systemd/system both require root. This
 #   script does NOT attempt to acquire privilege itself — no internal
-#   `sudo`, no re-exec, no password prompt of any kind, per this task's
-#   hard constraint. It detects whether it is already running as root
+#   `sudo`, no re-exec, no password prompt of any kind. It detects whether
+#   it is already running as root
 #   (checking $EUID) and:
 #     - If NOT root: performs every step that does not need root (Linux
 #       + systemd + architecture detection, building the memoryd binary
@@ -34,7 +34,7 @@
 #   Either way, the commands that need root are always printed in full
 #   before this script does anything with them, dry-run or not.
 #
-# Detection, not assumption (per this task's brief):
+# Detection, not assumption:
 #   - Refuses to run on a non-Linux host (see the Darwin equivalent,
 #     scripts/install-daemon.sh).
 #   - Verifies systemd is the running init system by checking for
@@ -45,7 +45,7 @@
 #     to a Go GOARCH rather than hardcoding amd64 or arm64; refuses
 #     with a clear message on anything else this project does not
 #     build for (see Makefile's dist-linux-amd64 / dist-linux-arm64
-#     targets, Job 4 of this task).
+#     targets).
 
 set -euo pipefail
 
@@ -68,8 +68,8 @@ fi
 # /run/systemd/system existing is the detection systemd's own manual
 # documents as authoritative for "is this system running under
 # systemd", independent of which distro or release is installed —
-# exactly the "detect rather than assume" requirement, since this task
-# has no verified access to the target host's distro or systemd
+# exactly the "detect rather than assume" requirement, since the
+# installer has no verified access to the target host's distro or systemd
 # version.
 
 if [[ ! -d /run/systemd/system ]]; then
@@ -82,12 +82,11 @@ fi
 
 # --- Architecture guard: detect, map, refuse anything unsupported ---------
 #
-# Job 4 of this task cross-compiles Linux binaries for amd64 and arm64
-# only (bin/memoryd-linux-amd64, bin/memoryd-linux-arm64 via the
-# Makefile's dist-linux-* targets). uname -m reports the kernel's own
-# machine hardware name, which we map to the matching Go GOARCH rather
-# than assume one — the brief for this task is explicit that the
-# deployment target's architecture is unverified.
+# bishop-memory cross-compiles Linux binaries for amd64 and arm64 only
+# (bin/memoryd-linux-amd64, bin/memoryd-linux-arm64 via the Makefile's
+# dist-linux-* targets). uname -m reports the kernel's own machine
+# hardware name, which we map to the matching Go GOARCH rather than
+# assume one — the deployment target's architecture is unverified.
 
 HOST_ARCH="$(uname -m)"
 case "$HOST_ARCH" in
@@ -181,8 +180,7 @@ sed "s|__BISHOP_ROOT__|$SANITISED_ROOT|g" "$UNIT_TEMPLATE" \
 # --- Compose the privileged commands (needed whether dry-run or not) -------
 #
 # Printed verbatim in both --dry-run and the "not root" branch below, so
-# the operator always sees exactly what would run before it runs, per
-# this task's requirement to state plainly which steps need sudo.
+# the operator always sees exactly what would run before it runs.
 
 print_privileged_commands() {
   cat <<EOF

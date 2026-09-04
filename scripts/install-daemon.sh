@@ -17,8 +17,8 @@
 # Notes:
 # - Builds memoryd into "$BISHOP_ROOT/bin/memoryd" before installing
 #   (so the ProgramArguments path actually exists).
-# - Does NOT load the daemon during Step 5; the operator runs the real
-#   install post-task. The script supports `--dry-run` so it can be
+# - Does NOT load the daemon; the operator runs the actual launchctl load
+#   command afterwards. The script supports `--dry-run` so it can be
 #   self-verified without touching the host's launchd state.
 
 set -euo pipefail
@@ -38,7 +38,7 @@ set -euo pipefail
 if [[ "$(uname)" != "Darwin" ]]; then
   echo "install-daemon.sh: this script installs a launchd (macOS-only) user agent." >&2
   echo "  Detected platform: $(uname). launchd is not available here." >&2
-  echo "  See Step 6 of this task for the systemd equivalent on Linux." >&2
+  echo "  See scripts/install-daemon-linux.sh for the systemd equivalent on Linux." >&2
   exit 1
 fi
 
