@@ -213,39 +213,36 @@ cd /opt/bishop-memory
 sudo scripts/install-daemon-linux.sh
 ```
 
-## Registering with Claude Code
+## Connecting a Harness to bishop-memory
 
-The MCP adapter (`cmd/mcpd`) registers bishop-memory as an MCP server so Claude Code agents can call memory tools.
+The MCP adapter (`cmd/mcpd`) registers bishop-memory as an MCP server so Claude Code agents can call memory tools. Connection is configured **from the harness**, not from bishop-memory.
 
-```bash
-scripts/install-claude.sh --project-root /path/to/bishop-harness
-```
+To connect an existing bishop-harness to this bishop-memory instance:
 
-**⚠️ Important: Pass `--project-root` explicitly.** The script refuses to default to the current directory silently because a stray `CLAUDE.md` created in the wrong directory (e.g., a subproject) will never be loaded by Claude Code, and you may not notice. If you want to use the current directory, pass `--yes` instead:
+1. Create `.claude/bishop-memory.conf` from the example in your harness repo (`.claude/bishop-memory.conf.example`).
+2. Set `BISHOP_MEMORY_HOME` in that config file to point to this checkout.
+3. Run `.claude/connect-bishop-memory.sh` in your harness. This script:
+   - Builds `mcpd` into `./bin/mcpd` (in the bishop-memory checkout).
+   - Generates `.mcp.json` at the harness root with project-scope MCP registration.
+   - Sets `BISHOP_HARNESS` (unique identity for this harness) and `BISHOP_MEMORY_URL`.
 
-```bash
-cd /path/to/bishop-harness
-scripts/install-claude.sh --yes
-```
+The connection is idempotent — re-running the generator detects what's already in place and skips it.
 
-The script:
-
-1. **Builds `mcpd`** into `./bin/mcpd`.
-
-2. **Registers the MCP server** via one of two paths:
-   - **CLI path:** If `command -v claude` succeeds, uses `claude mcp add --scope user` (idempotent — checks `claude mcp get bishop-memory` first).
-   - **JSON fallback:** If no `claude` CLI, patches `~/.claude/claude.json` (or `~/.claude.json` on legacy installs) under the `mcpServers` key (idempotent — detects existing entries).
-
-3. **Appends a section to `<project-root>/CLAUDE.md`** with the `## bishop-memory` heading and configuration details. Backs up any existing `CLAUDE.md` to `CLAUDE.md.bak` (first run only). Is idempotent — re-runs detect the `memory_search` marker and skip the append.
+**After the generator runs:**
+1. Restart Claude Code. The new `.mcp.json` server registration requires a restart to be discovered.
+2. Approve the server when prompted. Claude Code will ask to approve the new project-scope `bishop-memory` server. Until you do, MCP tools are unavailable.
+3. In central mode, verify bishop-memory is running. See the Configuration section below.
 
 ### Configuration
 
-The script sets two environment variables that control the MCP adapter:
+The harness's `.claude/bishop-memory.conf` controls how the MCP adapter behaves:
 
+- **`BISHOP_MEMORY_MODE`** (`standalone` or `central`) — Determines whether mission IDs are derived locally or allocated from bishop-memory.
 - **`BISHOP_MEMORY_URL`** (default: `http://127.0.0.1:8787`) — Base URL of the bishop-memory HTTP API.
-- **`BISHOP_HARNESS`** (default: `claude-code`) — Harness prefix for composing agent identity. When an agent calls a write tool like `flight_recorder_append`, mcpd composes the stored actor as `<BISHOP_HARNESS>:<agent>` (e.g., `claude-code:bishop`).
+- **`BISHOP_HARNESS`** — Unique identity for this harness. Used by the MCP adapter to compose agent identity for write tools (e.g., `bishop-memory:bishop` when the agent calls `flight_recorder_append`).
+- **`BISHOP_MEMORY_HOME`** — Path to this bishop-memory checkout. Used by post-mission hooks to locate `reconcile-memory.py`.
 
-Both are set automatically by the install script. If you need to change them later, edit `~/.claude/claude.json` or re-run `install-claude.sh`.
+These are set by the harness's `.claude/connect-bishop-memory.sh` generator. If you need to change them, edit `.claude/bishop-memory.conf` in the harness and restart Claude Code.
 
 ## Seeding the Index from Existing Memory
 
@@ -549,11 +546,7 @@ curl -X POST http://127.0.0.1:8787/v1/documents/sync \
    curl -v http://127.0.0.1:8787/v1/missions
    ```
 
-**Fix:** Restart the MCP adapter or re-run the installer:
-
-```bash
-scripts/install-claude.sh --project-root /path/to/bishop-harness
-```
+**Fix:** Restart Claude Code. If the problem persists, verify the `.mcp.json` file at your harness root includes the bishop-memory server entry with the correct `BISHOP_MEMORY_URL`. If needed, re-run `.claude/connect-bishop-memory.sh` in your harness to regenerate it.
 
 ## Next Steps
 

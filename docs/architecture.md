@@ -123,12 +123,12 @@ bishop-memory/
 ├── scripts/
 │   ├── install-daemon.sh
 │   ├── install-daemon-linux.sh
-│   ├── bishop-memory.service
-│   ├── install-claude.sh
 │   ├── install-opencode.sh
+│   ├── reconcile-memory.py
+│   ├── backfill-memory.py
+│   ├── bishop-memory.service
 │   ├── com.bishop-memory.memoryd.plist
 │   └── templates/
-│       ├── claude-memory.md
 │       └── memory-skill.md
 ├── testdata/
 │   └── memory/

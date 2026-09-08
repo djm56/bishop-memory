@@ -149,25 +149,26 @@ The alternative — binding to `0.0.0.0` or a non-loopback address — is **not 
 
 The loopback + SSH-tunnel topology provides **encryption** (SSH), **authentication** (your SSH key), and **isolation** (only local processes can reach the service) without any changes to the service itself.
 
-## Registering the MCP
+## Connecting a Harness
 
-bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that Claude Code and opencode agents can call as a tool-providing server.
+bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that Claude Code and opencode agents can call as a tool-providing server. Connection is configured **from the harness**, not from bishop-memory.
 
-**See `docs/INSTALL.md` for the complete registration and configuration guide.**
+**See `docs/INSTALL.md` and `docs/HARNESS-INTEGRATION.md` for the complete registration and integration guide.**
 
-Quick reference:
+### Claude Code (bishop-harness)
 
-### Claude Code
+To connect an existing bishop-harness to this bishop-memory instance:
 
-```bash
-scripts/install-claude.sh --project-root /path/to/bishop-harness
-```
+1. Create `.claude/bishop-memory.conf` from the example in your harness repo (`.claude/bishop-memory.conf.example`).
+2. Set `BISHOP_MEMORY_HOME` to the path of this checkout.
+3. Run `.claude/connect-bishop-memory.sh` in your harness.
 
-Builds `mcpd`, registers it with Claude Code (via `claude` CLI or `claude.json`), and appends configuration to `CLAUDE.md`.
+This creates `.mcp.json` (project-scope MCP registration) and registers `mcpd` to run under your harness's project scope, not user scope. Your harness can then operate in either mode:
 
-Environment variables set automatically:
-- `BISHOP_MEMORY_URL`: `http://127.0.0.1:8787` (configurable).
-- `BISHOP_HARNESS`: `claude-code` (the harness prefix for agent identity).
+- **Standalone** — each harness owns its memory entirely. Mission IDs are derived locally. No network calls. Default, and safe when bishop-memory is absent.
+- **Central** — mission IDs are allocated centrally, and the journal is mirrored to bishop-memory. Requires the service to be running.
+
+The connection is idempotent — re-running the generator detects what's already in place and skips it.
 
 ### opencode
 
@@ -177,7 +178,7 @@ scripts/install-opencode.sh --opencode-root /path/to/.opencode
 
 Registers the MCP in `opencode.json` and patches agent files.
 
-For all details, options, and the `--project-root` warning, see `docs/INSTALL.md`.
+For all details, options, and troubleshooting, see `docs/INSTALL.md`.
 
 ## MCP Tool Surface
 
