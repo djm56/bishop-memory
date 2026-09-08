@@ -123,13 +123,10 @@ bishop-memory/
 ├── scripts/
 │   ├── install-daemon.sh
 │   ├── install-daemon-linux.sh
-│   ├── install-opencode.sh
 │   ├── reconcile-memory.py
 │   ├── backfill-memory.py
 │   ├── bishop-memory.service
-│   ├── com.bishop-memory.memoryd.plist
-│   └── templates/
-│       └── memory-skill.md
+│   └── com.bishop-memory.memoryd.plist
 ├── testdata/
 │   └── memory/
 │       ├── state/

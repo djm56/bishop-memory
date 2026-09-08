@@ -151,7 +151,7 @@ The loopback + SSH-tunnel topology provides **encryption** (SSH), **authenticati
 
 ## Connecting a Harness
 
-bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that Claude Code and opencode agents can call as a tool-providing server. Connection is configured **from the harness**, not from bishop-memory.
+bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that a bishop-harness can call as a tool-providing server. Connection is configured **from the harness**, not from bishop-memory.
 
 **See `docs/INSTALL.md` and `docs/HARNESS-INTEGRATION.md` for the complete registration and integration guide.**
 
@@ -169,16 +169,6 @@ This creates `.mcp.json` (project-scope MCP registration) and registers `mcpd` t
 - **Central** — mission IDs are allocated centrally, and the journal is mirrored to bishop-memory. Requires the service to be running.
 
 The connection is idempotent — re-running the generator detects what's already in place and skips it.
-
-### opencode
-
-```bash
-scripts/install-opencode.sh --opencode-root /path/to/.opencode
-```
-
-Registers the MCP in `opencode.json` and patches agent files.
-
-For all details, options, and troubleshooting, see `docs/INSTALL.md`.
 
 ## MCP Tool Surface
 

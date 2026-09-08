@@ -398,7 +398,7 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		// createMissionHandler (which trims ID / Title) and appendFlightRecorderHandler
 		// (which trims event / note). agent and status are
 		// free-form so we don't enforce non-empty here, but we DO strip
-		// surrounding whitespace so "opencode " and "opencode" are stored
+		// surrounding whitespace so "anomalous " and "anomalous" are stored
 		// identically and a stray " " agent name doesn't sneak through.
 		request.Step = strings.TrimSpace(request.Step)
 		request.Phase = strings.TrimSpace(request.Phase)

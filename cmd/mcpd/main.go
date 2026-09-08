@@ -55,10 +55,9 @@ const (
 	defaultMemoryURL = "http://127.0.0.1:8787"
 	// defaultHarness is "claude-code" by deliberate design: this is the
 	// bishop-harness project, and claude-code is the intended default harness.
-	// The install scripts explicitly set the BISHOP_HARNESS env var (to
-	// "claude-code" or "opencode" depending on which installer ran), so the
-	// default is only reached by a bare invocation. For this project, the
-	// claude-code default is correct.
+	// The BISHOP_HARNESS env var is set by the harness's project-scope MCP
+	// registration in .mcp.json, so the default is only reached by a bare
+	// invocation. For this project, the claude-code default is correct.
 	defaultHarness     = "claude-code"
 	defaultHTTPTimeout = 30 * time.Second
 
