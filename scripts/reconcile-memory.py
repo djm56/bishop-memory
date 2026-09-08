@@ -39,6 +39,7 @@ Usage:
   scripts/reconcile-memory.py --root <memory-root> [--url http://127.0.0.1:8787]
   scripts/reconcile-memory.py --root <memory-root> --dry-run
   scripts/reconcile-memory.py --root <memory-root> --include-journal
+  scripts/reconcile-memory.py --root <memory-root> --skip-steps
   scripts/reconcile-memory.py --root <memory-root> --no-sync-documents
 """
 
@@ -457,9 +458,20 @@ def reconcile_missions(client, parsed_missions):
     return status_counts
 
 
-def reconcile_steps(client, parsed_missions, root):
-    """Create missing mission steps."""
+def reconcile_steps(client, parsed_missions, root, skip_steps=False):
+    """Create missing mission steps. When skip_steps=True, parse but skip reconciliation."""
     status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0}
+
+    # Parse steps eagerly for all missions (to report true parsed count even during outages)
+    all_parsed_steps = {}
+    for mission in parsed_missions:
+        steps = parse_steps(root, mission["id"])
+        all_parsed_steps[mission["id"]] = steps
+        status_counts["parsed"] += len(steps)
+
+    # If skipping, we're done — report parsed count only, no fetches or writes
+    if skip_steps:
+        return status_counts
 
     # Fetch all existing steps (keyed by (mission_id, step))
     # Track which missions had successful fetches so we can skip writes for failed ones
@@ -483,13 +495,6 @@ def reconcile_steps(client, parsed_missions, root):
             print(f"     {exc}", file=sys.stderr)
             missions_fetch_failed.add(mission["id"])
             status_counts["fetch_failed"] += 1
-
-    # Parse steps eagerly for all missions (to report true parsed count even during outages)
-    all_parsed_steps = {}
-    for mission in parsed_missions:
-        steps = parse_steps(root, mission["id"])
-        all_parsed_steps[mission["id"]] = steps
-        status_counts["parsed"] += len(steps)
 
     # Create missing steps, skipping writes for missions whose existing-steps fetch failed
     for mission in parsed_missions:
@@ -675,6 +680,11 @@ def main():
                         help="Parse and report what would be written; send nothing.")
     parser.add_argument("--include-journal", action="store_true",
                         help="Reconcile flight-recorder (journal) as well. Default: off (hook keeps it current).")
+    parser.add_argument("--skip-steps", action="store_true",
+                        help="Skip mission step reconciliation. Steps have a natural-key dedupe that excludes status, "
+                             "so a step mirrored while in-progress will freeze at that status when the service has no "
+                             "step-update path. Full reconciliation without this flag belongs at mission close, when all "
+                             "step statuses are final.")
     parser.add_argument("--no-sync-documents", action="store_true",
                         help="Skip POST /v1/documents/sync. Default: sync documents first.")
     args = parser.parse_args()
@@ -692,6 +702,8 @@ def main():
         print("[reconcile] DRY RUN — nothing will be written")
     if args.include_journal:
         print("[reconcile] including journal reconciliation")
+    if args.skip_steps:
+        print("[reconcile] skipping mission step reconciliation")
     if args.no_sync_documents:
         print("[reconcile] skipping document sync")
     print()
@@ -718,13 +730,16 @@ def main():
     total_entities += counts['created'] + counts['updated']
 
     # --- Mission steps ----
-    counts = reconcile_steps(client, missions, root)
-    fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
-    print(f"[steps] {counts['parsed']} parsed, {counts['created']} created, " +
-          f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
-    total_failed_operations += counts['failed']
-    total_fetch_failures += counts.get('fetch_failed', 0)
-    total_entities += counts['created']
+    counts = reconcile_steps(client, missions, root, skip_steps=args.skip_steps)
+    if args.skip_steps:
+        print(f"[steps] {counts['parsed']} parsed (skipped — steps are mirrored only at mission close, when all statuses are final)")
+    else:
+        fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+        print(f"[steps] {counts['parsed']} parsed, {counts['created']} created, " +
+              f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
+        total_failed_operations += counts['failed']
+        total_fetch_failures += counts.get('fetch_failed', 0)
+        total_entities += counts['created']
 
     # --- Flight recorder (journal) -- opt-in ----
     if args.include_journal:

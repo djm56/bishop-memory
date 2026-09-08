@@ -150,6 +150,7 @@ Where `BISHOP_MEMORY_HOME` is read from `.claude/bishop-memory.conf` in the harn
 - `--url <url>` (optional) — Base URL of the bishop-memory API. Defaults to `http://127.0.0.1:8787`, also honoring `BISHOP_MEMORY_URL` env var.
 - `--dry-run` — Parse and report what would be written; send nothing.
 - `--include-journal` — Reconcile the flight-recorder (journal) as well. Default: off (the post-mission hook keeps it current).
+- `--skip-steps` — Skip mission step reconciliation. Mission steps have a natural-key dedupe that excludes `status`, so a step mirrored while `in-progress` will freeze at that status when the API has no step-update path. Steps belong at the full reconciliation run during mission close, when all step statuses are final. The hook can use `--skip-steps` for live reconciliation of findings, patterns, service records, and missions; mission close runs the full reconciler without this flag. Default: off (steps are reconciled with everything else).
 - `--no-sync-documents` — Skip `POST /v1/documents/sync`. Default: sync documents first so the full-text index is current in the same pass.
 
 ### The Journal Flag — Why It's Opt-In
