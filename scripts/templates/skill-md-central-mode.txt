@@ -1,0 +1,7 @@
+### Central Mode — When bishop-memory Owns The ID
+
+Which route applies is decided by `.claude/bishop-memory.conf` at the project root. Read it before deriving anything.
+
+- **No file, or `BISHOP_MEMORY_MODE=standalone`** — derive the ID locally exactly as described above. Nothing else changes and bishop-memory need not be running.
+- **`BISHOP_MEMORY_MODE=central`** — the ID is allocated, not derived. Call the `mission_allocate` MCP tool with the mission `title`. It returns the ID and registers the mission in one atomic operation, which is what makes duplication impossible: the row holding the ID is created in the same transaction that computed it. The owning harness comes from the project-scope MCP registration, so it does not need passing.
+- **If bishop-memory is unreachable in central mode, stop and tell the operator. Never fall back to local derivation.** State the reason plainly: local derivation is right for one harness and wrong for several — two harnesses both compute the same `NN` — and a reused ID makes the audit trail ambiguous, which is the one thing the journal exists to prevent. A blocked mission start is recoverable; a duplicate ID in an append-only journal is not.

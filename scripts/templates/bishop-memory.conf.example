@@ -1,0 +1,32 @@
+# bishop-memory integration for this harness.
+#
+# Copy this file to .claude/bishop-memory.conf and edit it. The live file is
+# gitignored, so each harness clone carries its own identity rather than
+# inheriting a committed one.
+
+# standalone — the harness owns its memory entirely. No network calls, mission
+#              IDs derived locally from folders and logs. bishop-memory does not
+#              need to be installed. This is the default, and is also what
+#              applies when this file is absent.
+# central    — mission IDs are allocated by bishop-memory so they are unique
+#              across every harness, and journal rows are mirrored to it.
+BISHOP_MEMORY_MODE=central
+
+# Base URL of the bishop-memory HTTP API.
+BISHOP_MEMORY_URL=http://127.0.0.1:8787
+
+# This harness's identity. MUST be unique per harness — it is what stops two
+# harnesses colliding on a mission ID. Keep it identical to BISHOP_HARNESS in
+# the bishop-memory MCP server registration so agent identity and mission
+# ownership agree. Required in central mode.
+# NOTE: This value MUST match the BISHOP_HARNESS environment variable set in
+# the project-scope MCP registration (.mcp.json), since the hook reads this file
+# while the MCP tools read that env — two readers, one identity, and they must agree.
+BISHOP_HARNESS=HARNESS_NAME_PLACEHOLDER
+
+# Path to the bishop-memory repository checkout. The harness uses this to locate
+# scripts/reconcile-memory.py for idempotent reconciliation of structured data.
+# Set by connect-harness.sh; typically a sibling directory or elsewhere in the
+# filesystem. The closing sequence may call this script to sync memory after a
+# mission completes.
+BISHOP_MEMORY_HOME=BISHOP_MEMORY_HOME_PLACEHOLDER

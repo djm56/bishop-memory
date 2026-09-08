@@ -1,0 +1,6 @@
+Before step 1 runs on a genuinely new mission, get the mission ID. The method depends on `.claude/bishop-memory.conf`. Read it first.
+
+- **No file, or `BISHOP_MEMORY_MODE=standalone`** — derive the ID locally, using today's **UTC** date and the daily-reset counter. Scan existing `.claude/memory/missions/mission-<date>-*` folders **and** rows referencing `mission-<date>-*` in `FLIGHT-RECORDER.md` and `MISSION-ARCHIVE.md`; take the highest you find and add one, or `01` if there are none. Folders get deleted by cleanup; the logs don't — checking both is what stops an ID coming back around.
+- **`BISHOP_MEMORY_MODE=central`** — call the `mission_allocate` MCP tool with the mission `title`. It returns the ID and registers the mission in one atomic operation.
+
+For the full rules covering both modes, see the Mission IDs section of `.claude/skills/mission-lifecycle/SKILL.md`.
