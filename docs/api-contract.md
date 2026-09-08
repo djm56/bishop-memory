@@ -700,7 +700,7 @@ Purpose: Search imported documents via FTS5. Returns ranked hits with snippets.
   "results": [
     {
       "id": 42,
-      "source_path": "/Users/djm56/Documents/Anomalous/projects/anom-001-msc-last-update/.claude/memory/findings/FINDINGS.md",
+      "source_path": "/path/to/harness/.claude/memory/findings/FINDINGS.md",
       "title": "# FINDINGS",
       "kind": "findings",
       "snippet": "Hicks should handle <mark>edge cases</mark> more defensively…",
