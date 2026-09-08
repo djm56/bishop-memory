@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS missions (
     priority    TEXT    NOT NULL DEFAULT 'normal',
     next_action TEXT,
     blockers    TEXT,
+    -- Which harness owns this mission. NULL on rows created before
+    -- central allocation existed, and on any mission created by a
+    -- harness running in standalone mode. Set by POST /v1/missions/allocate.
+    harness     TEXT,
     opened_at   TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     closed_at   TEXT,
     created_at  TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),

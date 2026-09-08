@@ -181,7 +181,7 @@ For all details, options, and the `--project-root` warning, see `docs/INSTALL.md
 
 ## MCP Tool Surface
 
-The bishop-memory MCP adapter (`cmd/mcpd`) exposes **15 tools**:
+The bishop-memory MCP adapter (`cmd/mcpd`) exposes **16 tools**:
 
 ### Read Tools (no agent identity required)
 

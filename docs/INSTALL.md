@@ -7,7 +7,7 @@ This guide walks an operator through installing bishop-memory as a queryable mem
 **bishop-memory** is a local single-binary HTTP service — Go + Gin + SQLite + FTS5 — that indexes and queries your harness's memory tree. It exposes two entry points:
 
 - **HTTP API** (`cmd/memoryd`) — the core service. Listens on loopback (`127.0.0.1:8787` by default).
-- **MCP adapter** (`cmd/mcpd`) — a stdio Model Context Protocol server that proxies the HTTP API, so Claude Code agents can call the 15 memory tools as native MCP functions.
+- **MCP adapter** (`cmd/mcpd`) — a stdio Model Context Protocol server that proxies the HTTP API, so Claude Code agents can call the 16 memory tools as native MCP functions.
 
 Together, they give your crew a searchable, queryable view of your harness memory **without changing how the harness records state**. The harness remains the authoritative owner of `.claude/memory/`; bishop-memory imports and reads it but never writes back.
 
@@ -347,7 +347,7 @@ Args:
 
 ## What Your Crew Gets
 
-The MCP adapter exposes **15 tools** grouped by use case. All tools are composed from the HTTP API with agent identity handled automatically.
+The MCP adapter exposes **16 tools** grouped by use case. All tools are composed from the HTTP API with agent identity handled automatically.
 
 ### Search and Discovery (no agent identity required)
 

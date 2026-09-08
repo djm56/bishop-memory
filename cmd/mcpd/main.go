@@ -163,6 +163,43 @@ func registerTools(s *server.MCPServer, c *client) {
 
 	// --- Write tools (HTTP method varies) ---
 
+	// mission_allocate — the multi-harness entry point. Unlike
+	// mission_create, the caller does NOT supply an id: the service
+	// computes the next sequence for the UTC day across every harness and
+	// inserts the mission in the same transaction, so two harnesses
+	// opening a mission on the same day cannot collide. `harness` is
+	// filled from BISHOP_HARNESS rather than asked of the agent — the
+	// agent does not know which harness it is running inside, and letting
+	// it guess is how misattributed rows happen.
+	s.AddTool(
+		mcp.NewTool("mission_allocate",
+			mcp.WithDescription("Allocate a centrally-unique mission ID and create the mission in one atomic step. Use this INSTEAD of mission_create when the harness runs in central mode, so mission IDs never collide between harnesses. The harness is read from the calling harness's .claude/bishop-memory.conf (key BISHOP_HARNESS) and passed as the harness parameter; omit it to fall back to the server's BISHOP_HARNESS env var. Supply it whenever more than one harness shares this bishop-memory, because the env var is user-scoped and identical across projects. Returns {\"id\":...,\"harness\":...,\"date\":...,\"seq\":...,\"created\":true}."),
+			mcp.WithString("title",
+				mcp.Required(),
+				mcp.Description("Human-readable mission title, max 500 chars. Required."),
+			),
+			mcp.WithString("harness",
+				mcp.Description("The owning harness, read from the calling harness's .claude/bishop-memory.conf; omit it to fall back to the server's BISHOP_HARNESS env var; supply it whenever more than one harness shares this bishop-memory, because the env var is user-scoped and identical across projects. Optional."),
+			),
+			mcp.WithString("owner",
+				mcp.Description("Mission owner name, max 128 chars. Optional."),
+			),
+			mcp.WithString("priority",
+				mcp.Description("One of low|normal|high|urgent. Defaults to \"normal\" server-side when omitted."),
+			),
+			mcp.WithString("next_action",
+				mcp.Description("Free-form next-action note, max 2000 chars. Optional."),
+			),
+			mcp.WithString("blockers",
+				mcp.Description("Free-form blockers note, max 2000 chars. Optional."),
+			),
+			mcp.WithString("date",
+				mcp.Description("Override the UTC day the ID is scoped to, as YYYYMMDD. Omit in normal use — the SERVER's UTC clock is authoritative, so that harnesses in different timezones cannot disagree about what day it is. Optional."),
+			),
+		),
+		makeMissionAllocateHandler(c),
+	)
+
 	// mission_create — NO agent param this round. CreateMissionRequest is
 	// plan-frozen (Phase 2); adding an agent field is a documented
 	// deferral. Agent identity on the mission.created event is captured
@@ -458,6 +495,19 @@ func registerTools(s *server.MCPServer, c *client) {
 // wire shapes are the documented contract.
 
 // createMissionBody is the JSON body for POST /v1/missions.
+// allocateMissionBody is the POST /v1/missions/allocate payload. It has
+// no ID field on purpose: the service picks the id, which is the whole
+// reason the endpoint exists.
+type allocateMissionBody struct {
+	Harness    string `json:"harness"`
+	Title      string `json:"title"`
+	Owner      string `json:"owner,omitempty"`
+	Priority   string `json:"priority,omitempty"`
+	NextAction string `json:"next_action,omitempty"`
+	Blockers   string `json:"blockers,omitempty"`
+	Date       string `json:"date,omitempty"`
+}
+
 type createMissionBody struct {
 	ID         string `json:"id"`
 	Title      string `json:"title"`
@@ -638,6 +688,65 @@ func makeMissionGetHandler(c *client) func(ctx context.Context, req mcp.CallTool
 			return toolHTTPStatusError("mission_get", status, body), nil
 		}
 		return toolSuccess("mission_get", body), nil
+	}
+}
+
+// makeMissionAllocateHandler wires the mission_allocate tool to
+// POST /v1/missions/allocate.
+//
+// The harness may be passed as an optional tool parameter (read from the
+// calling harness's .claude/bishop-memory.conf, key BISHOP_HARNESS) or
+// resolved from the server's BISHOP_HARNESS env var. Parameter takes precedence.
+// The env var is user-scoped and identical across projects, so an explicit
+// parameter is essential when more than one harness shares this bishop-memory
+// instance. The value must always be read from the harness's own config rather
+// than invented by the agent — that is where the authoritative harness identity
+// lives.
+func makeMissionAllocateHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		title := strings.TrimSpace(mcp.ParseString(req, "title", ""))
+		if title == "" {
+			return mcp.NewToolResultError("mission_allocate: `title` is required"), nil
+		}
+		harness := strings.TrimSpace(mcp.ParseString(req, "harness", ""))
+		if harness == "" {
+			harness = strings.TrimSpace(c.harness)
+		}
+		if harness == "" {
+			return mcp.NewToolResultError(
+				"mission_allocate: harness is empty — pass it as a parameter from the calling harness's " +
+					".claude/bishop-memory.conf, or set BISHOP_HARNESS in the MCP server registration " +
+					"so allocated missions can be attributed to a harness"), nil
+		}
+
+		body := allocateMissionBody{
+			Harness:    harness,
+			Title:      title,
+			Owner:      strings.TrimSpace(mcp.ParseString(req, "owner", "")),
+			Priority:   strings.TrimSpace(mcp.ParseString(req, "priority", "")),
+			NextAction: mcp.ParseString(req, "next_action", ""),
+			Blockers:   mcp.ParseString(req, "blockers", ""),
+			Date:       strings.TrimSpace(mcp.ParseString(req, "date", "")),
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("mission_allocate: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "missions", "allocate")
+
+		payload, merr := json.Marshal(body)
+		if merr != nil {
+			return toolInternalErr("mission_allocate: marshal request body", merr), nil
+		}
+		respBody, status, httpErr := c.do(ctx, http.MethodPost, u.String(), payload)
+		if httpErr != nil {
+			return toolHTTPError("mission_allocate", httpErr), nil
+		}
+		if status < 200 || status >= 300 {
+			return toolHTTPStatusError("mission_allocate", status, respBody), nil
+		}
+		return toolSuccess("mission_allocate", respBody), nil
 	}
 }
 

@@ -1,6 +1,6 @@
 ---
 name: memory
-description: bishop-memory — shared central memory server (localhost:8787) for missions, findings, service records, and document search. Use the 15 bishop-memory MCP tools instead of writing Markdown files locally.
+description: bishop-memory — shared central memory server (localhost:8787) for missions, findings, service records, and document search. Use the 16 bishop-memory MCP tools instead of writing Markdown files locally.
 license: MIT
 compatibility: opencode
 metadata:
@@ -17,7 +17,7 @@ flight-recorder events, findings, patterns, service records, and imported
 documents in a single SQLite database with an FTS5 search index.
 
 This skill documents how to talk to bishop-memory from an opencode sub-agent
-via the MCP adapter (`mcpd`), what the 15 tools do, and the agent-identity
+via the MCP adapter (`mcpd`), what the 16 tools do, and the agent-identity
 convention that ties write events back to the calling sub-agent.
 
 ## What bishop-memory is
@@ -45,7 +45,7 @@ registers `mcpd` under the `mcp.bishop-memory` key in `opencode.json` with:
 mcpd reads `BISHOP_HARNESS` to compose agent identity (see below). `BISHOP_MEMORY_URL`
 defaults to `http://127.0.0.1:8787` if unset.
 
-## The 15 MCP tools
+## The 16 MCP tools
 
 ### Read tools (search and retrieval — no identity required)
 

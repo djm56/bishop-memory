@@ -6,7 +6,7 @@ flight-recorder events, findings, patterns, service records, and imported
 documents in a single SQLite database with an FTS5 search index.
 
 This file documents how to talk to bishop-memory from Claude Code via the
-MCP adapter (`mcpd`), what the 15 tools do, and the agent-identity convention
+MCP adapter (`mcpd`), what the 16 tools do, and the agent-identity convention
 that ties write events back to the calling session.
 
 ## What bishop-memory is
@@ -33,7 +33,7 @@ registers `mcpd` under the `mcpServers.bishop-memory` key with:
 mcpd reads `BISHOP_HARNESS` to compose agent identity (see below).
 `BISHOP_MEMORY_URL` defaults to `http://127.0.0.1:8787` if unset.
 
-## The 15 MCP tools
+## The 16 MCP tools
 
 ### Read tools (search and retrieval — no identity required)
 
