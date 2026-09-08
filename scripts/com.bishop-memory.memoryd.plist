@@ -21,7 +21,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__BISHOP_ROOT__/bin/memoryd</string>
+        <string>__MEMORYD_BIN__</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -35,6 +35,8 @@
         <string>data/memory.db</string>
         <key>APP_ENV</key>
         <string>production</string>
+        <key>MEMORY_ROOT</key>
+        <string>__MEMORY_ROOT__</string>
     </dict>
 
     <key>RunAtLoad</key>
@@ -43,10 +45,18 @@
     <key>KeepAlive</key>
     <true/>
 
+    <!--
+      Log paths deliberately live OUTSIDE the checkout. launchd opens these
+      files itself, before the process is spawned. When the checkout sits on
+      an external/removable volume, the launchd agent context is denied
+      traversal of /Volumes by TCC, that open fails, and the job dies at
+      setup with EX_CONFIG (78) and no output anywhere to explain why.
+      __LOG_DIR__ resolves to a path on the internal disk.
+    -->
     <key>StandardOutPath</key>
-    <string>__BISHOP_ROOT__/data/memoryd.out.log</string>
+    <string>__LOG_DIR__/memoryd.out.log</string>
 
     <key>StandardErrorPath</key>
-    <string>__BISHOP_ROOT__/data/memoryd.err.log</string>
+    <string>__LOG_DIR__/memoryd.err.log</string>
 </dict>
 </plist>
