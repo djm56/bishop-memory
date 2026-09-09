@@ -16,6 +16,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -90,7 +91,7 @@ func tableExists(db *sql.DB, table string) (bool, error) {
 		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
 		table,
 	).Scan(&name)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
@@ -127,4 +128,112 @@ func columnExists(db *sql.DB, table, column string) (bool, error) {
 		}
 	}
 	return false, rows.Err()
+}
+
+// EnsureMissionStepsIndex applies the unique index on (mission_id, step)
+// to the mission_steps table. It must run after ApplySchema but before
+// the API layer begins accepting upsert calls on the mission_steps endpoint.
+// It is safe to call on every boot: the index is skipped if it already exists.
+//
+// Why this function exists in the migration path instead of db/schema.sql:
+//
+// cmd/memoryd/main.go calls ApplySchema before EnsureMissionStepsIndex and
+// uses log.Fatal on either failure. A unique index declared in schema.sql
+// would fail inside ApplySchema at boot with a raw SQLite constraint violation
+// error (no guidance for the operator). Putting the index in the migration path
+// allows this function to pre-check for duplicates and produce an actionable
+// error message before the constraint is applied.
+//
+// The index is idempotent: safe to call on every boot, a no-op once it exists.
+// The duplicate check runs every time; after the operator resolves duplicates
+// and restarts the service, this function creates the index and moves on.
+//
+// Note: SQLite treats NULLs as distinct in a unique index — rows with
+// step IS NULL never collide even if mission_id is identical. Multiple NULL-step
+// rows for one mission are permitted. This is a consequence of SQL NULL semantics,
+// not a constraint violation. Legacy NULL-step rows from before this change
+// remain readable and unaffected by the index; they can never be upserted
+// through the API (step is now required), and are thus immutable.
+func EnsureMissionStepsIndex(db *sql.DB) error {
+	// Check if the index already exists. SQLite has no direct way to check
+	// for an existing index by name, so we query sqlite_master.
+	var indexName string
+	err := db.QueryRow(
+		`SELECT name FROM sqlite_master
+		 WHERE type = 'index' AND name = 'idx_mission_steps_unique_key'`,
+	).Scan(&indexName)
+	if err == nil {
+		// Index already exists; no-op.
+		return nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("check index existence: %w", err)
+	}
+
+	// Index does not exist. Check for duplicate (mission_id, step) pairs.
+	// Exclude NULL-step rows: they cannot violate a unique index (SQLite treats
+	// NULL as distinct), so they must never block index creation. Only non-NULL
+	// duplicate pairs are the problem here.
+	rows, err := db.Query(`
+		SELECT mission_id, step, COUNT(*) as cnt
+		FROM mission_steps
+		WHERE step IS NOT NULL
+		GROUP BY mission_id, step
+		HAVING COUNT(*) > 1
+		ORDER BY cnt DESC
+	`)
+	if err != nil {
+		return fmt.Errorf("query duplicates: %w", err)
+	}
+	defer rows.Close()
+
+	type duplicate struct {
+		missionID string
+		step      string
+	}
+	var duplicates []duplicate
+	for rows.Next() {
+		var missionID string
+		var step string
+		var cnt int
+		if err := rows.Scan(&missionID, &step, &cnt); err != nil {
+			return fmt.Errorf("scan duplicate: %w", err)
+		}
+		duplicates = append(duplicates, duplicate{missionID, step})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate duplicates: %w", err)
+	}
+
+	if len(duplicates) > 0 {
+		// Format an actionable error showing the operator the duplicates
+		// and how to fix them. Show up to 5 samples to keep the error readable.
+		msg := fmt.Sprintf("cannot create unique index on mission_steps(mission_id, step): "+
+			"found %d duplicate (mission_id, step) pairs. "+
+			"Examples:\n", len(duplicates))
+		shown := 0
+		for _, dup := range duplicates {
+			if shown >= 5 {
+				msg += fmt.Sprintf("... and %d more.\n", len(duplicates)-5)
+				break
+			}
+			msg += fmt.Sprintf("  mission_id=%q, step=%q\n", dup.missionID, dup.step)
+			shown++
+		}
+		msg += "To fix: identify the duplicate rows in the database (use " +
+			"`SELECT * FROM mission_steps WHERE mission_id = ? AND step = ?`) " +
+			"and delete the obsolete ones (e.g., keeping the one with the lowest id). " +
+			"Restart the service to create the unique index and enable upsert semantics."
+		return errors.New(msg)
+	}
+
+	// No duplicates found. Create the unique index.
+	if _, err := db.Exec(`
+		CREATE UNIQUE INDEX idx_mission_steps_unique_key
+		ON mission_steps(mission_id, step)
+	`); err != nil {
+		return fmt.Errorf("create unique index: %w", err)
+	}
+
+	return nil
 }

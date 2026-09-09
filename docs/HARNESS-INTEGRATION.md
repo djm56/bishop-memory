@@ -101,7 +101,7 @@ The harness writes its memory as Markdown files. Bishop-memory holds a derived c
 The reconciler parses:
 
 - `state/MISSION-ARCHIVE.md` and `state/CURRENT-MISSION.md` → creates/updates missions
-- `missions/*/PROGRESS.md` → creates mission steps
+- `missions/*/PROGRESS.md` → creates/updates mission steps
 - `findings/FINDINGS.md` → creates findings
 - `findings/PATTERNS.md` → creates patterns
 - `findings/service-records/*.md` → creates service records
@@ -125,7 +125,7 @@ The reconciler fetches the existing rows from the API, indexes them by natural k
 
 The harness mission files (BRIEF.md, PROGRESS.md) are the primary record. They are checked into git and survive a database reset, a service crash, or a harness migration. The database is a secondary, derived copy optimized for search and MCP tool access. Syncing from Markdown → database preserves that hierarchy.
 
-The journal (FLIGHT-RECORDER.md) is a partial exception: a post-mission hook mirrors journal rows live to the API, so the journal and database stay current during normal operation. The reconciler's journal sync is opt-in via `--include-journal` and defaults off precisely because the hook keeps it current and reconciling it can be expensive (per-mission enumeration with a 100-row cap).
+The journal (FLIGHT-RECORDER.md) and mission steps are both kept current live by a post-mission hook that mirrors rows to the API during normal operation. The reconciler's journal sync is opt-in via `--include-journal` and defaults off precisely because the hook keeps it current and reconciling it can be expensive (per-mission enumeration with a 100-row cap). Mission steps mirror live as well; the reconciler's full run at mission close acts as a backstop.
 
 ### Typical Usage
 
@@ -150,7 +150,7 @@ Where `BISHOP_MEMORY_HOME` is read from `.claude/bishop-memory.conf` in the harn
 - `--url <url>` (optional) — Base URL of the bishop-memory API. Defaults to `http://127.0.0.1:8787`, also honoring `BISHOP_MEMORY_URL` env var.
 - `--dry-run` — Parse and report what would be written; send nothing.
 - `--include-journal` — Reconcile the flight-recorder (journal) as well. Default: off (the post-mission hook keeps it current).
-- `--skip-steps` — Skip mission step reconciliation. Mission steps have a natural-key dedupe that excludes `status`, so a step mirrored while `in-progress` will freeze at that status when the API has no step-update path. Steps belong at the full reconciliation run during mission close, when all step statuses are final. The hook can use `--skip-steps` for live reconciliation of findings, patterns, service records, and missions; mission close runs the full reconciler without this flag. Default: off (steps are reconciled with everything else).
+- `--skip-steps` — Skip mission step reconciliation. Provided as an escape hatch for specialized use cases. Default: off (steps are reconciled with everything else).
 - `--no-sync-documents` — Skip `POST /v1/documents/sync`. Default: sync documents first so the full-text index is current in the same pass.
 
 ### The Journal Flag — Why It's Opt-In

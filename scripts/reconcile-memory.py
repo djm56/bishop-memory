@@ -12,13 +12,18 @@ missing rows and sync drifted fields).
 
   state/MISSION-ARCHIVE.md          -> missions          (create + PATCH if status/outcome drifts)
   state/CURRENT-MISSION.md          -> missions          (status override for live mission)
-  missions/<id>/PROGRESS.md         -> mission_steps     (create only; steps don't update)
+  missions/<id>/PROGRESS.md         -> mission_steps     (create or update as needed)
   state/FLIGHT-RECORDER.md          -> flight_recorder   (opt-in: --include-journal, per-mission dedupe)
   findings/FINDINGS.md              -> findings          (create only; findings are append-only)
   findings/PATTERNS.md              -> patterns          (create only; patterns are append-only)
   findings/service-records/<a>.md   -> service_records   (create only; records are append-only)
 
-Two things to know:
+CURRENT-MISSION.md is a bullet list (`- Field: value`), not a table like its
+three sibling state files (MISSION-ARCHIVE.md, PROGRESS.md, FLIGHT-RECORDER.md
+all parse via table_rows()). See parse_missions() below for why it gets its
+own line-by-line parse instead of going through table_rows().
+
+Four things to know:
 
 1. WRITES GO DIRECT TO HTTP, NOT THROUGH mcpd. Preserves original agent names.
 
@@ -31,6 +36,12 @@ Two things to know:
    (hard cap of 100 rows per request, no offset). Global dedupe is
    impossible, so journal reconciliation is opt-in via --include-journal
    and per-mission only (requires <100 rows per mission).
+
+4. CURRENT-MISSION.md HAS NO SUMMARY FIELD. Its six fields are Mission ID,
+   Status, Owner, Next Action, Last Updated, Blockers — see
+   .claude/templates/state/STATE-FILE-TEMPLATE.md in the harness. Only
+   Mission ID and Status are read here; the mission's title always comes
+   from BRIEF.md's `## Goal` via brief_goal().
 
 Idempotency: Run this twice in a row and the second pass must change nothing
 (all counts created/updated must be 0, exit code 0).
@@ -156,6 +167,28 @@ def table_rows(text, expected_cols):
         yield [c.strip() for c in cells]
 
 
+def bullet_fields(text):
+    """
+    Yield (field, value) pairs from a `- Field: value` bullet list.
+
+    CURRENT-MISSION.md is the one canonical state file that is a bullet
+    list rather than a Markdown table (its three siblings — MISSION-
+    ARCHIVE.md, PROGRESS.md, FLIGHT-RECORDER.md — all go through
+    table_rows()). Its six fields are written one per line as
+    `- Field Name: value`, per
+    .claude/templates/state/STATE-FILE-TEMPLATE.md in the harness. Field
+    names are matched case-insensitively against the template's exact
+    wording; no tolerance is added for a variant spelling or a table shape
+    nobody writes — the template is authoritative and this is the only
+    shape that occurs.
+    """
+    for line in text.splitlines():
+        match = re.match(r"^-\s*([A-Za-z][A-Za-z ]*):\s*(.*)$", line.strip())
+        if not match:
+            continue
+        yield match.group(1).strip().lower(), clean(match.group(2))
+
+
 def entries(path):
     """Split an append-only Markdown ledger into its `### ` entries."""
     if not os.path.isfile(path):
@@ -226,21 +259,31 @@ def parse_missions(root):
                 "summary": summary,
             }
 
-    # Then, load the live mission (if any), which overrides status if present
+    # Then, load the live mission (if any), which overrides status if present.
+    #
+    # CURRENT-MISSION.md is a bullet list, not a table (see bullet_fields()
+    # and the module docstring) — table_rows() never matches a single line
+    # of it. Read via table_rows() this loop always found mission_id == ""
+    # for every harness that ever wrote a mission, so the `if mission_id:`
+    # gate below never fired, the live mission never entered `missions`,
+    # and reconcile_steps() never even requested its PROGRESS.md. Fixed by
+    # parsing the actual bullet shape instead.
     path = os.path.join(root, "state", "CURRENT-MISSION.md")
     if os.path.isfile(path):
         text = open(path, encoding="utf-8").read()
         mission_id = ""
         status = ""
-        summary = ""
-        for cells in table_rows(text, 2):  # CURRENT-MISSION format: | Field | Value |
-            field, value = clean(cells[0]), clean(cells[1]) if len(cells) > 1 else ""
-            if field.lower() == "mission id":
+        for field, value in bullet_fields(text):
+            if field == "mission id":
                 mission_id = value
-            elif field.lower() == "status":
+            elif field == "status":
                 status = value if value in {"not-started", "in-progress", "blocked", "complete"} else ""
-            elif field.lower() == "summary":
-                summary = value
+        # clean() (called inside bullet_fields) already collapsed a literal
+        # "none" — the template's explicit placeholder for an unset Mission
+        # ID — to "". So a file carrying `- Mission ID: none` yields
+        # mission_id == "" here, and the `if mission_id:` gate below
+        # correctly treats that as "no live mission" rather than creating
+        # one literally named "none".
 
         if mission_id:
             # Upsert: archive wins on both status and outcome (archive is the closing record).
@@ -249,13 +292,18 @@ def parse_missions(root):
                 # Mission is in archive; keep its canonical status and outcome
                 pass
             else:
-                # Mission is live (not archived); use CURRENT-MISSION.md status
+                # Mission is live (not archived); use CURRENT-MISSION.md status.
+                # CURRENT-MISSION.md has no Summary field (see module
+                # docstring, note 4) — title comes from brief_goal() alone,
+                # with no Markdown fallback. "summary" is kept as "" only
+                # for dict-shape parity with the archive branch above;
+                # nothing downstream reads it.
                 missions[mission_id] = {
                     "id": mission_id,
-                    "title": brief_goal(root, mission_id) or summary,
+                    "title": brief_goal(root, mission_id),
                     "status": status or "not-started",
                     "outcome": "",  # No outcome until archived
-                    "summary": summary,
+                    "summary": "",
                 }
 
     return list(missions.values())
@@ -387,6 +435,31 @@ def parse_service_records(root):
 # Dedupe and reconcile
 # --------------------------------------------------------------------------
 
+def fetch_failure_note(fetch_failed, skipped=None):
+    """
+    Build the summary-line suffix reported for a fetch failure, naming an
+    actual count rather than only a boolean "(could not fetch existing)".
+
+    Two shapes of fetch exist in this script:
+      - Per-item (steps, journal events): each mission gets its own GET, so
+        some missions can succeed while others fail. Pass the entity's own
+        `skipped_fetch_failed` counter as `skipped` so the line states
+        exactly how many parsed items a partial failure left unexamined —
+        the gap that made counts silently fail to sum in the original
+        [steps] line.
+      - All-or-nothing (missions, findings, patterns, service records): one
+        shared GET; if it fails, every parsed item is skipped, which is
+        already the "parsed" figure on the same line. Call with
+        `skipped=None` and this reports the failed-request count instead —
+        there's nothing narrower to report.
+    """
+    if fetch_failed <= 0:
+        return ""
+    if skipped is not None:
+        return f" ({skipped} skipped — fetch failed for {fetch_failed} mission(s))"
+    return f" (fetch failed — {fetch_failed} request(s) could not confirm existing state)"
+
+
 def prune(payload):
     """Drop empty-string fields so `omitempty` validation sees them as absent."""
     return {k: v for k, v in payload.items() if v not in ("", None)}
@@ -459,8 +532,17 @@ def reconcile_missions(client, parsed_missions):
 
 
 def reconcile_steps(client, parsed_missions, root, skip_steps=False):
-    """Create missing mission steps. When skip_steps=True, parse but skip reconciliation."""
-    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0}
+    """Create or update mission steps as needed, with comparison-based dedup."""
+    # "fetch_failed" counts affected MISSIONS (one GET per mission, so a
+    # mission either fetches or doesn't); "skipped_fetch_failed" counts the
+    # STEPS that fetch failure left untouched, so that
+    # parsed == created + updated + unchanged + failed + skipped_fetch_failed
+    # always holds. Without the second counter, a mission-level fetch
+    # failure quietly removes its steps from every bucket after "parsed",
+    # and the summary line looks like a clean, fully-examined run even
+    # though some steps were never even compared.
+    status_counts = {"parsed": 0, "created": 0, "updated": 0, "unchanged": 0, "failed": 0,
+                      "fetch_failed": 0, "skipped_fetch_failed": 0}
 
     # Parse steps eagerly for all missions (to report true parsed count even during outages)
     all_parsed_steps = {}
@@ -496,21 +578,60 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
             missions_fetch_failed.add(mission["id"])
             status_counts["fetch_failed"] += 1
 
-    # Create missing steps, skipping writes for missions whose existing-steps fetch failed
+    # Helper: compare parsed step payload against stored step, handling normalization.
+    # The three key normalisation traps:
+    #   1. Truncation: parse_steps already truncates (step to 16, phase to 64, agent to 128, notes to 2000).
+    #      Stored values are whatever was posted, already truncated. Compare post-truncation payload against stored.
+    #   2. Pruning: prune() drops empty-string and None fields so omitempty validation works. A field the payload
+    #      omits is a field the reconciler has no opinion about; COALESCE preserves whatever is stored. Only
+    #      compare keys present in the pruned payload — omitted fields are not differences.
+    #   3. None normalization: stored row comes back as JSON with NULL -> None. Normalise None to "" before
+    #      comparing, or a stored NULL against a payload that omits the field will read as different forever.
+    def steps_equal(parsed_payload, stored_step):
+        """Compare parsed (pruned) payload against stored step. Return True if they're the same."""
+        payload = prune(parsed_payload)
+        # Only keys in the payload matter; omitted fields are not differences.
+        for key in payload:
+            stored_value = stored_step.get(key)
+            # Normalise stored NULL to "" for comparison
+            if stored_value is None:
+                stored_value = ""
+            payload_value = payload[key]
+            if stored_value != payload_value:
+                return False
+        return True
+
+    # Create or update steps, skipping writes for missions whose existing-steps fetch failed
     for mission in parsed_missions:
         steps = all_parsed_steps[mission["id"]]
-        # Skip writes for missions whose existing-steps fetch failed
+        # Skip writes for missions whose existing-steps fetch failed. Count
+        # the steps themselves here (not just the mission) so the summary
+        # line can report exactly how many parsed steps were never examined.
         if mission["id"] in missions_fetch_failed:
+            status_counts["skipped_fetch_failed"] += len(steps)
             continue
 
         for step in steps:
             key = (mission["id"], step["step"])
+            payload = prune(step)
+
             if key in existing_steps:
-                status_counts["skipped"] += 1
+                # Step exists: check if it differs
+                if steps_equal(step, existing_steps[key]):
+                    status_counts["unchanged"] += 1
+                else:
+                    # Step differs: upsert it
+                    escaped_id = urllib.parse.quote(mission['id'], safe='')
+                    if not client.write("POST", f"/v1/missions/{escaped_id}/steps",
+                                        payload, f"{mission['id']} step {step['step']} (update)"):
+                        status_counts["failed"] += 1
+                    else:
+                        status_counts["updated"] += 1
             else:
+                # Step doesn't exist: create it
                 escaped_id = urllib.parse.quote(mission['id'], safe='')
                 if not client.write("POST", f"/v1/missions/{escaped_id}/steps",
-                                    prune(step), f"{mission['id']} step {step['step']}"):
+                                    payload, f"{mission['id']} step {step['step']}"):
                     status_counts["failed"] += 1
                 else:
                     status_counts["created"] += 1
@@ -520,7 +641,16 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
 
 def reconcile_journal(client, parsed_missions, root):
     """Reconcile flight recorder events (per-mission, opt-in)."""
-    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "warned": 0, "fetch_failed": 0}
+    # Same per-mission fetch shape as reconcile_steps(): "fetch_failed" counts
+    # affected missions, "skipped_fetch_failed" counts the events those
+    # missions' rows left untouched, so a reader can tell how many parsed
+    # events were genuinely skipped rather than inferring it from stderr.
+    # Note: "parsed" here also excludes events for missions this run never
+    # heard of at all (see the `not any(...)` filter below) — that's a
+    # separate, deliberate scope filter, not a fetch failure, and is not
+    # counted here.
+    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "warned": 0,
+                      "fetch_failed": 0, "skipped_fetch_failed": 0}
 
     # Fetch all existing journal rows (per-mission, with cap check)
     existing_journal = {}
@@ -552,6 +682,7 @@ def reconcile_journal(client, parsed_missions, root):
         if not any(m["id"] == event["mission_id"] for m in parsed_missions):
             continue
         if event["mission_id"] in missions_journal_fetch_failed:
+            status_counts["skipped_fetch_failed"] += 1
             continue
 
         key = (event["mission_id"], event["occurred_at"], event["step"], event["event"], event["note"])
@@ -681,10 +812,7 @@ def main():
     parser.add_argument("--include-journal", action="store_true",
                         help="Reconcile flight-recorder (journal) as well. Default: off (hook keeps it current).")
     parser.add_argument("--skip-steps", action="store_true",
-                        help="Skip mission step reconciliation. Steps have a natural-key dedupe that excludes status, "
-                             "so a step mirrored while in-progress will freeze at that status when the service has no "
-                             "step-update path. Full reconciliation without this flag belongs at mission close, when all "
-                             "step statuses are final.")
+                        help="Skip mission step reconciliation. Use this to exclude step syncing from the reconciliation run.")
     parser.add_argument("--no-sync-documents", action="store_true",
                         help="Skip POST /v1/documents/sync. Default: sync documents first.")
     args = parser.parse_args()
@@ -722,7 +850,7 @@ def main():
     # --- Missions ---------
     missions = parse_missions(root)
     counts = reconcile_missions(client, missions)
-    fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+    fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[missions] {counts['parsed']} parsed, {counts['created']} created, " +
           f"{counts['updated']} updated, {counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
     total_failed_operations += counts['failed']
@@ -732,19 +860,22 @@ def main():
     # --- Mission steps ----
     counts = reconcile_steps(client, missions, root, skip_steps=args.skip_steps)
     if args.skip_steps:
-        print(f"[steps] {counts['parsed']} parsed (skipped — steps are mirrored only at mission close, when all statuses are final)")
+        print(f"[steps] {counts['parsed']} parsed (skipped)")
     else:
-        fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
-        print(f"[steps] {counts['parsed']} parsed, {counts['created']} created, " +
-              f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
+        # skipped_fetch_failed is what makes this line's counts sum to
+        # "parsed" even when some missions' step-fetch failed and others'
+        # didn't — see fetch_failure_note() and reconcile_steps().
+        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))
+        print(f"[steps] {counts['parsed']} parsed, {counts['created']} created, {counts['updated']} updated, " +
+              f"{counts['unchanged']} unchanged, {counts['failed']} failed{fetch_status}")
         total_failed_operations += counts['failed']
         total_fetch_failures += counts.get('fetch_failed', 0)
-        total_entities += counts['created']
+        total_entities += counts['created'] + counts['updated']
 
     # --- Flight recorder (journal) -- opt-in ----
     if args.include_journal:
         counts = reconcile_journal(client, missions, root)
-        fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))
         print(f"[flight-recorder] {counts['parsed']} parsed, {counts['created']} created, " +
               f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}", end="")
         if counts['warned'] > 0:
@@ -760,7 +891,7 @@ def main():
     # --- Findings --------
     print()
     counts = reconcile_findings(client, root)
-    fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+    fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[findings] {counts['parsed']} parsed, {counts['created']} created, " +
           f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
     total_failed_operations += counts['failed']
@@ -769,7 +900,7 @@ def main():
 
     # --- Patterns --------
     counts = reconcile_patterns(client, root)
-    fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+    fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[patterns] {counts['parsed']} parsed, {counts['created']} created, " +
           f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
     total_failed_operations += counts['failed']
@@ -778,7 +909,7 @@ def main():
 
     # --- Service records -
     counts = reconcile_records(client, root)
-    fetch_status = " (could not fetch existing)" if counts.get('fetch_failed', 0) > 0 else ""
+    fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[service-records] {counts['parsed']} parsed, {counts['created']} created, " +
           f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
     total_failed_operations += counts['failed']

@@ -290,13 +290,13 @@ Purpose: List all steps for a mission (PROGRESS.md view), in insertion order.
 }
 ```
 
-#### Record a mission step
+#### Record or update a mission step
 
 ```text
 POST /v1/missions/:missionID/steps
 ```
 
-Purpose: Record one agent execution attempt against a mission.
+Purpose: Record or update one agent execution attempt against a mission. Upserts on `(mission_id, step)`.
 
 **Request body:**
 
@@ -315,7 +315,7 @@ Purpose: Record one agent execution attempt against a mission.
 
 **Parameters:**
 
-- `step` (optional) — Step label from PROGRESS.md (e.g., `1`, `3a`), max 16 chars.
+- `step` (required) — Step label from PROGRESS.md (e.g., `1`, `3a`), max 16 chars. Absent, empty, or whitespace-only returns 400. This is the upsert key.
 - `phase` (optional) — Phase label from PROGRESS.md (e.g., `Core rename`), max 64 chars.
 - `agent` (optional) — Agent name (e.g., `hicks`, `bishop`), max 128 chars.
 - `status` (optional) — one of `pending`, `in-progress`, `done`, `failed`.
@@ -324,12 +324,32 @@ Purpose: Record one agent execution attempt against a mission.
 - `started_at` (optional) — ISO-8601 start timestamp.
 - `ended_at` (optional) — ISO-8601 end timestamp.
 
-**Response — 201 Created**
+**Upsert semantics:** The unique index on `(mission_id, step)` causes a reposted step to update the existing row. Missing fields in the payload preserve their stored values via `COALESCE(excluded.<col>, mission_steps.<col>)`, so **no field can be cleared through this endpoint** — an explicit empty string is converted to NULL and then preserved, indistinguishable from omission. Each write appends one `mission.step` audit row to the flight-recorder, capturing the step label, agent, and resulting status.
+
+**Response — 201 Created (new step)**
 
 ```json
 {
   "mission_id": "mission-20260905-01",
-  "recorded": true
+  "created": true
+}
+```
+
+**Response — 200 OK (step updated)**
+
+```json
+{
+  "mission_id": "mission-20260905-01",
+  "created": false
+}
+```
+
+**Response — 400 Bad Request (step missing or invalid)**
+
+```json
+{
+  "error": "invalid request",
+  "details": "step is required"
 }
 ```
 

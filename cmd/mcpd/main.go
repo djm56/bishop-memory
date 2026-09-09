@@ -306,7 +306,8 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("Mission ID the step is recorded against. Required."),
 			),
 			mcp.WithString("step",
-				mcp.Description("Optional step label from PROGRESS.md (e.g., \"4a\"), max 16 chars."),
+				mcp.Required(),
+				mcp.Description("Step label from PROGRESS.md (e.g., \"4a\"), max 16 chars. Required."),
 			),
 			mcp.WithString("phase",
 				mcp.Description("Optional phase label from PROGRESS.md (e.g., \"Core rename\"), max 64 chars."),
@@ -943,12 +944,17 @@ func makeMissionStepRecordHandler(c *client) func(ctx context.Context, req mcp.C
 			return mcp.NewToolResultError("mission_step_record: `agent` is required (the sub-agent name, composed with BISHOP_HARNESS as the actor identity)"), nil
 		}
 
+		step := strings.TrimSpace(mcp.ParseString(req, "step", ""))
+		if step == "" {
+			return mcp.NewToolResultError("mission_step_record: `step` is required"), nil
+		}
+
 		agent := composeAgent(c.harness, agentParam)
 
 		// Build the body; optional fields default to "" or are nil
 		// depending on whether the caller supplied them.
 		body := missionStepBody{
-			Step:    strings.TrimSpace(mcp.ParseString(req, "step", "")),
+			Step:    step,
 			Phase:   strings.TrimSpace(mcp.ParseString(req, "phase", "")),
 			Agent:   agent,
 			Status:  strings.TrimSpace(mcp.ParseString(req, "status", "")),

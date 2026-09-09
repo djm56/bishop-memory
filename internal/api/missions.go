@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -367,7 +368,7 @@ func nullIfEmpty(value string) any {
 // (agents register dynamically) and status must be one of the validated
 // step-status values to match the database CHECK constraint.
 type missionStepRequest struct {
-	Step      string  `json:"step" binding:"omitempty,max=16"`
+	Step      string  `json:"step" binding:"required,max=16"`
 	Phase     string  `json:"phase" binding:"omitempty,max=64"`
 	Agent     string  `json:"agent" binding:"omitempty,max=128"`
 	Status    string  `json:"status" binding:"omitempty,oneof=pending in-progress done failed"`
@@ -378,9 +379,36 @@ type missionStepRequest struct {
 }
 
 // createMissionStepHandler handles POST /v1/missions/:missionID/steps. It records
-// one agent execution attempt against a mission: it verifies the mission exists
-// (clean 404 rather than surfacing an FK violation), inserts into
-// mission_steps, appends a mission.step event for the audit trail, and commits.
+// or updates one agent execution attempt against a mission. It implements upsert
+// semantics keyed on (mission_id, step): the first POST creates a new row, and
+// subsequent POSTs with the same (mission_id, step) update the existing row while
+// preserving fields omitted from the update request.
+//
+// The handler verifies the mission exists (clean 404 rather than surfacing an FK
+// violation), executes an upsert into mission_steps, appends a mission.step event
+// for the audit trail, and commits. The response distinguishes between insert
+// (201 Created, `"created": true`) and update (200 OK, `"created": false`).
+//
+// Field preservation on update (COALESCE semantics):
+// An update omitting a field leaves that field unchanged in the database. This
+// enables callers to update specific fields without having to re-post the full
+// row. Explicitly sending "" (empty string) is indistinguishable from omitting
+// the field after trim — both are treated as COALESCE(nil, existing_value),
+// which preserves the stored value. This means no field can be cleared through
+// this endpoint once set; clearing to empty string has the same effect as
+// omitting the field. This is accepted and intentional: the live mirror in the
+// harness hook always posts complete steps, so partial updates are only for
+// out-of-band reconciliation where clearing is not a requirement.
+//
+// Audit row semantics (resulting state, not request delta):
+// After the upsert, the handler reads agent/status back from mission_steps
+// inside the same transaction and builds the audit note from those values —
+// not from what this particular request supplied. On a partial update that
+// omits agent or status, the COALESCE above preserves the previously stored
+// value; the audit note reports that preserved value rather than going blank,
+// so the journal and the row it describes never disagree about what the step
+// became. The flight recorder is the project's audit journal of state
+// mutations, so "what changed" is judged against the row, not the request body.
 //
 // The transaction mirrors createMissionHandler / updateMissionHandler so the
 // step + event are atomic.
@@ -406,6 +434,14 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		request.Status = strings.TrimSpace(request.Status)
 		request.Notes = strings.TrimSpace(request.Notes)
 		request.Summary = strings.TrimSpace(request.Summary)
+
+		// binding:"required" validates non-empty before trimming. Reject
+		// whitespace-only step explicitly after trimming so a request with
+		// {"step": "   "} is invalid at 400, not accepted and stored.
+		if request.Step == "" {
+			validationError(c, errors.New("step must not be empty or whitespace-only"))
+			return
+		}
 
 		// Step 4 fix (CRITICAL 2): convert empty optional pointer fields to nil
 		// for database storage. status is CHECK-constrained to NULL or
@@ -441,7 +477,7 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		defer tx.Rollback()
 
 		// Verify the mission exists so an unknown mission yields a clean 404
-		// rather than an FK-violation error from the INSERT below.
+		// rather than an FK-violation error from the upsert below.
 		var exists int
 		err = tx.QueryRowContext(
 			c.Request.Context(),
@@ -459,13 +495,48 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Check whether this (mission_id, step) pair already exists, so we can
+		// report whether the upsert created or updated the row. We do this BEFORE
+		// the upsert so we know the pre-operation state.
+		// step is now required and non-empty (trimmed), so a plain = comparison
+		// is safe — step can never be NULL, so the NULL-safe IS comparison
+		// is no longer needed.
+		var stepExists int
+		err = tx.QueryRowContext(
+			c.Request.Context(),
+			`SELECT 1 FROM mission_steps WHERE mission_id = ? AND step = ?`,
+			missionID,
+			request.Step,
+		).Scan(&stepExists)
+		isUpdate := err == nil
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			internalError(c, err)
+			return
+		}
+
+		// Upsert: ON CONFLICT(mission_id, step) DO UPDATE. The conflict target
+		// is the unique index on (mission_id, step). The UPDATE branch uses
+		// COALESCE(excluded.<col>, mission_steps.<col>) for updatable columns,
+		// so omitted fields preserve their stored values instead of being blanked.
+		// mission_id and step are not in the SET list (they are the conflict key).
+		// id and created_at must not be updated: id is the primary key and
+		// created_at records when the step was first seen in the database.
+		// step is required and non-empty, so it is passed directly without nullIfEmpty.
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO mission_steps (
 				mission_id, step, phase, agent, status, notes, started_at, ended_at, summary
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(mission_id, step) DO UPDATE SET
+				phase = COALESCE(excluded.phase, mission_steps.phase),
+				agent = COALESCE(excluded.agent, mission_steps.agent),
+				status = COALESCE(excluded.status, mission_steps.status),
+				notes = COALESCE(excluded.notes, mission_steps.notes),
+				started_at = COALESCE(excluded.started_at, mission_steps.started_at),
+				ended_at = COALESCE(excluded.ended_at, mission_steps.ended_at),
+				summary = COALESCE(excluded.summary, mission_steps.summary)`,
 			missionID,
-			nullIfEmpty(request.Step),
+			request.Step,
 			nullIfEmpty(request.Phase),
 			nullIfEmpty(request.Agent),
 			nullIfEmpty(request.Status),
@@ -479,13 +550,45 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Read the row back so the audit note describes what the step actually
+		// became, not merely what this request supplied. On a partial update
+		// that omits agent or status, the upsert above preserves the prior
+		// stored value (COALESCE); reading it back here keeps the audit note
+		// in agreement with that preserved value instead of recording NULL/absent
+		// for a field the row still has.
+		var resultingAgent, resultingStatus sql.NullString
+		err = tx.QueryRowContext(
+			c.Request.Context(),
+			`SELECT agent, status FROM mission_steps WHERE mission_id = ? AND step = ?`,
+			missionID,
+			request.Step,
+		).Scan(&resultingAgent, &resultingStatus)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+
+		// Append audit row. The note records the step label, whether this
+		// request created or updated the row, and — when present — the
+		// resulting (post-upsert) status, not merely the status this request
+		// happened to submit.
+		action := "created"
+		if isUpdate {
+			action = "updated"
+		}
+		auditNote := fmt.Sprintf("Mission step %s %s", request.Step, action)
+		if resultingStatus.Valid && resultingStatus.String != "" {
+			auditNote += fmt.Sprintf(" (status: %s)", resultingStatus.String)
+		}
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO flight_recorder (
-				mission_id, event, note
-			) VALUES (?, 'mission.step', ?)`,
+				mission_id, step, agent, event, note
+			) VALUES (?, ?, ?, 'mission.step', ?)`,
 			missionID,
-			"Mission step recorded",
+			request.Step,
+			resultingAgent,
+			auditNote,
 		)
 		if err != nil {
 			internalError(c, err)
@@ -497,9 +600,14 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusCreated, gin.H{
+		// Report creation vs update via status code and created field.
+		statusCode := http.StatusCreated
+		if isUpdate {
+			statusCode = http.StatusOK
+		}
+		c.JSON(statusCode, gin.H{
 			"mission_id": missionID,
-			"recorded":   true,
+			"created":    !isUpdate,
 		})
 	}
 }

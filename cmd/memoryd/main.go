@@ -78,6 +78,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// EnsureMissionStepsIndex creates the unique index on (mission_id, step)
+	// after pre-checking for duplicates. Must run after ApplySchema and EnsureColumns
+	// to ensure the mission_steps table exists and is fully populated. No-op once
+	// the index is present. On duplicate detection, logs an actionable error and exits.
+	if err := store.EnsureMissionStepsIndex(db); err != nil {
+		_ = db.Close()
+		log.Fatal(err)
+	}
+
 	router := api.NewRouter(cfg, db)
 
 	srv := &http.Server{
