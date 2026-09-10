@@ -35,7 +35,7 @@ type FlightRecorderEntry struct {
 
 	// Agent is the actor attribution for the event (Phase 3). Populated
 	// by the mcpd HTTP proxy as "<harness>:<sub-agent>" (e.g.
-	// "opencode:orchestrator"); NULL for system / non-agent callers and
+	// "anomalous:hicks"); NULL for system / non-agent callers and
 	// for the mission-lifecycle events emitted by the mission handlers.
 	Agent string `json:"agent,omitempty"`
 
@@ -75,7 +75,7 @@ type AppendFlightRecorderRequest struct {
 	// Agent is the actor attribution for the event. Optional so system /
 	// non-agent callers can still post events without naming an agent.
 	// The mcpd HTTP proxy composes Agent as "<harness>:<sub-agent>"
-	// (e.g. "opencode:orchestrator") so the audit trail is traceable
+	// (e.g. "anomalous:hicks") so the audit trail is traceable
 	// back to the originating agent family.
 	Agent string `json:"agent,omitempty" binding:"omitempty,max=64"`
 }

@@ -11,7 +11,7 @@ here ahead of an actual release.
 
 ### Breaking Changes
 
-- **Complete vocabulary refactor: harness vocabulary replaces legacy task/event model.** The 10-table schema, 18 HTTP routes, and 15 MCP tools use unified harness terminology. **Every database would need rebuilding — no migration script exists because there is no legacy data; the service is new and this was chosen as a clean break.** All changes are breaking:
+- **Complete vocabulary refactor: harness vocabulary replaces legacy task/event model.** The 10-table schema, 18 HTTP routes, and 15 MCP tools adopted unified harness terminology. **Every database would need rebuilding — no migration script exists because there is no legacy data; the service is new and this was chosen as a clean break.** All changes are breaking:
   - `tasks` table → `missions`; task ID format → mission ID format (mission-YYYYMMDD-NN)
   - `task_runs` table → `mission_steps`
   - `events` table → `flight_recorder`
@@ -106,6 +106,30 @@ here ahead of an actual release.
   project's docblock convention), and `.github/workflows/ci.yml`
   (`go build`, `go vet`, `gofmt -l`, `go test`, `go test -race` on every
   push/PR, matching the Go version pinned in `go.mod`).
+- **Central mission-ID allocation.** `POST /v1/missions/allocate` endpoint and
+  `mission_allocate` MCP tool enable multiple harnesses to safely allocate
+  unique mission IDs across UTC dates, eliminating collision windows in
+  concurrent allocation. The allocation and mission creation happen
+  atomically in a single transaction; concurrency is handled by retrying on
+  PRIMARY KEY collision. Brings MCP tool count from 15 to 16 and HTTP route
+  count from 18 to 19. A `harness` column on `missions` attributes each
+  mission to the harness that allocated it, enabling shared bishop-memory
+  instances to track multi-harness work. The harness identity is read from
+  the caller's `.claude/bishop-memory.conf` and passed via the `harness`
+  parameter to `mission_allocate`.
+- **Live mission step mirroring.** `POST /v1/missions/{id}/steps` now uses
+  upsert semantics keyed on the composite `(mission_id, step)` pair, backed
+  by a unique index, so step records from multiple sources can update
+  independently without collision. The `step` field becomes required; audit
+  rows (`flight_recorder` entries) now carry both the step label and agent
+  identity read back from the upserted row, preserving resulting state rather
+  than the actor's intended state alone. This closes a gap where concurrent
+  step updates would collide or be lost entirely.
+- **`next_action` kept current.** The `next_action` mission field is now
+  synchronized with the harness CURRENT-MISSION.md and cleared on mission close
+  (status → `complete`). On creation, omitted `next_action`, `owner`, and
+  `blockers` fields are stored as SQL NULL; the reconciler treats NULL and empty
+  string as equivalent.
 
 ### Changed
 

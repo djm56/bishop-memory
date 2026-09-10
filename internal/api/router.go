@@ -31,6 +31,12 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		{
 			missions.GET("", listMissionsHandler(db))
 			missions.POST("", createMissionHandler(db))
+			// Allocation must be registered before the "/:missionID"
+			// routes below only for readability — gin's tree gives a
+			// static segment priority over a wildcard regardless of
+			// registration order, so /v1/missions/allocate cannot be
+			// swallowed by /v1/missions/:missionID.
+			missions.POST("/allocate", allocateMissionHandler(db))
 			missions.GET("/:missionID", getMissionHandler(db))
 			missions.PATCH("/:missionID", updateMissionHandler(db))
 			missions.GET("/:missionID/steps", listMissionStepsHandler(db))

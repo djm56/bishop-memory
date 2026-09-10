@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS missions (
     priority    TEXT    NOT NULL DEFAULT 'normal',
     next_action TEXT,
     blockers    TEXT,
+    -- Which harness owns this mission. NULL on rows created before
+    -- central allocation existed, and on any mission created by a
+    -- harness running in standalone mode. Set by POST /v1/missions/allocate.
+    harness     TEXT,
     opened_at   TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     closed_at   TEXT,
     created_at  TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
@@ -251,6 +255,21 @@ CREATE INDEX IF NOT EXISTS idx_missions_updated_at ON missions(updated_at DESC);
 
 -- idx_mission_steps_mission_id — supports the mission-scoped step lookups.
 CREATE INDEX IF NOT EXISTS idx_mission_steps_mission_id ON mission_steps(mission_id);
+
+-- idx_mission_steps_unique_key is NOT declared here. It is created by the
+-- internal/store/migrate.go EnsureMissionStepsIndex function instead, which
+-- must pre-check for duplicate (mission_id, step) pairs and produce an
+-- actionable error before applying the constraint. See that function's docblock
+-- for why this diverges from schema.sql's usual layout: cmd/memoryd calls
+-- ApplySchema before EnsureMissionStepsIndex. A unique index declared in
+-- schema.sql would fail at boot with a raw SQLite constraint error (if the
+-- database held duplicates); the migration path allows a pre-check to produce
+-- guidance before the constraint is applied.
+--
+-- Consequence: `sqlite3 data/memory.db < db/schema.sql` (Makefile init-db)
+-- produces a schema lacking the unique index. That is intentional and expected:
+-- the index is created only by cmd/memoryd at boot (via the migration path).
+-- A subsequent cmd/memoryd boot creates the index and applies the constraint.
 
 -- idx_findings_status — supports filtering findings by status.
 CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);

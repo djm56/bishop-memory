@@ -149,39 +149,30 @@ The alternative — binding to `0.0.0.0` or a non-loopback address — is **not 
 
 The loopback + SSH-tunnel topology provides **encryption** (SSH), **authentication** (your SSH key), and **isolation** (only local processes can reach the service) without any changes to the service itself.
 
-## Registering the MCP
+## Connecting a Harness
 
-bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that Claude Code and opencode agents can call as a tool-providing server.
+bishop-memory exposes an **MCP adapter** (`cmd/mcpd`) that a bishop-harness can call as a tool-providing server. Connection is configured **from the harness**, not from bishop-memory.
 
-**See `docs/INSTALL.md` for the complete registration and configuration guide.**
+**See `docs/INSTALL.md` and `docs/HARNESS-INTEGRATION.md` for the complete registration and integration guide.**
 
-Quick reference:
+### Claude Code (bishop-harness)
 
-### Claude Code
+To connect an existing bishop-harness to this bishop-memory instance:
 
-```bash
-scripts/install-claude.sh --project-root /path/to/bishop-harness
-```
+1. Create `.claude/bishop-memory.conf` from the example in your harness repo (`.claude/bishop-memory.conf.example`).
+2. Set `BISHOP_MEMORY_HOME` to the path of this checkout.
+3. Run `.claude/connect-bishop-memory.sh` in your harness.
 
-Builds `mcpd`, registers it with Claude Code (via `claude` CLI or `claude.json`), and appends configuration to `CLAUDE.md`.
+This creates `.mcp.json` (project-scope MCP registration) and registers `mcpd` to run under your harness's project scope, not user scope. Your harness can then operate in either mode:
 
-Environment variables set automatically:
-- `BISHOP_MEMORY_URL`: `http://127.0.0.1:8787` (configurable).
-- `BISHOP_HARNESS`: `claude-code` (the harness prefix for agent identity).
+- **Standalone** — each harness owns its memory entirely. Mission IDs are derived locally. No network calls. Default, and safe when bishop-memory is absent.
+- **Central** — mission IDs are allocated centrally, and the journal is mirrored to bishop-memory. Requires the service to be running.
 
-### opencode
-
-```bash
-scripts/install-opencode.sh --opencode-root /path/to/.opencode
-```
-
-Registers the MCP in `opencode.json` and patches agent files.
-
-For all details, options, and the `--project-root` warning, see `docs/INSTALL.md`.
+The connection is idempotent — re-running the generator detects what's already in place and skips it.
 
 ## MCP Tool Surface
 
-The bishop-memory MCP adapter (`cmd/mcpd`) exposes **15 tools**:
+The bishop-memory MCP adapter (`cmd/mcpd`) exposes **16 tools**:
 
 ### Read Tools (no agent identity required)
 
@@ -195,10 +186,11 @@ The bishop-memory MCP adapter (`cmd/mcpd`) exposes **15 tools**:
 | `pattern_list` | List advisory patterns, newest-first. Returns `{"patterns":[...]}`. | None. |
 | `service_record_list` | List service records (observations about agent performance). Optional agent filter. Returns `{"service_records":[...]}`. | `agent` (optional): Filter by agent name (subject of the records). |
 
-### Write Tools (HTTP method varies; agent identity composed from `BISHOP_HARNESS:<agent>`)
+### Write Tools (HTTP method varies; agent identity composed from `BISHOP_HARNESS:<agent>` where noted)
 
 | Tool | Purpose | Arguments | HTTP Method |
 |------|---------|-----------|-------------|
+| `mission_allocate` | Allocate a centrally-unique mission ID and create the mission atomically. **Use this INSTEAD of `mission_create` in central mode** so mission IDs never collide between harnesses. Returns `{"id":...,"harness":...,"date":...,"seq":...,"created":true,"attempts":...}`. | `title` (required, max 500 chars): Human-readable mission title. `harness` (optional): Owning harness name; read from caller's `.claude/bishop-memory.conf`, fall back to `BISHOP_HARNESS` env var. `owner`, `priority`, `next_action`, `blockers` (all optional): Mission fields. `date` (optional, YYYYMMDD): Override UTC day for ID scope; defaults to server's UTC clock. | POST |
 | `mission_create` | Create a new mission. Returns `{"id":...,"created":true}`. | `id` (required, max 128 chars): Unique mission ID. `title` (required, max 500 chars): Human-readable title. `status`, `owner`, `priority`, `next_action`, `blockers` (all optional): Mission fields. | POST |
 | `mission_update` | Update an existing mission (status, owner, outcome, priority, next_action, blockers). Returns `{"id":...,"updated":true}` or HTTP 404. | `id` (required): Mission ID. Omitted fields are unchanged. | PATCH |
 | `flight_recorder_append` | Append an event to the flight recorder (audit log). Agent identity is composed as `<BISHOP_HARNESS>:<agent>`. Returns `{"appended":true,"id":...}`. | `mission_id` (optional): Scope the event to a mission. `step` (optional): Step label from PROGRESS.md. `event` (required, max 64 chars): Dotted event discriminator (e.g. `step.complete`, `agent.heartbeat`). `note` (required, max 2000 chars): Human-readable note. `occurred_at` (optional): Event timestamp in `YYYY-MM-DD HH:MM UTC` format. `agent` (required): Sub-agent name (e.g. `bishop`, `hicks`). Composed with `BISHOP_HARNESS`. | POST |

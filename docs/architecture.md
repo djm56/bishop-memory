@@ -123,13 +123,10 @@ bishop-memory/
 ├── scripts/
 │   ├── install-daemon.sh
 │   ├── install-daemon-linux.sh
+│   ├── reconcile-memory.py
+│   ├── backfill-memory.py
 │   ├── bishop-memory.service
-│   ├── install-claude.sh
-│   ├── install-opencode.sh
-│   ├── com.bishop-memory.memoryd.plist
-│   └── templates/
-│       ├── claude-memory.md
-│       └── memory-skill.md
+│   └── com.bishop-memory.memoryd.plist
 ├── testdata/
 │   └── memory/
 │       ├── state/
@@ -175,7 +172,7 @@ bishop-memory/
 
 ### Phase 4: MCP adapter
 
-**Status: Complete.** The `cmd/mcpd` stdio Model Context Protocol server exposes 15 tools to agents, with agent-identity composition for audit trail purposes.
+**Status: Complete.** The `cmd/mcpd` stdio Model Context Protocol server exposes 16 tools to agents, with agent-identity composition for audit trail purposes.
 
 ## Schema Design Decisions
 

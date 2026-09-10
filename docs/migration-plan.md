@@ -52,7 +52,7 @@ Agents switched to the HTTP API as their primary interface:
 
 **Status: ✅ Complete (release 0.4.0)**
 
-The `cmd/mcpd` stdio Model Context Protocol server was implemented to expose 15 tools to agents:
+The `cmd/mcpd` stdio Model Context Protocol server was implemented to expose 16 tools to agents:
 
 **Read tools (no agent identity):**
 - `memory_search` — FTS5 search over documents

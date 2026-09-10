@@ -69,6 +69,24 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// ApplySchema's CREATE TABLE IF NOT EXISTS statements cannot add a
+	// column to a table that already exists, so columns introduced after
+	// a table's first release are applied separately. No-op once the
+	// database is current.
+	if err := store.EnsureColumns(db); err != nil {
+		_ = db.Close()
+		log.Fatal(err)
+	}
+
+	// EnsureMissionStepsIndex creates the unique index on (mission_id, step)
+	// after pre-checking for duplicates. Must run after ApplySchema and EnsureColumns
+	// to ensure the mission_steps table exists and is fully populated. No-op once
+	// the index is present. On duplicate detection, logs an actionable error and exits.
+	if err := store.EnsureMissionStepsIndex(db); err != nil {
+		_ = db.Close()
+		log.Fatal(err)
+	}
+
 	router := api.NewRouter(cfg, db)
 
 	srv := &http.Server{

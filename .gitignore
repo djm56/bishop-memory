@@ -23,17 +23,28 @@
 coverage.out
 *.prof
 
-# --- Local data: SQLite database files ---
-# The DB lives under data/ and uses WAL mode, which produces -wal / -shm
-# sibling files alongside the main database. Both naming conventions are
-# covered (Makefile uses *.db; README documents *.sqlite as a future
-# option).
-data/*.sqlite
-data/*.db
-data/*.db-wal
-data/*.db-shm
-data/*.sqlite-wal
-data/*.sqlite-shm
+# --- SQLite database files (position-independent) ---
+# The primary DB lives under data/ and uses WAL mode, which produces
+# -wal / -shm sibling files. A database is machine-specific and may
+# hold private data — neither belongs in a published repo. Originally
+# anchored to data/ only, but stray databases created elsewhere
+# (e.g., by a test run with a bad DB_PATH) would not be ignored and
+# could be accidentally committed. Rules are now position-independent
+# to catch stragglers at the root or any directory. Both naming
+# conventions are covered (Makefile uses *.db; README documents
+# *.sqlite as a future option).
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+
+# --- Runtime log files ---
+# The daemon's stdout and stderr are redirected by the service definition
+# (plist or systemd unit) to wherever the installer points them, which may be
+# inside the checkout on older configurations. A log is never source.
+*.log
 
 # --- Local environment files ---
 # .env holds secrets (PORT, DB_PATH, LOG_LEVEL, future API keys).
@@ -55,6 +66,11 @@ data/*.sqlite-shm
 # binaries to the module root, which are now covered by the explicit
 # /memoryd and /mcpd rules above. A full build-all-commands verification
 # must clean those binaries after building.
+
+# --- Python build artifacts ---
+# The scripts are run directly, so CPython leaves bytecode beside them.
+__pycache__/
+*.pyc
 
 # --- Editor / OS scratch ---
 .DS_Store

@@ -30,7 +30,7 @@ import (
 // model.AppendFlightRecorderRequest (event + note required).
 //
 // Agent identity (Phase 3): the mcpd HTTP proxy composes
-// Agent = "<harness>:<sub-agent>" (e.g. "opencode:orchestrator") and
+// Agent = "<harness>:<sub-agent>" (e.g. "anomalous:hicks") and
 // forwards it here so the audit trail records who emitted each event.
 // Agent is optional; system / non-agent callers (and the mission-lifecycle
 // event INSERTs in createMissionHandler / updateMissionHandler /

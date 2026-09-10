@@ -139,6 +139,80 @@ Returns a single mission object (same shape as list response).
 }
 ```
 
+#### Allocate a mission
+
+```text
+POST /v1/missions/allocate
+```
+
+Purpose: Allocate a centrally-unique mission ID and create the mission atomically. **Use this instead of `POST /v1/missions` when multiple harnesses share a bishop-memory instance**, so mission IDs never collide across harnesses. The allocation and creation happen inside a single database transaction, and concurrency is handled by retrying on PRIMARY KEY collision; the endpoint is safe under concurrent load.
+
+**Request body:**
+
+```json
+{
+  "harness": "claude-code",
+  "title": "Refactor harness vocabulary",
+  "owner": "bishop",
+  "priority": "normal",
+  "next_action": "Update documentation",
+  "date": "20260905"
+}
+```
+
+**Parameters:**
+
+- `harness` (required) — The calling harness identifier, max 128 chars. Omitting this field returns `400 Bad Request` (this describes the HTTP endpoint contract). The MCP adapter (`mcpd`) optionally fills this from its own `BISHOP_HARNESS` environment variable if the caller omits it; supply it explicitly here whenever more than one harness shares this bishop-memory instance.
+- `title` (required) — Human-readable mission title, max 500 chars.
+- `owner` (optional) — Mission owner name, max 128 chars.
+- `priority` (optional) — one of `low`, `normal`, `high`, `urgent`. Defaults to `normal` server-side when omitted.
+- `next_action` (optional) — Free-form next-action note, max 2000 chars.
+- `blockers` (optional) — Free-form blockers note, max 2000 chars.
+- `date` (optional) — Override the UTC day the ID is scoped to, as YYYYMMDD. Omit in normal operation — the server's UTC clock is authoritative so harnesses in different timezones cannot disagree about what day it is. Present for testing and for backdating a mission being registered late.
+
+**Sequence number allocation:** The endpoint computes the next free sequence number (NN in mission-YYYYMMDD-NN) by scanning ALL missions for the given date across EVERY harness that has ever used this bishop-memory, not just the caller's missions. This global view is the entire reason allocation is centralised. IDs that do not match mission-YYYYMMDD-NN exactly are ignored when computing the maximum, so hand-written or legacy IDs cannot corrupt the sequence.
+
+**Response — 201 Created**
+
+```json
+{
+  "id": "mission-20260905-01",
+  "harness": "claude-code",
+  "date": "20260905",
+  "seq": 1,
+  "created": true,
+  "attempts": 1
+}
+```
+
+Fields:
+- `id` — The allocated mission ID.
+- `harness` — Echo of the harness parameter.
+- `date` — Echo of the date parameter (or the server's UTC date if omitted).
+- `seq` — The sequence number NN from the allocated ID.
+- `created` — Boolean flag (always true on success).
+- `attempts` — How many attempts were needed to allocate (1 in most cases; >1 if concurrent callers lost races).
+
+**Response — 400 Bad Request**
+
+Validation failures: harness is empty, title is empty, or date is invalid (must be YYYYMMDD if supplied).
+
+```json
+{
+  "error": "harness and title must be non-empty"
+}
+```
+
+**Response — 503 Service Unavailable**
+
+Concurrency limit reached: after `allocateRetryLimit` (10) consecutive PRIMARY KEY collisions, the endpoint gives up and returns 503 with a `Retry-After: 1` header. This is honest: the request is valid and will likely succeed shortly, but something is generating IDs faster than this loop can settle. Re-sending with exponential backoff is appropriate.
+
+```json
+{
+  "error": "could not allocate a mission id for 20260905 after 10 attempts"
+}
+```
+
 #### Create a mission
 
 ```text
@@ -290,13 +364,13 @@ Purpose: List all steps for a mission (PROGRESS.md view), in insertion order.
 }
 ```
 
-#### Record a mission step
+#### Record or update a mission step
 
 ```text
 POST /v1/missions/:missionID/steps
 ```
 
-Purpose: Record one agent execution attempt against a mission.
+Purpose: Record or update one agent execution attempt against a mission. Upserts on `(mission_id, step)`.
 
 **Request body:**
 
@@ -315,7 +389,7 @@ Purpose: Record one agent execution attempt against a mission.
 
 **Parameters:**
 
-- `step` (optional) — Step label from PROGRESS.md (e.g., `1`, `3a`), max 16 chars.
+- `step` (required) — Step label from PROGRESS.md (e.g., `1`, `3a`), max 16 chars. Absent, empty, or whitespace-only returns 400. This is the upsert key.
 - `phase` (optional) — Phase label from PROGRESS.md (e.g., `Core rename`), max 64 chars.
 - `agent` (optional) — Agent name (e.g., `hicks`, `bishop`), max 128 chars.
 - `status` (optional) — one of `pending`, `in-progress`, `done`, `failed`.
@@ -324,12 +398,32 @@ Purpose: Record one agent execution attempt against a mission.
 - `started_at` (optional) — ISO-8601 start timestamp.
 - `ended_at` (optional) — ISO-8601 end timestamp.
 
-**Response — 201 Created**
+**Upsert semantics:** The unique index on `(mission_id, step)` causes a reposted step to update the existing row. Missing fields in the payload preserve their stored values via `COALESCE(excluded.<col>, mission_steps.<col>)`, so **no field can be cleared through this endpoint** — an explicit empty string is converted to NULL and then preserved, indistinguishable from omission. Each write appends one `mission.step` audit row to the flight-recorder, capturing the step label, agent, and resulting status.
+
+**Response — 201 Created (new step)**
 
 ```json
 {
   "mission_id": "mission-20260905-01",
-  "recorded": true
+  "created": true
+}
+```
+
+**Response — 200 OK (step updated)**
+
+```json
+{
+  "mission_id": "mission-20260905-01",
+  "created": false
+}
+```
+
+**Response — 400 Bad Request (step missing or invalid)**
+
+```json
+{
+  "error": "invalid request",
+  "details": "step is required"
 }
 ```
 
@@ -700,7 +794,7 @@ Purpose: Search imported documents via FTS5. Returns ranked hits with snippets.
   "results": [
     {
       "id": 42,
-      "source_path": "/Users/djm56/Documents/Anomalous/projects/anom-001-msc-last-update/.claude/memory/findings/FINDINGS.md",
+      "source_path": "/path/to/harness/.claude/memory/findings/FINDINGS.md",
       "title": "# FINDINGS",
       "kind": "findings",
       "snippet": "Hicks should handle <mark>edge cases</mark> more defensively…",
