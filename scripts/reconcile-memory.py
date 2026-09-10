@@ -69,6 +69,44 @@ EM_DASH = "—"
 PLACEHOLDERS = {"", "-", EM_DASH, "none", "None", "n/a", "N/A"}
 
 
+def normalize_empty(value):
+    """
+    Normalize empty-like values for comparison, matching the behavior of clean()
+    for the domain clean() accepts.
+
+    Treats SQL NULL (arrives as Python None), empty string, and all placeholder
+    forms recognized by clean() as equal-empty, using the same normalization
+    (stripping whitespace and unescaping pipes) as clean() does for parsed values.
+    This ensures the parsed and database sides of the comparison agree exactly.
+    This prevents the reconciler from PATCHing the same rows on every hook fire
+    forever — multiple representations of "nothing", but only the actual live
+    next_action should change. A NULL from legacy rows that never got a next_action,
+    and a parsed "" (template's placeholder normalized by clean()), must compare
+    equal and require no write.
+
+    The two functions deliberately diverge on one case: given a non-string value
+    (such as a list or dict from malformed JSON), clean() would raise AttributeError
+    by calling .strip() unconditionally, whereas normalize_empty() returns the value
+    unchanged via its isinstance guard. This allows malformed responses to participate
+    in comparison rather than aborting — unequal types fail the comparison, which is
+    correct, rather than crashing the reconciler.
+    """
+    if value is None:
+        return ""
+    # Guard against non-string values (e.g., malformed JSON response with a list or dict)
+    # to prevent TypeError on membership test. If a value is not a string or None,
+    # it should not be silently treated as empty — return it as-is so malformed
+    # data remains visible in comparisons rather than raising during the check.
+    if not isinstance(value, str):
+        return value
+    value = value.strip()
+    # Unescape the pipes the journal format requires inside Note cells.
+    value = value.replace("\\|", "|")
+    if value in PLACEHOLDERS:
+        return ""
+    return value
+
+
 # --------------------------------------------------------------------------
 # HTTP
 # --------------------------------------------------------------------------
@@ -257,6 +295,7 @@ def parse_missions(root):
                 "status": "complete",
                 "outcome": outcome if outcome in {"done", "failed"} else "",
                 "summary": summary,
+                "next_action": "",  # Archived missions have no next action
             }
 
     # Then, load the live mission (if any), which overrides status if present.
@@ -273,11 +312,16 @@ def parse_missions(root):
         text = open(path, encoding="utf-8").read()
         mission_id = ""
         status = ""
+        next_action = ""
         for field, value in bullet_fields(text):
             if field == "mission id":
                 mission_id = value
             elif field == "status":
                 status = value if value in {"not-started", "in-progress", "blocked", "complete"} else ""
+            elif field == "next action":
+                # bullet_fields() already called clean() on the value, which normalizes
+                # the template's `none` placeholder to ""; treat it as empty.
+                next_action = value
         # clean() (called inside bullet_fields) already collapsed a literal
         # "none" — the template's explicit placeholder for an unset Mission
         # ID — to "". So a file carrying `- Mission ID: none` yields
@@ -289,10 +333,12 @@ def parse_missions(root):
             # Upsert: archive wins on both status and outcome (archive is the closing record).
             # CURRENT-MISSION.md supplies status only for a mission that is NOT in the archive.
             if mission_id in missions:
-                # Mission is in archive; keep its canonical status and outcome
+                # Mission is in archive; keep its canonical status, outcome, and next_action ("").
+                # Archive has precedence — a closed mission has no next action, even if
+                # CURRENT-MISSION.md still has a stale value (the mission has moved on).
                 pass
             else:
-                # Mission is live (not archived); use CURRENT-MISSION.md status.
+                # Mission is live (not archived); use CURRENT-MISSION.md status and next_action.
                 # CURRENT-MISSION.md has no Summary field (see module
                 # docstring, note 4) — title comes from brief_goal() alone,
                 # with no Markdown fallback. "summary" is kept as "" only
@@ -304,6 +350,7 @@ def parse_missions(root):
                     "status": status or "not-started",
                     "outcome": "",  # No outcome until archived
                     "summary": "",
+                    "next_action": next_action,
                 }
 
     return list(missions.values())
@@ -481,27 +528,46 @@ def reconcile_missions(client, parsed_missions):
 
     for mission in parsed_missions:
         if mission["id"] in existing:
-            # Mission exists: check if status or outcome differs
+            # Mission exists: check if status, outcome, or next_action differs
             db_mission = existing[mission["id"]]
 
             # Derive expected values
             expected_status = mission["status"]
             expected_outcome = mission["outcome"]
+            expected_next_action = mission.get("next_action", "")
 
-            # Check for drift
+            # Check for drift, using normalized comparison for next_action.
+            # Normalize both sides: SQL NULL (Python None), "", and the
+            # template's "none" placeholder all represent "nothing", so they
+            # must compare equal. Without this, a legacy NULL and a parsed ""
+            # differ forever, and the reconciler PATCHes the same rows on
+            # every hook fire.
+            #
+            # AUDIT-VOLUME NOTE: Once next_action tracks the live mission (no longer empty),
+            # every state-sync that changes CURRENT-MISSION.md's Next Action line produces
+            # one genuine mission.updated audit row from the API. The API writes an audit row
+            # on every call regardless, but this reconciler's comparison — checking whether a
+            # value differs before calling client.write — produces one row per genuine state
+            # change. The same technique applies to mission steps through steps_equal(), so
+            # the principle is consistent: an append-only audit journal paired with
+            # comparison-based deduplication on the client side.
             db_status = db_mission.get("status", "")
             db_outcome = db_mission.get("outcome", "") or ""
+            db_next_action = normalize_empty(db_mission.get("next_action"))
 
-            if db_status != expected_status or db_outcome != expected_outcome:
+            if db_status != expected_status or db_outcome != expected_outcome or \
+               normalize_empty(expected_next_action) != db_next_action:
                 update_payload = {}
                 if db_status != expected_status:
                     update_payload["status"] = expected_status
                 if db_outcome != expected_outcome:
                     update_payload["outcome"] = expected_outcome
+                if normalize_empty(expected_next_action) != db_next_action:
+                    update_payload["next_action"] = expected_next_action
 
                 escaped_id = urllib.parse.quote(mission['id'], safe='')
                 if not client.write("PATCH", f"/v1/missions/{escaped_id}", update_payload,
-                                    f"{mission['id']} (status={expected_status}, outcome={expected_outcome})"):
+                                    f"{mission['id']} (status={expected_status}, outcome={expected_outcome}, next_action={expected_next_action})"):
                     status_counts["failed"] += 1
                 else:
                     status_counts["updated"] += 1
@@ -518,12 +584,19 @@ def reconcile_missions(client, parsed_missions):
                 status_counts["failed"] += 1
                 continue
 
-            # If there's an outcome, PATCH it (outcome is not settable on create)
+            # If there's an outcome or next_action, PATCH them
+            # (neither is settable on create; outcome has always been PATCHed, and now next_action too)
+            patch_payload = {}
             if mission["outcome"]:
+                patch_payload["outcome"] = mission["outcome"]
+            if mission.get("next_action"):
+                patch_payload["next_action"] = mission["next_action"]
+
+            if patch_payload:
                 escaped_id = urllib.parse.quote(mission['id'], safe='')
-                if not client.write("PATCH", f"/v1/missions/{escaped_id}",
-                                    {"outcome": mission["outcome"]},
-                                    f"{mission['id']} outcome={mission['outcome']}"):
+                patch_label = ", ".join(f"{k}={v}" for k, v in patch_payload.items())
+                if not client.write("PATCH", f"/v1/missions/{escaped_id}", patch_payload,
+                                    f"{mission['id']} {patch_label}"):
                     status_counts["failed"] += 1
 
             status_counts["created"] += 1
