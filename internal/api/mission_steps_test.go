@@ -211,10 +211,10 @@ func getFlightRecorderNotes(t *testing.T, db *sql.DB, missionID string) []string
 
 // FlightRecorderRow represents a single row from flight_recorder.
 type FlightRecorderRow struct {
-	Step   *string
-	Agent  *string
-	Event  string
-	Note   string
+	Step  *string
+	Agent *string
+	Event string
+	Note  string
 }
 
 // getFlightRecorderRows returns full flight_recorder rows for a mission, in order.
