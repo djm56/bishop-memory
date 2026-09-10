@@ -116,6 +116,18 @@ The script:
 - Installs the plist to `~/Library/LaunchAgents/com.bishop-memory.memoryd.plist`.
 - Loads the agent with `launchctl load -w`.
 
+#### Installer Flags
+
+When the bishop-memory checkout is on an external or removable volume, launchd encounters TCC and dyld issues that manifest as hangs and silent startup failures. Use these flags to keep logs and the binary on the internal disk while pointing the service at the harness memory tree elsewhere.
+
+- **`--dry-run`** — Print the rendered plist and the launchctl commands that WOULD be run, but do NOT touch launchd or write the plist. Useful for verification on systems where the operator wants to inspect before installing.
+
+- **`--exec-dir <path>`** — Directory where the daemon binary is staged and run from. Defaults to `$HOME/.local/libexec/bishop-memory`. **Keep this on your internal disk.** launchd's dyld must open the executable before `main()` runs; on an external volume this can block indefinitely waiting for a TCC (Transparency, Consent, and Control) grant that has no way to be answered from a launchd context, causing the job to hang before it can log anything. Rebuilding the binary re-triggers the same issue, because macOS treats a replaced file as a new file for TCC purposes.
+
+- **`--log-dir <path>`** — Directory for `memoryd`'s stdout/stderr logs. Defaults to `$HOME/Library/Logs/bishop-memory`. **Keep this on your internal disk.** launchd opens log files itself before spawning the job; if the path sits on an external volume, the agent context is denied `/Volumes` traversal by TCC, so the job dies at setup with exit code 78 (EX_CONFIG) having written nothing anywhere. The logs are unreachable and the failure invisible.
+
+- **`--memory-root <path>`** — Absolute path to the harness memory tree. Baked into the plist as the `MEMORY_ROOT` environment variable, which `/v1/documents/sync` walks when a caller omits an explicit root. Defaults to `$BISHOP_ROOT/testdata/memory` (the shipped fixture), matching the service's own built-in fallback. Point this to your actual harness memory root (e.g., `/path/to/your/harness/.claude/memory`) when running in central mode.
+
 Check status:
 
 ```bash
@@ -358,6 +370,7 @@ The MCP adapter exposes **16 tools** grouped by use case. All tools are composed
 
 ### Recording and Proposing (agent identity composed automatically)
 
+- **`mission_allocate`** — Allocate a centrally-unique mission ID and create the mission atomically. **Use this instead of `mission_create` when the harness operates in central mode**, so mission IDs never collide between harnesses sharing the same bishop-memory instance. Reads the harness identity from the caller's `.claude/bishop-memory.conf` or falls back to the server's `BISHOP_HARNESS` env var.
 - **`mission_create`** — Create a new mission.
 - **`mission_update`** — Update mission status, owner, outcome, priority, blockers, next action.
 - **`mission_step_record`** — Record a step execution (agent name, status, notes, timestamps).

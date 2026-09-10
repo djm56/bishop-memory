@@ -186,10 +186,11 @@ The bishop-memory MCP adapter (`cmd/mcpd`) exposes **16 tools**:
 | `pattern_list` | List advisory patterns, newest-first. Returns `{"patterns":[...]}`. | None. |
 | `service_record_list` | List service records (observations about agent performance). Optional agent filter. Returns `{"service_records":[...]}`. | `agent` (optional): Filter by agent name (subject of the records). |
 
-### Write Tools (HTTP method varies; agent identity composed from `BISHOP_HARNESS:<agent>`)
+### Write Tools (HTTP method varies; agent identity composed from `BISHOP_HARNESS:<agent>` where noted)
 
 | Tool | Purpose | Arguments | HTTP Method |
 |------|---------|-----------|-------------|
+| `mission_allocate` | Allocate a centrally-unique mission ID and create the mission atomically. **Use this INSTEAD of `mission_create` in central mode** so mission IDs never collide between harnesses. Returns `{"id":...,"harness":...,"date":...,"seq":...,"created":true,"attempts":...}`. | `title` (required, max 500 chars): Human-readable mission title. `harness` (optional): Owning harness name; read from caller's `.claude/bishop-memory.conf`, fall back to `BISHOP_HARNESS` env var. `owner`, `priority`, `next_action`, `blockers` (all optional): Mission fields. `date` (optional, YYYYMMDD): Override UTC day for ID scope; defaults to server's UTC clock. | POST |
 | `mission_create` | Create a new mission. Returns `{"id":...,"created":true}`. | `id` (required, max 128 chars): Unique mission ID. `title` (required, max 500 chars): Human-readable title. `status`, `owner`, `priority`, `next_action`, `blockers` (all optional): Mission fields. | POST |
 | `mission_update` | Update an existing mission (status, owner, outcome, priority, next_action, blockers). Returns `{"id":...,"updated":true}` or HTTP 404. | `id` (required): Mission ID. Omitted fields are unchanged. | PATCH |
 | `flight_recorder_append` | Append an event to the flight recorder (audit log). Agent identity is composed as `<BISHOP_HARNESS>:<agent>`. Returns `{"appended":true,"id":...}`. | `mission_id` (optional): Scope the event to a mission. `step` (optional): Step label from PROGRESS.md. `event` (required, max 64 chars): Dotted event discriminator (e.g. `step.complete`, `agent.heartbeat`). `note` (required, max 2000 chars): Human-readable note. `occurred_at` (optional): Event timestamp in `YYYY-MM-DD HH:MM UTC` format. `agent` (required): Sub-agent name (e.g. `bishop`, `hicks`). Composed with `BISHOP_HARNESS`. | POST |
