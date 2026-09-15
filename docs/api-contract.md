@@ -784,8 +784,34 @@ Purpose: Search imported documents via FTS5. Returns ranked hits with snippets.
 
 **Query Parameters:**
 
-- `q` (required) — FTS5 query string. Multi-word is implicit-AND; wrap phrases in double-quotes (`"phrase"`); `*` is a prefix wildcard. Returns 400 if the query has invalid FTS5 syntax.
+- `q` (required) — Search string. Multi-word is implicit-AND; wrap phrases in double-quotes (`"phrase"`); `*` after a plain word is a prefix wildcard. Returns 400 if the query cannot be parsed (see *Query handling* below).
 - `limit` (optional) — Currently advisory only — the server always returns its internal LIMIT 20.
+
+**Query handling — punctuated words are matched literally.**
+
+`q` is rewritten into FTS5 query syntax before it runs; it is not passed
+through raw. Any whitespace-delimited word containing something other than a
+Unicode letter, digit, underscore, or combining mark — most commonly a hyphen,
+as in a mission ID or an identifier like `step-sync` or `FLIGHT-RECORDER` — is
+matched as a literal phrase automatically, exactly as if the caller had wrapped
+it in double quotes. A word already written as a complete `"quoted phrase"` is
+left as-is.
+
+Practical effect: `q=step-sync` and `q="step-sync"` return the same results.
+Before this rewrite, the unquoted form returned HTTP 500.
+
+A `"` inside a word, with no whitespace on either side, cannot be a phrase
+boundary, so it is escaped and folded into that word's own literal phrase:
+`q=abc"def"ghi` matches the single literal phrase `abc"def"ghi`, not three
+implicit-AND words. Only a `"` preceded by whitespace (or at the start of `q`)
+opens a caller phrase; if such a phrase is never closed, the query is rejected
+with 400 before reaching the database.
+
+One consequence: FTS5's `AND` / `OR` / `NOT` operators, `(` `)` grouping, and
+`<column>:<term>` filters are honoured only when the word using them is itself
+unpunctuated (a bare `NOT` still acts as the operator). None of these were
+previously documented as supported on this endpoint, so this is not a
+withdrawal of a documented capability.
 
 **Response — 200 OK**
 
@@ -807,7 +833,9 @@ Purpose: Search imported documents via FTS5. Returns ranked hits with snippets.
 
 **Response — 400 Bad Request**
 
-Invalid FTS5 query syntax.
+Returned when `q` is missing/empty, when it contains an unterminated `"`
+phrase, or when the rewritten query is still rejected by FTS5. The response
+never echoes any part of `q`.
 
 ```json
 {

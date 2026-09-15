@@ -4,7 +4,7 @@
 // mission.updated, mission.step, agent.*, improvement.*, ...). They back the
 // /v1/flight-recorder endpoints and provide a durable audit trail.
 //
-// TODO: implement in Phase 2 (see project_memory.md).
+// TODO: implement in Phase 2 (see docs/migration-plan.md).
 package store
 
 // TODO: implement in Phase 2 — typed helpers for the flight_recorder table:

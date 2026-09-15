@@ -4,7 +4,7 @@
 // (state/, missions/, findings/, reference/, workspace/, graph/) and indexed via
 // an FTS5 virtual table so /v1/memory/search can return ranked hits.
 //
-// TODO: implement in Phase 2 (see project_memory.md).
+// TODO: implement in Phase 2 (see docs/migration-plan.md).
 package store
 
 // TODO: implement in Phase 2 — typed helpers for documents + FTS5:
