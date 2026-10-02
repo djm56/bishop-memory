@@ -102,10 +102,13 @@ The reconciler parses:
 
 - `state/MISSION-ARCHIVE.md` and `state/CURRENT-MISSION.md` → creates/updates missions
 - `missions/*/PROGRESS.md` → creates/updates mission steps
-- `findings/FINDINGS.md` → creates findings
+- `findings/FINDINGS.md` → creates findings (tagged with `--harness`), and mirrors a `Status` the operator set by hand in the file into the service through the decision route
 - `findings/PATTERNS.md` → creates patterns
 - `findings/service-records/*.md` → creates service records
+- `reference/DIRECTIVES.md` → upserts directives by `DIR-NNN`
 - `state/FLIGHT-RECORDER.md` → creates journal events (opt-in, see below)
+
+It also registers the harness: every run with `--harness` upserts `PUT /v1/harnesses/<name>` with the absolute memory root, which is how the findings-triage exporter later finds the Markdown to write decisions into.
 
 ### Natural Key Dedupe
 
@@ -118,6 +121,7 @@ Each entity type has a natural key — the minimal set of fields that uniquely i
 | findings | `(finding_date, target, suggestion)` |
 | patterns | `name` |
 | service_records | `(agent, record_date, title)` |
+| directives | `directive_id` (`DIR-NNN`) |
 
 The reconciler fetches the existing rows from the API, indexes them by natural key, and only creates rows that are missing. For missions, it also **updates** if `status` or `outcome` has drifted, so a Markdown edit to a mission's status is reflected in the database.
 
@@ -125,29 +129,32 @@ The reconciler fetches the existing rows from the API, indexes them by natural k
 
 The harness mission files (BRIEF.md, PROGRESS.md) are the primary record. They are checked into git and survive a database reset, a service crash, or a harness migration. The database is a secondary, derived copy optimized for search and MCP tool access. Syncing from Markdown → database preserves that hierarchy.
 
+**The one exception runs the other way, deliberately.** Decisions the operator makes on the findings-triage review page (`/triage`) are written back into the harness's `FINDINGS.md` and `DIRECTIVES.md` by `scripts/export-decisions.py`, so the crew — which reads `FINDINGS.md` for approved findings — sees them. The exporter touches only an entry's three decision lines and appends ratified directives; it never creates, reorders or deletes entries, backs the file up first, and refuses an entry whose file status already disagrees with the service. A hand edit in the file still wins: the next reconcile mirrors it into the service. See `docs/FINDINGS-TRIAGE.md`.
+
 The journal (FLIGHT-RECORDER.md) and mission steps are both kept current live by a post-mission hook that mirrors rows to the API during normal operation. The reconciler's journal sync is opt-in via `--include-journal` and defaults off precisely because the hook keeps it current and reconciling it can be expensive (per-mission enumeration with a 100-row cap). Mission steps mirror live as well; the reconciler's full run at mission close acts as a backstop.
 
 ### Typical Usage
 
-After connecting a harness or editing memory Markdown directly:
+After connecting a harness or editing memory Markdown directly, read both values from `.claude/bishop-memory.conf` and run:
 
 ```bash
 cd /path/to/harness
-$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory
+$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness $BISHOP_HARNESS
 ```
+
+(Substitute `$BISHOP_MEMORY_HOME` and `$BISHOP_HARNESS` from `.claude/bishop-memory.conf`.)
 
 Verify the changes with a dry run first:
 
 ```bash
-$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --dry-run
+$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness $BISHOP_HARNESS --dry-run
 ```
-
-Where `BISHOP_MEMORY_HOME` is read from `.claude/bishop-memory.conf` in the harness.
 
 ### Flags
 
 - `--root <path>` (required) — Path to the `.claude/memory` tree.
-- `--url <url>` (optional) — Base URL of the bishop-memory API. Defaults to `http://127.0.0.1:8787`, also honoring `BISHOP_MEMORY_URL` env var.
+- `--url <url>` (optional) — Base URL of the bishop-memory API. Defaults to `http://127.0.0.1:8787` and also honors the `BISHOP_MEMORY_URL` environment variable.
+- `--harness <name>` (optional) — Harness identity for audit trail attribution, for `findings.harness`, and for the `harnesses` registration the triage exporter depends on. Omitting it causes reconciliation to proceed unattributed (missions, steps, findings appear without an agent actor, and no harness is registered). Unlike `--url`, this flag deliberately has no environment fallback: `BISHOP_HARNESS` is a harness-wide identity that may be set in an operator's shell for unrelated purposes, and a stale or cross-project export would silently attribute reconciliation runs to the wrong harness, corrupting shared multi-harness data. The value must be passed explicitly.
 - `--dry-run` — Parse and report what would be written; send nothing.
 - `--include-journal` — Reconcile the flight-recorder (journal) as well. Default: off (the post-mission hook keeps it current).
 - `--skip-steps` — Skip mission step reconciliation. Provided as an escape hatch for specialized use cases. Default: off (steps are reconciled with everything else).

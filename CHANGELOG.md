@@ -86,6 +86,44 @@ here ahead of an actual release.
 
 ### Added
 
+- **Documentation split into end-user and developer sets, published to the
+  GitHub wiki.** `docs/wiki/` holds fifteen pages — a User Guide, a generated
+  MCP Tool Reference covering both `mcpd` profiles with worked examples, a
+  Review Page Guide, Commands and Scripts, Troubleshooting, and eight
+  developer pages (overview, HTTP API, database, MCP adapter, scripts and
+  reconciler, triage agents, testing and CI, harness integration).
+  `scripts/publish-wiki.sh` / `make wiki-publish` push them to the wiki
+  repository; `docs/wiki/` is the source of truth. `README.md` was rewritten
+  as the entry point to both sets. The harness profile's `finding_list` tool
+  now actually registers the `category`, `harness`, `ids` and `limit`
+  arguments its handler already forwarded.
+- **Findings triage.** Nightly classification of the findings ledger into a
+  17-category taxonomy, per-category grouping and recommendations, directive
+  drafts, an operator review page at `/triage`, and a write-back of decisions
+  into each harness's `FINDINGS.md` / `DIRECTIVES.md`. New tables `harnesses`,
+  `finding_categories`, `triage_runs`, `finding_triage`, `finding_groups`,
+  `finding_recommendations`, `directive_proposals`; additive columns
+  `findings.harness` and `findings.decision_note` (applied at boot by
+  `EnsureColumns`, with the `idx_findings_harness` index created there rather
+  than in `db/schema.sql` so a pre-triage database still boots). New routes
+  under `/v1/finding-categories`, `/v1/finding-groups`,
+  `/v1/finding-recommendations`, `/v1/directive-proposals`, `/v1/harnesses`,
+  `/v1/triage/*`, the operator-only `POST /v1/findings/:id/decision` (the one
+  write path for `findings.status`), `PUT /v1/findings/:id/harness`, and
+  `PUT /v1/directives/:id` for the reconciler's mirror of `DIRECTIVES.md`.
+  `mcpd` gains `MCPD_PROFILE=triage` with 13 tools for the two scheduled agents
+  (`.claude/agents/findings-classifier.md`, `.claude/agents/findings-processor.md`,
+  doctrine in `.claude/skills/findings-triage/SKILL.md`); the harness profile's
+  `finding_list` gains `category`/`harness`/`ids`/`limit` filters and
+  `finding_append` carries `BISHOP_HARNESS` as the finding's harness. Scripts:
+  `triage-run.sh`, `triage-seed-categories.py`, `triage-backfill-harness.py`,
+  `export-decisions.py`, `install-triage-schedule.sh`; Makefile `triage-*`
+  targets. The reconciler now registers the harness's memory root, sends
+  `harness` on findings, mirrors a hand-set `Status` in `FINDINGS.md` into the
+  service through the decision route, and mirrors `DIRECTIVES.md` into the
+  `directives` table. Guide: `docs/FINDINGS-TRIAGE.md`; design record:
+  `docs/FINDINGS-TRIAGE-PLAN.md`.
+
 - **systemd unit + Linux installer** (`scripts/bishop-memory.service`,
   `scripts/install-daemon-linux.sh`) — the Linux/systemd counterpart to
   the existing macOS/launchd installer. Runs as a dedicated, installer-created

@@ -23,6 +23,7 @@
 │  ├── Gin HTTP API                                            │
 │  ├── importer                                                │
 │  ├── Markdown renderer (Phase 3 stub — unimplemented)       │
+│  ├── review page (/triage, embedded HTML)                    │
 │  └── SQLite access layer                                     │
 │             │                                                │
 │             ▼                                                │
@@ -36,7 +37,10 @@
 │  ├── service_records                                         │
 │  ├── directives                                              │
 │  ├── documents                                               │
-│  └── documents_fts (FTS5 virtual table)                      │
+│  ├── documents_fts (FTS5 virtual table)                      │
+│  └── triage: harnesses, finding_categories, triage_runs,     │
+│      finding_triage, finding_groups,                         │
+│      finding_recommendations, directive_proposals            │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -59,7 +63,7 @@
 
 - **Driver:** `modernc.org/sqlite` — pure-Go, CGo-free SQLite.
 - **Mode:** WAL enabled for concurrent reads/writes.
-- **Tables:** `missions`, `mission_steps`, `flight_recorder`, `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`.
+- **Tables:** `missions`, `mission_steps`, `flight_recorder`, `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, plus the triage tables `harnesses`, `finding_categories`, `triage_runs`, `finding_triage`, `finding_groups`, `finding_recommendations`, `directive_proposals`.
 - **Virtual:** `documents_fts` — FTS5 full-text search index over imported documents.
 - **Search:** Queried via `/v1/memory/search`.
 
@@ -180,3 +184,5 @@ bishop-memory/
 - **No foreign key on findings.mission_id:** Findings are stored without existence checking. A finding can outlive mission-folder cleanup.
 - **Append-only flight_recorder:** The audit log is append-only by application convention, not enforced at schema level. It distinguishes `occurred_at` (caller-supplied event time) from `created_at` (insert time).
 - **Standalone FTS5 table:** `documents_fts` is not an external-content table; it has no triggers. The importer is the single writer to both tables and inserts into both in the same transaction.
+- **Triage state lives beside the ledger, not in it:** `findings.status` is a CHECK constraint SQLite cannot widen without a table rebuild, and the doctrine makes it human-only. Model-written state (classification, grouping, recommendation, directive draft) therefore sits in its own tables, and the operator's decision route is the single writer of status. The agent/operator boundary is the set of routes `mcpd` registers per profile, not authentication.
+- **Additive columns and their indexes are applied after `ApplySchema`:** `db/schema.sql` runs first and uses `CREATE ... IF NOT EXISTS`, so a column added to an existing table must go through `internal/store/migrate.go`, and so must any index on it — an index declared in `schema.sql` on a not-yet-added column fails the bootstrap on an upgraded database.
