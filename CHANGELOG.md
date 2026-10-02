@@ -86,6 +86,9 @@ here ahead of an actual release.
 
 ### Added
 
+- **A favicon for the review page.** A "B" in the page's accent blue, served
+  at `/favicon.svg` with a 32px PNG at `/favicon.ico`, both embedded in the
+  binary. It replaces the 404 every page load used to log for `/favicon.ico`.
 - **Review page restyle.** `internal/ui/triage.html` is replaced with a new
   design: a warm neutral palette, a card layout, segmented tabs, a category rail
   with count badges, and keyboard hints on the buttons. A header control

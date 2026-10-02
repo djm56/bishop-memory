@@ -10,6 +10,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 |---|---|---|---|
 | GET | `/healthz` | `healthHandler` | — |
 | GET | `/triage` | `ui.TriagePageHandler` | — (review page) |
+| GET | `/favicon.svg`, `/favicon.ico` | `ui.FaviconSVGHandler`, `ui.FaviconICOHandler` | — (the review page's icon; `.ico` serves a 32px PNG) |
 | GET | `/v1/missions` | `listMissionsHandler` | `mission_list` (harness) |
 | POST | `/v1/missions` | `createMissionHandler` | `mission_create` (harness) |
 | POST | `/v1/missions/allocate` | `allocateMissionHandler` | `mission_allocate` (harness) |

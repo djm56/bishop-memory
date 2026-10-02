@@ -1043,6 +1043,13 @@ GET /triage
 
 The operator's review page: one embedded HTML file that talks to the routes above. Loopback-only like the rest of the service.
 
+```text
+GET /favicon.svg   image/svg+xml
+GET /favicon.ico   image/png (32x32)
+```
+
+The page's icon, a "B" in the accent colour. Both are embedded in the binary (`internal/ui/`) and cached for a day. `/favicon.ico` carries a PNG rendering of the SVG for browsers that do not use SVG icons, and so a browser's automatic `/favicon.ico` request is not logged as a 404.
+
 ## Root safety
 
 `POST /v1/documents/sync` accepts a caller-supplied `root` parameter. The server enforces only a **filesystem-root guard**: it rejects a root that is (or resolves to) the filesystem root (`/` on POSIX, bare volume root on Windows), so a caller cannot point this service at `/` and have the importer walk the entire filesystem.
