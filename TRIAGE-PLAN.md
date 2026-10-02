@@ -1,6 +1,59 @@
 # Finding Triage & Directive Synthesis — Implementation Plan
 
-**Status:** Proposal. Nothing here is built.
+**Status:** Superseded on 2026-10-02. A different design was built and merged in
+PR #3. Everything from section 1 onward is the original 2026-09-15 proposal, kept
+unchanged as a record; none of it describes the running system. Read instead:
+
+- `docs/FINDINGS-TRIAGE.md`, the operator guide to what runs;
+- `docs/FINDINGS-TRIAGE-PLAN.md`, the design record of what was built;
+- the wiki: https://github.com/djm56/bishop-memory/wiki.
+
+## Update — what shipped instead of this plan
+
+| Topic | This plan | What shipped |
+|---|---|---|
+| Where it lives | Split between the service and the harness (`/Volumes/DATA/Bishop/.claude`) | Entirely in bishop-memory: `.claude/agents/findings-classifier.md`, `.claude/agents/findings-processor.md`, `.claude/skills/findings-triage/SKILL.md`, `scripts/triage-run.sh` |
+| Taxonomy | 12 categories plus `uncategorised`, a CHECK-constrained enum | 17 categories in `db/finding-categories.json`, loaded into the `finding_categories` table and editable; `uncategorised` is virtual (no classification row) |
+| Categorisation storage | `category` and `theme_key` columns on findings, patterns and service records | A separate `finding_triage` table, findings only; no `theme_key` |
+| Stage 2 | Opus synthesist producing directive drafts, each `new`, `amend`, `supersede` or `duplicate` against every existing directive | Sonnet processor, one category per run: groups findings that share a rule, recommends `approve`, `reject`, `supersede` or `defer` on every finding with a rationale and before/after text, and drafts a directive where a group earns one |
+| Comparison with existing directives | All active directives loaded every run, bootstrapped from `CONVENTIONS.md` | Not built. The processor decides "already covered" by reading the target skill or agent file. Directive drafts are always new |
+| Ratification | One draft at a time through a `/triage-review` command | A review page at `/triage`. Directives are still ratified one at a time; per-finding decisions can also be accepted a group at a time |
+| Write path | Field-scoped `PATCH` routes plus a gated `POST /v1/directives` | `POST /v1/findings/:id/decision` is the only writer of `findings.status`. Agents reach only the tools in `mcpd`'s triage profile. Directives are written by the proposal decision route and by the reconciler's mirror of `DIRECTIVES.md` |
+| Markdown | Not addressed | Markdown stays canonical. `scripts/export-decisions.py` writes decisions back into `FINDINGS.md` and `DIRECTIVES.md`, and the reconciler mirrors `DIRECTIVES.md` into the `directives` table |
+| Automation | Stage 1 on a cron. Stage 2 manual until review keeps up. Stage 3 never automated | Both agents nightly via launchd at 21:00 and 21:20, capped at one category and 30 findings per night. The decision step is never automated |
+| Cost | About $2.30 for a cold start | Classifying all 314 findings cost about $0.68 over two runs. A processor run costs about $0.30–0.35 for 15–30 findings |
+| Old machinery | Keep until the new pipeline is proven | Still on disk: `.claude/skills/improvement-triage/` and `.claude/scripts/run-triage.sh` under `/Volumes/DATA/Bishop`. The `net.airfleet.bishop.triage` plist is in `~/Library/LaunchAgents` but not loaded |
+
+### The five decisions in section 13, as they stand
+
+1. **`CONVENTIONS.md` or the `directives` table as canonical.** Still open, in a
+   different form. The shipped design makes `DIRECTIVES.md` canonical and the
+   table a mirror, and ratification writes both. `CONVENTIONS.md` (28 `CONV-`
+   entries) is not read by the pipeline and is not in the table, which held 0 rows
+   when this update was written. Whether to import the `CONV-` entries as
+   directives is the open question.
+2. **Do patterns take part?** They inform only. The processor can read them
+   through `pattern_list` and `memory_search`, but a pattern is never the source
+   of a draft. This matches the recommendation above.
+3. **Are service records in scope?** No. They are not classified or processed.
+4. **Twelve categories, or fewer?** Seventeen were chosen. After the first full run,
+   `class-closure` received no findings and `brief-writing` received 70, so the
+   taxonomy needs tuning. The `uncategorised`-over-10% signal never fired: after
+   two passes, no finding was left uncategorised.
+5. **Fast-track the `DIRECTIVES candidate:` findings?** No separate path was
+   built. The classifier sets `directive_candidate` on them, and the processor
+   drafts a proposal for any group that contains one.
+
+### What this plan covered that the shipped design does not
+
+- **Comparison against existing directives (section 7).** This is the largest gap.
+  It does no harm while the `directives` table is empty. Once ratified directives
+  accumulate, the processor does not load them, so it cannot recognise a
+  duplicate or an amendment. Tracked in `docs/ROADMAP.md`.
+- **`theme_key`.** Groups are formed within one processor run, and nothing carries
+  a sub-theme from one run to the next.
+- **Recurrence detection.** Neither design builds it.
+
 **Author:** drafted 2026-09-15
 **Scope:** Turn the accumulating `findings` / `patterns` / `service_records` rows in
 bishop-memory into ratifiable directives, via a fixed-category pipeline that a

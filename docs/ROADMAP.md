@@ -28,6 +28,10 @@ Still open from that plan's phase 4:
 
 **No one-click apply of a `proposed_change`.** The page offers the text to copy; applying it to a skill or agent file is the operator's own edit, as the harness doctrine requires. A `scripts/triage-apply.py` that applies an accepted change and shows the diff was deliberately left out of the first cut.
 
+**Directive drafts are never compared against existing directives.** The processor checks whether a finding is already covered by reading the target skill or agent file. It does not load the `directives` table, so it can draft a directive that duplicates or amends one already ratified. `TRIAGE-PLAN.md` section 7 describes the comparison, using the dispositions new, amend, supersede and duplicate. It does no harm while the table is empty and starts to matter once directives accumulate.
+
+**`CONVENTIONS.md` is outside the pipeline.** The 28 `CONV-` entries in the Bishop harness's `reference/CONVENTIONS.md` are human-ratified rules, but they are neither in the `directives` table nor read by the processor. Importing them is the open decision 1 recorded in `TRIAGE-PLAN.md`.
+
 **The processor's calibration is one-shot.** It reads the last 20 decisions in a category before recommending; nothing yet measures acceptance rate per category over time beyond the Runs tab.
 
 ## Outstanding Items

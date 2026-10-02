@@ -3,6 +3,9 @@
 Status: implemented on 2026-10-02 (phases 1–3 of §9; phase 4 items remain
 open). The operator guide is `docs/FINDINGS-TRIAGE.md`; this document is kept
 as the design record. Where the two differ, the guide describes what shipped.
+An earlier, unbuilt design from 2026-09-15 is in `TRIAGE-PLAN.md` at the
+repository root. Its update section compares the two designs and records how
+its open decisions were settled.
 Date: 2026-10-02.
 
 ## 1. What exists today, and what gets in the way
