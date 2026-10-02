@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  scripts/com.bishop-memory.triage.plist
+
+  launchd template for ONE findings-triage job. install-triage-schedule.sh
+  renders it twice — once with __KIND__=classify, once with __KIND__=process —
+  substituting every __PLACEHOLDER__ and installing each copy to
+  ~/Library/LaunchAgents/com.bishop-memory.triage-<kind>.plist.
+
+  RunAtLoad is false on purpose: loading the job must never itself start a
+  run. StartCalendarInterval fires once a day at the given hour and minute;
+  launchd runs a missed slot on wake if the machine was asleep, so a closed
+  lid yields a late run rather than no run. The default slots (21:00 and
+  21:20) are evening hours when the machine is normally awake and any
+  external volume holding a harness checkout is mounted.
+
+  PATH and HOME are set explicitly: a launchd job gets a minimal environment
+  and the runner needs `claude`, `go`, `curl` and `python3` on PATH and the
+  user's HOME for Claude Code's own configuration.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bishop-memory.triage-__KIND__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__BISHOP_ROOT__/scripts/triage-run.sh</string>
+        <string>__KIND__</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__BISHOP_ROOT__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>__PATH__</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>BISHOP_MEMORY_URL</key>
+        <string>__URL__</string>
+        <key>TRIAGE_LOG_DIR</key>
+        <string>__LOG_DIR__</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>__HOUR__</integer>
+        <key>Minute</key><integer>__MINUTE__</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/triage-__KIND__.launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/triage-__KIND__.launchd.err.log</string>
+</dict>
+</plist>

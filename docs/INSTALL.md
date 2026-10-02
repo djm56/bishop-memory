@@ -256,6 +256,20 @@ The harness's `.claude/bishop-memory.conf` controls how the MCP adapter behaves:
 
 These are set by the harness's `.claude/connect-bishop-memory.sh` generator. If you need to change them, edit `.claude/bishop-memory.conf` in the harness and restart Claude Code.
 
+## Findings Triage (optional)
+
+Once the service runs and at least one harness has reconciled against it, the findings ledger can be classified, grouped and pre-decided on a nightly schedule, with a review page at `/triage` for your decisions. The install sequence is short:
+
+```bash
+make build-mcpd
+make triage-seed
+make triage-backfill REGISTER="<harness>=/abs/path/to/.claude/memory"
+make triage-classify          # first classification, a few minutes
+make triage-install           # nightly launchd jobs (macOS)
+```
+
+Everything else — what the agents do, the review page, writing decisions back to Markdown, Linux timers, troubleshooting — is in **`docs/FINDINGS-TRIAGE.md`**.
+
 ## Seeding the Index from Existing Memory
 
 When bishop-memory first starts, the database is empty. To populate it from your harness's `.claude/memory/` tree:
@@ -364,7 +378,7 @@ The MCP adapter exposes **16 tools** grouped by use case. All tools are composed
 - **`mission_list`** — List all missions, newest-updated first. Optional status filter.
 - **`mission_get`** — Fetch a single mission by ID.
 - **`mission_steps_list`** — List steps in a mission (PROGRESS.md rows).
-- **`finding_list`** — List findings from the ledger, optional status filter (proposed/approved/applied/rejected/retired/superseded).
+- **`finding_list`** — List findings from the ledger, with optional status, triage category, harness and id filters; each row carries its classification and pending recommendation when present.
 - **`pattern_list`** — List advisory patterns.
 - **`service_record_list`** — List performance/calibration observations about agents, optional agent filter.
 
@@ -382,9 +396,9 @@ The MCP adapter exposes **16 tools** grouped by use case. All tools are composed
 
 ### Two Governance Rules
 
-1. **Findings are operator-controlled.** A finding's `status`, `approver`, and `date_approved` cannot be set through the API. Agents can only *create* findings (always with status='proposed'). Status advancement stays the operator's job, outside the service. This prevents agents from advancing their own proposals.
+1. **Findings are operator-controlled.** A finding's `status`, `approver`, and `date_approved` cannot be set through any MCP tool. Agents can only *create* findings (always with status='proposed'). The single write path for status is the operator's decision route (`POST /v1/findings/:id/decision`), which backs the `/triage` review page and the reconciler's mirror of a hand-set status, and which no MCP profile registers.
 
-2. **Directives are read-only via the API.** Agents can read `directives` to learn the binding rules that govern them, but cannot create or modify directives. Directives are human-ratified only and live in `.claude/memory/reference/DIRECTIVES.md`.
+2. **Directives are read-only to agents.** Agents can read `directives` to learn the binding rules that govern them, but no MCP tool creates or modifies one. Directives are human-ratified — in `.claude/memory/reference/DIRECTIVES.md` by hand, or from a drafted proposal on the review page — and the reconciler mirrors the file into the table.
 
 For full request/response details, see `docs/api-contract.md`.
 

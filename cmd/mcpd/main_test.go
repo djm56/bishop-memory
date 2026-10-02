@@ -143,6 +143,17 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 		{"finding_append", "POST", []string{"v1", "findings"}, "v1/findings"},
 		{"pattern_append", "POST", []string{"v1", "patterns"}, "v1/patterns"},
 		{"service_record_append", "POST", []string{"v1", "service-records"}, "v1/service-records"},
+		// Triage profile (cmd/mcpd/triage.go).
+		{"triage_categories", "GET", []string{"v1", "finding-categories"}, "v1/finding-categories"},
+		{"triage_next_unclassified", "GET", []string{"v1", "findings"}, "v1/findings"},
+		{"triage_category_findings", "GET", []string{"v1", "findings"}, "v1/findings"},
+		{"triage_recent_decisions", "GET", []string{"v1", "triage", "decisions"}, "v1/triage/decisions"},
+		{"triage_run_start", "POST", []string{"v1", "triage", "runs"}, "v1/triage/runs"},
+		{"triage_run_finish", "PATCH", []string{"v1", "triage", "runs", "7"}, "v1/triage/runs/7"},
+		{"triage_classify", "PUT", []string{"v1", "triage", "classifications"}, "v1/triage/classifications"},
+		{"triage_group_create", "POST", []string{"v1", "finding-groups"}, "v1/finding-groups"},
+		{"triage_recommend", "POST", []string{"v1", "finding-recommendations"}, "v1/finding-recommendations"},
+		{"directive_propose", "POST", []string{"v1", "directive-proposals"}, "v1/directive-proposals"},
 	}
 
 	for _, tc := range mcpdPaths {

@@ -16,6 +16,20 @@ The hook also mirrors mission steps live via the `POST /v1/missions/{id}/steps` 
 
 The closing sequence's step H runs the reconciler, which brings all structured tables — missions, mission steps, findings, patterns, and service records — into line with the Markdown as a backstop. A full reconcile measures approximately 0.2 seconds, well inside the hook's 10-second timeout.
 
+## Findings Triage
+
+Shipped 2026-10-02: nightly classification of the ledger (Haiku), per-category grouping and recommendations (Sonnet), directive drafts, the `/triage` review page, and the write-back of decisions into each harness's `FINDINGS.md` / `DIRECTIVES.md`. Guide: `docs/FINDINGS-TRIAGE.md`; design record: `docs/FINDINGS-TRIAGE-PLAN.md`.
+
+Still open from that plan's phase 4:
+
+**Recommendations never expire.** A pending recommendation stays pending until the operator decides it or the processor replaces it. An age-based `expired` sweep (the state exists) would keep the review page honest after a long gap.
+
+**Patterns are not categorised.** The processor can search them (`pattern_list`, `memory_search`) but nothing links a finding to the pattern that already answers it.
+
+**No one-click apply of a `proposed_change`.** The page offers the text to copy; applying it to a skill or agent file is the operator's own edit, as the harness doctrine requires. A `scripts/triage-apply.py` that applies an accepted change and shows the diff was deliberately left out of the first cut.
+
+**The processor's calibration is one-shot.** It reads the last 20 decisions in a category before recommending; nothing yet measures acceptance rate per category over time beyond the Runs tab.
+
 ## Outstanding Items
 
 **The reconciler's `[flight-recorder]` summary does not sum to `parsed`.** Events for missions outside the parsed set are skipped with no counter accounting for them. Behind the opt-in `--include-journal`.
@@ -56,6 +70,8 @@ The closing sequence's step H runs the reconciler, which brings all structured t
 
 **opencode support was removed,** along with both harness installers, so nothing in this repository patches another repository.
 
+**The reconciler silently drops an unrecognised mission step status.** `parse_steps` in `scripts/reconcile-memory.py` maps any step status outside the legal set (`pending`, `in-progress`, `done`, `failed`) to the empty string and removes the empty field from the payload; the drift comparison then inspects only keys the payload contains. So an invalid status in `PROGRESS.md` produces no write, no warning, and an `unchanged` count — indistinguishable from correctness. Discovered when the harness conflated mission.status and mission_steps.status vocabularies and wrote `blocked` (a mission status) into a step row. The reconciler reported no drift while the database held the stale value. A format validator which normalises unrecognised input to nothing tells the caller "nothing wrong" when it should report "I found something I cannot parse".
+
 ## How To Pick This Up
 
 Before starting work:
@@ -63,4 +79,4 @@ Before starting work:
 1. Read the harness configuration to find the runtime environment. This is stored in `.claude/bishop-memory.conf` in the harness checkout; check it for mode, URL, and `BISHOP_MEMORY_HOME`.
 2. Confirm the service answers. Run `curl -s <url>/healthz` substituting the URL from the config.
 3. Check which branches are unmerged in both repositories. In the harness, run `git log main..HEAD --oneline` to see work not yet on main. In bishop-memory, run the same.
-4. Run the reconciler with `--dry-run` to see whether the derived copy is currently in step. The command is: `$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --dry-run`, substituting `BISHOP_MEMORY_HOME` from the config.
+4. Run the reconciler with `--dry-run` to see whether the derived copy is currently in step. The command is: `$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness <your-harness-name> --dry-run`, substituting `BISHOP_MEMORY_HOME` from the config and `<your-harness-name>` from `.claude/bishop-memory.conf` (the `BISHOP_HARNESS` value).

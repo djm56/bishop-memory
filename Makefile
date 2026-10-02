@@ -1,7 +1,8 @@
 APP=memoryd
 DB=data/memory.db
 
-.PHONY: run build test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux
+.PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
+        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish
 
 run:
 	go run ./cmd/memoryd
@@ -9,6 +10,12 @@ run:
 build:
 	mkdir -p bin
 	go build -o bin/$(APP) ./cmd/memoryd
+
+# mcpd is the MCP adapter; the harness .mcp.json and the triage runner both
+# execute bin/mcpd by absolute path, so rebuild it after any change to cmd/mcpd.
+build-mcpd:
+	mkdir -p bin
+	go build -o bin/mcpd ./cmd/mcpd
 
 # --- Cross-compiled Linux binaries (task-20260821-02 step 6, Job 4) -------
 #
@@ -55,3 +62,51 @@ reset-db:
 
 health:
 	curl --silent http://127.0.0.1:8787/healthz | jq
+
+# --- Findings triage (docs/FINDINGS-TRIAGE.md) -----------------------------
+#
+# All targets talk to the running service at BISHOP_MEMORY_URL (default
+# http://127.0.0.1:8787). Override per invocation: make triage-classify
+# BISHOP_MEMORY_URL=http://127.0.0.1:8788
+
+TRIAGE_URL ?= $(if $(BISHOP_MEMORY_URL),$(BISHOP_MEMORY_URL),http://127.0.0.1:8787)
+
+# Load db/finding-categories.json (idempotent).
+triage-seed:
+	scripts/triage-seed-categories.py --url $(TRIAGE_URL)
+
+# Set findings.harness on rows mirrored before the column existed. Pass
+# REGISTER="kirsch=/abs/path/.claude/memory other=/abs/path/.claude/memory"
+# the first time, before any harness has reconciled against this build.
+triage-backfill:
+	scripts/triage-backfill-harness.py --url $(TRIAGE_URL) $(foreach r,$(REGISTER),--register $(r))
+
+# Run the classifier now (Haiku). Exits 0 with nothing to do when every
+# finding is classified. RECLASSIFY=<slug> re-classifies one category.
+triage-classify: build-mcpd
+	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh classify $(if $(RECLASSIFY),--reclassify $(RECLASSIFY))
+
+# Run the processor now on the next category in rotation, or CATEGORY=<slug>.
+triage-process: build-mcpd
+	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh process $(if $(CATEGORY),--category $(CATEGORY)) $(if $(LIMIT),--limit $(LIMIT))
+
+# Write operator decisions back into every registered harness's Markdown.
+triage-export:
+	scripts/export-decisions.py --url $(TRIAGE_URL) --all
+
+# Open the review page.
+triage-review:
+	open $(TRIAGE_URL)/triage 2>/dev/null || xdg-open $(TRIAGE_URL)/triage 2>/dev/null || echo "open $(TRIAGE_URL)/triage in a browser"
+
+# Install / remove the nightly launchd jobs (macOS).
+triage-install:
+	scripts/install-triage-schedule.sh --url $(TRIAGE_URL)
+
+triage-uninstall:
+	scripts/install-triage-schedule.sh --uninstall
+
+# --- Wiki ------------------------------------------------------------------
+# Push docs/wiki/*.md to the GitHub wiki (docs/wiki/ is the source of truth;
+# see scripts/publish-wiki.sh for the one-time setup step).
+wiki-publish:
+	scripts/publish-wiki.sh

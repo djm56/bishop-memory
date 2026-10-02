@@ -527,14 +527,24 @@ The improvement ledger (mirrors `.claude/memory/findings/FINDINGS.md`).
 #### List findings
 
 ```text
-GET /v1/findings?status=<optional>
+GET /v1/findings?status=&category=&harness=&unclassified=1&pending=1&no_pending=1&directive_candidate=1&ids=&order=&limit=&offset=
 ```
 
-Purpose: List findings, newest-first. Optional status filter.
+Purpose: List findings, newest-first. Every filter is optional and they are AND-ed.
 
 **Query Parameters:**
 
-- `status` (optional) — one of `proposed`, `approved`, `applied`, `rejected`, `retired`, `superseded`. Returns a 400 if unrecognized.
+- `status` — one of `proposed`, `approved`, `applied`, `rejected`, `retired`, `superseded`. Returns a 400 if unrecognized.
+- `category` — a triage category slug, or `uncategorised` for findings with no classification.
+- `harness` — the owning harness name.
+- `unclassified=1` — only findings with no `finding_triage` row.
+- `pending=1` / `no_pending=1` — with / without a pending recommendation.
+- `directive_candidate=1` — flagged by the classifier.
+- `ids` — comma-separated finding ids.
+- `order` — `asc` or `desc` (default).
+- `limit`, `offset` — paging; omitted means everything (the reconciler depends on that).
+
+Each row carries `harness`, `decision_note`, and — when present — a `triage` object (the classification) and a `recommendation` object (the pending recommendation). See Findings Triage below for their shapes.
 
 **Response — 200 OK**
 
@@ -585,7 +595,46 @@ Purpose: Append a finding to the improvement ledger. Creates with `status='propo
 - `rationale` (optional) — Supporting rationale, max 2000 chars.
 - `mission_id` (optional) — Mission ID to associate the finding with, max 128 chars. Stored without existence checking — findings outlive missions.
 
-**Restrictions:** `status`, `approver`, and `date_approved` are never accepted as request parameters (silently ignored if provided). Those fields belong to the human operator alone. No update route exists — findings are created `proposed` and never modified through the API.
+- `harness` (optional) — The owning harness, max 128 chars. `mcpd` fills it from `BISHOP_HARNESS`; the reconciler from `--harness`.
+
+**Restrictions:** `status`, `approver`, and `date_approved` are never accepted as request parameters (silently ignored if provided). Those fields belong to the human operator alone. The only write path for them is the decision route below, which no MCP profile registers.
+
+#### Decide a finding (operator only)
+
+```text
+POST /v1/findings/:findingID/decision
+```
+
+Purpose: The operator's status change. The single write path for `status`, `approver`, `date_approved` and `decision_note`. Backs the `/triage` review page and the reconciler's mirror of a `Status` set by hand in `FINDINGS.md`. Not registered in any `mcpd` profile.
+
+**Request body:**
+
+```json
+{ "status": "approved", "approver": "Donovan Maidens", "note": "", "date_approved": "02 October 2026" }
+```
+
+- `status` (required) — the new ledger status.
+- `approver` (required) — who decided; stored as `approver` on every transition.
+- `note` — required for `rejected`, `retired`, `superseded`; stored as `decision_note`.
+- `date_approved` — carried verbatim when supplied (the reconciler passes the file's value); otherwise today's UTC date.
+
+Allowed transitions: `proposed` → any other status; `approved` → `applied`, `rejected`, `retired`, `superseded`; `applied` → `retired`, `superseded`; every status → `proposed` (reopen, which clears the decision fields). A same-status decision is a 200 no-op (`"changed": false`). In the same transaction the finding's pending recommendation is closed as `accepted` when it agreed with the decision and `declined` otherwise, and a `finding.decided` row is appended to the flight recorder.
+
+**Response — 200 OK**
+
+```json
+{ "id": 70, "status": "approved", "previous": "proposed", "changed": true }
+```
+
+400 for an illegal transition or a missing note; 404 for an unknown id.
+
+#### Set a finding's harness (operator only)
+
+```text
+PUT /v1/findings/:findingID/harness
+```
+
+Body `{"harness": "kirsch"}`. Used by `scripts/triage-backfill-harness.py` for rows mirrored before `findings.harness` existed. Not registered in any `mcpd` profile.
 
 **Response — 201 Created**
 
@@ -896,6 +945,103 @@ The import failed (e.g., root does not exist, file read errors).
   "details": "memory tree import failed; see server logs for details"
 }
 ```
+
+### Findings Triage
+
+The scheduled classifier and processor reach these through `mcpd`'s triage profile; the operator through the review page at `GET /triage` and the scripts. See `docs/FINDINGS-TRIAGE.md`.
+
+#### Categories
+
+```text
+GET /v1/finding-categories?include_inactive=1
+PUT /v1/finding-categories/:slug
+```
+
+`GET` returns `{"categories":[...], "uncategorised_count": N}`; each category carries `slug`, `name`, `description`, `examples`, `sort_order`, `active`, `last_processed_at`, `proposed_count` (proposed findings in it) and `pending_count` (of those, with a pending recommendation). `PUT` body: `{"name", "description", "examples", "sort_order", "active"}`; the slug must be lower-case kebab-case and not `uncategorised`.
+
+#### Runs
+
+```text
+POST  /v1/triage/runs                       {"kind": "classify"|"process", "category", "model"}  → 201 {"id"}
+PATCH /v1/triage/runs/:runID                {"status": "done"|"failed", "considered", "written", "notes"}
+GET   /v1/triage/runs?limit=50
+GET   /v1/triage/next-category              → {"category", "waiting"} or 404 when nothing is waiting
+```
+
+A finished `process` run stamps its category's `last_processed_at`, which advances the rotation `next-category` follows (active categories with proposed findings lacking a pending recommendation, least recently processed first). `GET /v1/triage/runs` adds `accepted` and `declined` counts from the recommendations each run produced.
+
+#### Classifications
+
+```text
+PUT /v1/triage/classifications
+```
+
+```json
+{ "classified_by": "claude-haiku-4-5-20251001", "run_id": 3,
+  "items": [ { "finding_id": 12, "category": "brief-writing", "secondary_category": "review-practice",
+               "directive_candidate": false, "confidence": 0.86, "summary": "Name the artefact a brief expects" } ] }
+```
+
+Batch upsert into `finding_triage` (one row per finding; re-classifying replaces it). 1–200 items. The whole batch is refused with a 400 naming the item if any `category` or `secondary_category` is not an active slug or any `finding_id` is unknown. Response `{"classified": N}`.
+
+#### Groups and recommendations
+
+```text
+GET  /v1/finding-groups?category=
+POST /v1/finding-groups                     {"category", "title", "summary", "target", "run_id"} → 201 {"id"}
+POST /v1/finding-recommendations
+```
+
+```json
+{ "run_id": 4,
+  "items": [ { "finding_id": 12, "group_id": 2, "recommendation": "approve",
+               "rationale": "Implementable; not covered by SKILL.md §Brief writing.",
+               "proposed_change": "Before: ...\nAfter: ..." },
+             { "finding_id": 13, "recommendation": "supersede", "superseded_by": 40, "rationale": "#40 states it better." } ] }
+```
+
+`recommendation` is `approve`, `reject`, `supersede` (requires `superseded_by`) or `defer`. A finding's existing pending recommendation is marked `expired` and replaced. A finding that is no longer `proposed` is skipped and listed in the response: `{"written": N, "skipped": [ids]}`. Nothing here changes a finding's status.
+
+```text
+GET /v1/triage/decisions?category=&limit=20
+```
+
+Decided findings (status not `proposed`) in a category, each with the most recent recommendation it received — the processor's calibration input.
+
+```text
+GET /v1/triage/pending
+```
+
+Everything awaiting a decision, shaped for the review page: `{"categories":[{"slug","groups":[{...group, "findings":[...]}],"ungrouped":[...]}], "directive_proposals":[...], "pending_findings": N, "decided_findings": N}`.
+
+#### Directive proposals
+
+```text
+GET  /v1/directive-proposals?state=pending|accepted|declined|expired
+POST /v1/directive-proposals
+POST /v1/directive-proposals/:proposalID/decision
+```
+
+`POST` body mirrors the `DIRECTIVES-TEMPLATE` fields: `{"title" (≤60), "applies_when", "rule", "rationale", "reviewer_check", "example", "evidence": [finding ids], "group_id", "harness", "run_id"}`. The rendered entry is measured with an 80-character Evidence placeholder and refused over 1,510 characters. Response `201 {"id", "rendered_length"}`.
+
+Decision body: `{"state": "accepted"|"declined", "decided_by", "note", ...optional edited fields}`. Declining requires a note. Accepting allocates the next `DIR-NNN` across both the `directives` table and every accepted proposal, stores the (possibly edited) text, upserts the directive into `directives`, marks every evidence finding `applied` (closing their pending recommendations) and appends a `directive.ratified` flight-recorder row. Response `{"id", "state", "directive_id", "rendered"}`. `scripts/export-decisions.py` then writes the entry into the harness's `DIRECTIVES.md`.
+
+#### Harnesses
+
+```text
+GET /v1/harnesses
+PUT /v1/harnesses/:name                     {"memory_root": "/abs/path/to/.claude/memory"}
+```
+
+Where each harness's Markdown lives. The reconciler upserts its own row on every run; the exporter reads it. `memory_root` must be absolute.
+
+#### Review page
+
+```text
+GET /triage
+```
+
+The operator's review page: one embedded HTML file that talks to the routes above. Loopback-only like the rest of the service.
 
 ## Root safety
 

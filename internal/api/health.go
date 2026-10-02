@@ -28,6 +28,14 @@ var expectedSchemaObjects = []string{
 	"directives",
 	"documents",
 	"documents_fts",
+	// Findings triage (see docs/FINDINGS-TRIAGE.md).
+	"harnesses",
+	"finding_categories",
+	"triage_runs",
+	"finding_triage",
+	"finding_groups",
+	"finding_recommendations",
+	"directive_proposals",
 }
 
 func healthHandler(db *sql.DB) gin.HandlerFunc {

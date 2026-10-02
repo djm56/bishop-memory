@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Findings Triage</title>
+<style>
+  :root { --bg:#fafafa; --fg:#1b1b1b; --muted:#666; --card:#fff; --line:#ddd; --accent:#2b5fd9; --ok:#1e7f4c; --bad:#b4332f; --warn:#9a6700; --soft:#eef2fb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141517; --fg:#e8e8e8; --muted:#9a9a9a; --card:#1d1f23; --line:#333; --accent:#7aa2ff; --ok:#5fcf8a; --bad:#ff7b76; --warn:#e3b341; --soft:#232838; } }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background:var(--bg); color:var(--fg) }
+  header { display:flex; gap:16px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:2; flex-wrap:wrap }
+  header h1 { font-size:16px; margin:0 12px 0 0 }
+  header nav button { background:none; border:1px solid var(--line); color:var(--fg); padding:5px 10px; border-radius:6px; cursor:pointer }
+  header nav button.on { background:var(--accent); color:#fff; border-color:var(--accent) }
+  header .spacer { flex:1 }
+  header label { color:var(--muted) }
+  header input { padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg) }
+  main { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 52px) }
+  aside { border-right:1px solid var(--line); padding:12px; overflow:auto }
+  aside .cat { display:flex; justify-content:space-between; padding:6px 8px; border-radius:6px; cursor:pointer }
+  aside .cat:hover { background:var(--soft) }
+  aside .cat.on { background:var(--accent); color:#fff }
+  aside .cat small { color:inherit; opacity:.75 }
+  section { padding:16px; overflow:auto }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px }
+  .card.focus { outline:2px solid var(--accent) }
+  .group { border-left:4px solid var(--accent); margin-bottom:18px; padding-left:10px }
+  .group h3 { margin:4px 0 2px }
+  .group .meta, .meta { color:var(--muted); font-size:12px }
+  .rec { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; margin-right:6px }
+  .rec.approve { background:var(--ok); color:#fff } .rec.reject { background:var(--bad); color:#fff } .rec.defer { background:var(--warn); color:#fff } .rec.supersede { background:var(--muted); color:#fff }
+  .status { font-size:12px; color:var(--muted) }
+  .btns { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap }
+  .btns button { border:1px solid var(--line); background:var(--bg); color:var(--fg); padding:4px 10px; border-radius:6px; cursor:pointer }
+  .btns button.ok { border-color:var(--ok); color:var(--ok) } .btns button.bad { border-color:var(--bad); color:var(--bad) }
+  .btns button:hover { background:var(--soft) }
+  details summary { cursor:pointer; color:var(--accent) }
+  pre { background:var(--soft); padding:8px; border-radius:6px; white-space:pre-wrap; font-size:12px; max-height:260px; overflow:auto }
+  .sugg { margin:4px 0 }
+  .empty { color:var(--muted); padding:20px }
+  table { border-collapse:collapse; width:100% } td, th { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; font-size:13px }
+  textarea, input.wide { width:100%; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:inherit }
+  .field { margin-bottom:8px } .field label { display:block; font-size:12px; color:var(--muted) }
+  .toast { position:fixed; bottom:16px; right:16px; background:var(--card); border:1px solid var(--line); padding:10px 14px; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.2) }
+  kbd { border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:11px }
+</style>
+</head>
+<body>
+<header>
+  <h1>Findings Triage</h1>
+  <nav>
+    <button data-tab="pending" class="on">Pending</button>
+    <button data-tab="browse">Browse</button>
+    <button data-tab="directives">Directives</button>
+    <button data-tab="runs">Runs</button>
+  </nav>
+  <span class="spacer"></span>
+  <span id="stats" class="meta"></span>
+  <label>Approver <input id="approver" placeholder="your name" size="18"></label>
+  <span class="meta"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>a</kbd> approve · <kbd>r</kbd> reject · <kbd>d</kbd> defer</span>
+</header>
+<main>
+  <aside id="rail"></aside>
+  <section id="view"><div class="empty">Loading…</div></section>
+</main>
+<script>
+(() => {
+  const $ = (s, el=document) => el.querySelector(s);
+  const state = { tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0 };
+  const approverInput = $('#approver');
+  try { approverInput.value = localStorage.getItem('triage.approver') || ''; } catch (e) {}
+  approverInput.addEventListener('change', () => { try { localStorage.setItem('triage.approver', approverInput.value); } catch (e) {} });
+
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const toast = msg => { const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
+  const api = async (method, path, body) => {
+    const r = await fetch(path, { method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
+    const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
+    if (!r.ok) throw new Error((json.error || r.status) + (json.details ? ': ' + (typeof json.details === 'string' ? json.details : JSON.stringify(json.details)) : ''));
+    return json;
+  };
+  const approver = () => { const v = approverInput.value.trim(); if (!v) { toast('Set your approver name first'); approverInput.focus(); throw new Error('no approver'); } return v; };
+
+  async function loadCategories() {
+    const d = await api('GET', '/v1/finding-categories');
+    state.categories = d.categories; state.uncategorised = d.uncategorised_count;
+    renderRail();
+  }
+  function renderRail() {
+    const pendingBy = {};
+    (state.pending?.categories || []).forEach(c => { pendingBy[c.slug] = c.groups.reduce((n,g) => n + g.findings.length, 0) + c.ungrouped.length; });
+    const rows = [{slug:null, name:'All categories'}].concat(state.categories, [{slug:'uncategorised', name:'Uncategorised', proposed_count: state.uncategorised}]);
+    $('#rail').innerHTML = rows.map(c => `<div class="cat ${state.category===c.slug?'on':''}" data-slug="${c.slug ?? ''}">
+      <span>${esc(c.name)}</span><small>${c.slug===null ? '' : (state.tab==='pending' ? (pendingBy[c.slug]||0)+' pending' : (c.proposed_count ?? 0)+' proposed')}</small></div>`).join('');
+    $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.focus = 0; render(); });
+  }
+
+  function findingCard(f, opts={}) {
+    const t = f.triage, r = f.recommendation;
+    const conf = t?.confidence != null ? ` · conf ${Number(t.confidence).toFixed(2)}` : '';
+    const cats = t ? `${esc(t.category)}${t.secondary_category ? ' / ' + esc(t.secondary_category) : ''}${t.directive_candidate ? ' · directive candidate' : ''}${conf}` : 'uncategorised';
+    const rec = r ? `<div style="margin:6px 0"><span class="rec ${r.recommendation}">${r.recommendation}${r.superseded_by ? ' by #' + r.superseded_by : ''}</span><span>${esc(r.rationale)}</span></div>
+      ${r.proposed_change ? `<details><summary>Proposed change</summary><pre>${esc(r.proposed_change)}</pre><button onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">Copy</button></details>` : ''}` : '';
+    const decided = f.status !== 'proposed' ? `<div class="status">${esc(f.status)} · ${esc(f.approver||'')} · ${esc(f.date_approved||'')}${f.decision_note ? ' · ' + esc(f.decision_note) : ''}</div>` : '';
+    return `<div class="card" data-id="${f.id}">
+      <div class="meta">#${f.id} · ${esc(f.finding_date||'')} · ${esc(f.harness||'?')} · ${cats}</div>
+      <div><strong>${esc(f.target||'')}</strong></div>
+      <div class="sugg">${esc(t?.summary || f.suggestion)}</div>
+      <details><summary>Full suggestion and rationale</summary><p>${esc(f.suggestion)}</p><p class="meta">${esc(f.rationale||'')}</p></details>
+      ${rec}${decided}
+      ${f.status === 'proposed' ? `<div class="btns">
+        <button class="ok" data-act="approved">Approve</button>
+        <button class="bad" data-act="rejected">Reject</button>
+        <button data-act="defer">Defer</button>
+        <button data-act="superseded">Supersede…</button>
+        <button data-act="retired">Retire</button>
+      </div>` : `<div class="btns"><button data-act="proposed">Reopen</button></div>`}
+    </div>`;
+  }
+
+  async function decide(id, status, noteDefault) {
+    const who = approver();
+    const body = { status, approver: who };
+    if (status === 'defer') { toast(`#${id} left for later`); return; }
+    if (['rejected','retired','superseded'].includes(status)) {
+      const note = prompt(`Reason for ${status} (#${id}):`, noteDefault || '');
+      if (note === null) return; if (!note.trim()) { toast('A reason is required'); return; }
+      body.note = note.trim();
+    }
+    await api('POST', `/v1/findings/${id}/decision`, body);
+    toast(`#${id} → ${status}`);
+    await refresh();
+  }
+
+  function wireCards(root) {
+    root.querySelectorAll('.card [data-act]').forEach(btn => btn.onclick = async () => {
+      const id = Number(btn.closest('.card').dataset.id); const act = btn.dataset.act;
+      try {
+        if (act === 'superseded') { const by = prompt(`#${id} is superseded by finding id:`); if (!by) return; await decide(id, 'superseded', `superseded by #${by.trim()}`); }
+        else await decide(id, act);
+      } catch (e) { if (e.message !== 'no approver') toast('Error: ' + e.message); }
+    });
+  }
+
+  async function acceptGroup(g) {
+    const who = approver();
+    let n = 0;
+    for (const f of g.findings) {
+      const r = f.recommendation; if (!r) continue;
+      const map = { approve:'approved', reject:'rejected', supersede:'superseded' };
+      const status = map[r.recommendation]; if (!status) continue;
+      const body = { status, approver: who };
+      if (status !== 'approved') body.note = r.recommendation === 'supersede' ? `superseded by #${r.superseded_by} — ${r.rationale}` : r.rationale;
+      try { await api('POST', `/v1/findings/${f.id}/decision`, body); n++; } catch (e) { toast(`#${f.id}: ${e.message}`); }
+    }
+    toast(`Accepted ${n} recommendation(s)`);
+    await refresh();
+  }
+
+  function renderPending() {
+    const p = state.pending; const view = $('#view');
+    const cats = (p.categories || []).filter(c => !state.category || c.slug === state.category);
+    if (!cats.length) { view.innerHTML = `<div class="empty">Nothing pending${state.category ? ' in this category' : ''}. The processor runs nightly; <code>make triage-process</code> runs it now.</div>`; return; }
+    view.innerHTML = cats.map(c => `<h2>${esc(c.slug)}</h2>` + c.groups.map(g => `<div class="group" data-gid="${g.id}">
+        <h3>${esc(g.title)}</h3><div class="meta">${esc(g.summary)}${g.target ? ' · ' + esc(g.target) : ''}</div>
+        <div class="btns"><button class="ok" data-accept="${g.id}">Accept all ${g.findings.length} recommendations</button></div>
+        ${g.findings.map(f => findingCard(f)).join('')}</div>`).join('') +
+      (c.ungrouped.length ? `<div class="group"><h3>Ungrouped</h3>${c.ungrouped.map(f => findingCard(f)).join('')}</div>` : '')).join('');
+    wireCards(view);
+    view.querySelectorAll('[data-accept]').forEach(b => b.onclick = async () => {
+      const gid = Number(b.dataset.accept);
+      const g = cats.flatMap(c => c.groups).find(x => x.id === gid);
+      try { await acceptGroup(g); } catch (e) { if (e.message !== 'no approver') toast('Error: ' + e.message); }
+    });
+    focusCard();
+  }
+
+  async function renderBrowse() {
+    const view = $('#view');
+    const q = new URLSearchParams(); if (state.category) q.set('category', state.category); if (state.browseStatus) q.set('status', state.browseStatus); q.set('limit', '200');
+    const d = await api('GET', '/v1/findings?' + q.toString());
+    const statuses = ['proposed','approved','applied','rejected','retired','superseded',''];
+    view.innerHTML = `<div class="meta" style="margin-bottom:10px">Status: ${statuses.map(s => `<button data-st="${s}" style="margin-right:4px;${s===state.browseStatus?'font-weight:700':''}">${s||'all'}</button>`).join('')} · ${d.findings.length} shown</div>` +
+      (d.findings.length ? d.findings.map(f => findingCard(f)).join('') : '<div class="empty">No findings match.</div>');
+    view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; renderBrowse(); });
+    wireCards(view); focusCard();
+  }
+
+  async function renderDirectives() {
+    const view = $('#view');
+    const d = await api('GET', '/v1/directive-proposals');
+    const pending = d.directive_proposals.filter(p => p.state === 'pending');
+    const done = d.directive_proposals.filter(p => p.state !== 'pending');
+    const form = p => `<div class="card" data-pid="${p.id}">
+      <div class="meta">proposal #${p.id} · ${esc(p.harness || 'every harness')} · evidence ${p.evidence.map(i => '#' + i).join(', ')}${p.group_id ? ' · group ' + p.group_id : ''}</div>
+      ${['title','applies_when','rule','rationale','reviewer_check','example'].map(k => `<div class="field"><label>${k}</label>${k==='rule' ? `<textarea rows="3" name="${k}">${esc(p[k]||'')}</textarea>` : `<input class="wide" name="${k}" value="${esc(p[k]||'')}">`}</div>`).join('')}
+      <div class="meta">Rendered length: <span class="len"></span> / 1,510 (typical ≤ 1,300)</div>
+      <div class="btns"><button class="ok" data-ratify="${p.id}">Ratify as next DIR-NNN</button><button class="bad" data-decline="${p.id}">Decline…</button></div></div>`;
+    view.innerHTML = (pending.length ? pending.map(form).join('') : '<div class="empty">No directive proposals pending.</div>') +
+      (done.length ? `<h3>Decided</h3><table><tr><th>ID</th><th>Title</th><th>State</th><th>By</th><th>Note</th></tr>${done.map(p => `<tr><td>${esc(p.directive_id||'')}</td><td>${esc(p.title)}</td><td>${esc(p.state)}</td><td>${esc(p.decided_by||'')}</td><td>${esc(p.decision_note||'')}</td></tr>`).join('')}</table>` : '');
+    const measure = card => {
+      const v = n => card.querySelector(`[name=${n}]`).value.trim();
+      const text = `### DIR-NNN — ${v('title')}\n- **Applies when:** ${v('applies_when')}\n- **Status:** active\n- **Rule:** ${v('rule')}\n- **Rationale:** ${v('rationale')}\n- **Reviewer check:** ${v('reviewer_check')}\n${v('example') ? '- **Example:** Illustrative — ' + v('example') + '\n' : ''}- **Added:** 2026-01-01 · **Source:** bishop-memory triage · **Evidence:** ${'x'.repeat(80)}\n`;
+      card.querySelector('.len').textContent = new TextEncoder().encode(text).length;
+    };
+    view.querySelectorAll('[data-pid]').forEach(card => { measure(card); card.querySelectorAll('input,textarea').forEach(i => i.oninput = () => measure(card)); });
+    view.querySelectorAll('[data-ratify]').forEach(b => b.onclick = async () => {
+      const card = b.closest('.card'); const body = { state:'accepted', decided_by: approver() };
+      ['title','applies_when','rule','rationale','reviewer_check','example'].forEach(k => body[k] = card.querySelector(`[name=${k}]`).value);
+      try { const r = await api('POST', `/v1/directive-proposals/${b.dataset.ratify}/decision`, body); toast(`Ratified ${r.directive_id}. Run make triage-export to write DIRECTIVES.md`); renderDirectives(); loadCategories(); }
+      catch (e) { toast('Error: ' + e.message); }
+    });
+    view.querySelectorAll('[data-decline]').forEach(b => b.onclick = async () => {
+      const note = prompt('Reason for declining:'); if (!note) return;
+      try { await api('POST', `/v1/directive-proposals/${b.dataset.decline}/decision`, { state:'declined', decided_by: approver(), note }); toast('Declined'); renderDirectives(); }
+      catch (e) { toast('Error: ' + e.message); }
+    });
+  }
+
+  async function renderRuns() {
+    const d = await api('GET', '/v1/triage/runs?limit=100');
+    $('#view').innerHTML = d.runs.length ? `<table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th>Read</th><th>Written</th><th>Accepted</th><th>Declined</th><th>Started</th><th>Notes</th></tr>` +
+      d.runs.map(r => `<tr><td>${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td>${esc(r.model||'')}</td><td>${esc(r.status)}</td><td>${r.considered}</td><td>${r.written}</td><td>${r.accepted}</td><td>${r.declined}</td><td>${esc(r.started_at)}</td><td>${esc(r.notes||'')}</td></tr>`).join('') + '</table>'
+      : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';
+  }
+
+  function focusCard() {
+    const cards = [...$('#view').querySelectorAll('.card[data-id]')];
+    cards.forEach(c => c.classList.remove('focus'));
+    if (!cards.length) return;
+    state.focus = Math.max(0, Math.min(state.focus, cards.length - 1));
+    cards[state.focus].classList.add('focus'); cards[state.focus].scrollIntoView({ block:'nearest' });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input,textarea')) return;
+    const cards = [...$('#view').querySelectorAll('.card[data-id]')]; if (!cards.length) return;
+    if (e.key === 'j') { state.focus++; focusCard(); }
+    else if (e.key === 'k') { state.focus--; focusCard(); }
+    else if (['a','r','d'].includes(e.key)) {
+      const id = Number(cards[state.focus].dataset.id); const map = { a:'approved', r:'rejected', d:'defer' };
+      decide(id, map[e.key]).catch(err => { if (err.message !== 'no approver') toast('Error: ' + err.message); });
+    }
+  });
+
+  async function refresh() {
+    state.pending = await api('GET', '/v1/triage/pending');
+    $('#stats').textContent = `${state.pending.pending_findings} pending · ${state.pending.decided_findings} decided in service (run make triage-export to write Markdown)`;
+    await loadCategories();
+    await render();
+  }
+  async function render() {
+    renderRail();
+    try {
+      if (state.tab === 'pending') renderPending();
+      else if (state.tab === 'browse') await renderBrowse();
+      else if (state.tab === 'directives') await renderDirectives();
+      else await renderRuns();
+    } catch (e) { $('#view').innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`; }
+  }
+  document.querySelectorAll('header nav button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('header nav button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    state.tab = b.dataset.tab; state.focus = 0; render();
+  });
+  refresh().catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });
+})();
+</script>
+</body>
+</html>

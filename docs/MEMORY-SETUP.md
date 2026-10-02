@@ -4,7 +4,7 @@ This guide covers how bishop-memory stores and retrieves agent memory, and how t
 
 ## What Gets Stored
 
-The service maintains **ten tables** in SQLite:
+The service maintains **seventeen tables** in SQLite — the ten harness-vocabulary tables below, plus seven findings-triage tables described after them:
 
 | Table | Purpose | Rows | Notes |
 |-------|---------|------|-------|
@@ -12,7 +12,7 @@ The service maintains **ten tables** in SQLite:
 | `mission_steps` | One row per step in PROGRESS.md (replaces task_runs) | ~1 per step in a mission | Step label, phase, agent identity, status (pending/in-progress/done/failed), notes, summary, optional timestamps |
 | `flight_recorder` | Append-only audit log for the harness | ~N per day | Event type (dotted discriminator), mission scope, step label, agent identity, note, timestamps (occurred_at and created_at separate) |
 | `crew` | Registered agent identities (replaces agents table) | ~10 | Name, role, registration timestamp |
-| `findings` | Durable findings ledger (mirrors `.claude/memory/findings/FINDINGS.md`) | ~20-100 | Target, suggestion, rationale, status (proposed/approved/applied/rejected/retired/superseded), approver, timestamps |
+| `findings` | Durable findings ledger (mirrors `.claude/memory/findings/FINDINGS.md`) | ~20-500 | Target, suggestion, rationale, status (proposed/approved/applied/rejected/retired/superseded), approver, owning harness, decision note, timestamps |
 | `patterns` | Advisory reusable patterns (mirrors `.claude/memory/findings/PATTERNS.md`) | ~10-50 | Name, context, solution, example, discovery timestamp/mission |
 | `service_records` | Per-agent calibration observations | ~20-100 | Agent (subject), title, note, adjustment, source (self-reported/bishop-observed), timestamps |
 | `directives` | Binding, human-ratified rules (mirrors `.claude/memory/reference/DIRECTIVES.md`) | ~5-20 | Title, rule, rationale, directive ID (natural key), timestamps. Read-only via API. |
@@ -20,6 +20,20 @@ The service maintains **ten tables** in SQLite:
 | `documents_fts` | FTS5 search index over documents | ~100-1000+ | Virtual table (no separate storage) — allows full-text search via `memory_search` |
 
 The `documents` and `documents_fts` tables are populated by the **importer** (seeded via `/v1/documents/sync`). The rest are populated by API calls and handlers.
+
+**Findings triage tables** (see `docs/FINDINGS-TRIAGE.md`):
+
+| Table | Purpose | Written by |
+|-------|---------|------------|
+| `harnesses` | Name → absolute `.claude/memory` path for every harness that reconciles against this service | reconciler, backfill script |
+| `finding_categories` | The classification taxonomy (slug, description written for the classifier, rotation pointer) | `scripts/triage-seed-categories.py` from `db/finding-categories.json` |
+| `triage_runs` | One row per classifier/processor run with counts | the triage agents |
+| `finding_triage` | One classification per finding (category, secondary, confidence, summary, directive flag) | findings-classifier |
+| `finding_groups` | Clusters of findings sharing one rule | findings-processor |
+| `finding_recommendations` | Approve / reject / supersede / defer per finding, with rationale and proposed change; closed by the operator's decision | findings-processor; state closed by the decision route |
+| `directive_proposals` | Drafted `DIRECTIVES.md` entries awaiting ratification; `directive_id` once ratified | findings-processor; decided by the operator |
+
+None of these writes `findings.status`. The decision route (`POST /v1/findings/:id/decision`) is the only path that does, and `scripts/export-decisions.py` carries those decisions back into Markdown.
 
 ### Document Kinds
 

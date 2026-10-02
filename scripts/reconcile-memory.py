@@ -425,6 +425,44 @@ def parse_findings(root):
             "target": truncate(target, 256),
             "suggestion": truncate(suggestion, 2000),
             "rationale": truncate(entry_field(entry, "Rationale"), 2000),
+            # Human decision fields. Not part of the create payload (the API
+            # refuses them); read by reconcile_findings to mirror a status the
+            # operator set by hand in the file.
+            "_status": (entry_field(entry, "Status") or "proposed").strip().lower(),
+            "_approver": entry_field(entry, "Approver"),
+            "_date_approved": entry_field(entry, "Date approved"),
+        })
+    return out
+
+
+DIRECTIVE_HEADING = re.compile(r"^(DIR-\d+)\s*" + EM_DASH + r"\s*(.*)$")
+
+
+def directive_field(entry, name):
+    """Pull `- **Name:** value` (the DIRECTIVES-TEMPLATE bullet form) out of an entry."""
+    match = re.search(r"^- \*\*" + re.escape(name) + r":\*\*\s*(.*)$", entry, re.M)
+    return match.group(1).strip() if match else ""
+
+
+def parse_directives(root):
+    """reference/DIRECTIVES.md -> directive dicts keyed by DIR-NNN."""
+    out = []
+    for entry in entries(os.path.join(root, "reference", "DIRECTIVES.md")):
+        match = DIRECTIVE_HEADING.match(entry_heading(entry))
+        if not match:
+            continue  # the file's prose headings are not entries
+        rule = directive_field(entry, "Rule")
+        if not rule:
+            continue
+        added = directive_field(entry, "Added")
+        # "Added: 2026-10-02 · Source: ... · Evidence: ..." — keep the date only.
+        ratified_at = added.split("·")[0].strip() if added else ""
+        out.append({
+            "directive_id": match.group(1),
+            "title": truncate(match.group(2).strip(), 256),
+            "rule": truncate(rule, 4000),
+            "rationale": truncate(directive_field(entry, "Rationale"), 2000),
+            "ratified_at": truncate(ratified_at, 64),
         })
     return out
 
@@ -771,9 +809,18 @@ def reconcile_journal(client, parsed_missions, root):
     return status_counts
 
 
-def reconcile_findings(client, root):
-    """Create missing findings."""
-    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0}
+def reconcile_findings(client, root, harness=""):
+    """
+    Create missing findings, and mirror a human decision recorded in the file.
+
+    Status is operator-only: the create route refuses it, so a new entry is
+    created `proposed` and, when the file already says otherwise, the decision
+    route is called afterwards with the file's Approver and Date approved
+    carried across verbatim. Markdown -> service only; the service never
+    writes status back here (scripts/export-decisions.py does that, from the
+    operator's own decisions).
+    """
+    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0, "decided": 0}
 
     # Fetch existing findings (keyed by natural key)
     existing = {}
@@ -793,15 +840,83 @@ def reconcile_findings(client, root):
     status_counts["parsed"] = len(findings)
     for finding in findings:
         key = (finding["finding_date"], finding["target"], finding["suggestion"])
-        if key in existing:
-            status_counts["skipped"] += 1
-        else:
-            if not client.write("POST", "/v1/findings", prune(finding),
+        md_status = finding["_status"] if finding["_status"] in FINDING_STATUSES else "proposed"
+        payload = {k: v for k, v in finding.items() if not k.startswith("_")}
+        if harness:
+            payload["harness"] = harness
+        row = existing.get(key)
+        if row is None:
+            if not client.write("POST", "/v1/findings", prune(payload),
                                 f"{finding['finding_date']} {finding['target']}"):
                 status_counts["failed"] += 1
-            else:
-                status_counts["created"] += 1
+                continue
+            status_counts["created"] += 1
+            if md_status == "proposed":
+                continue
+            # The row id is needed for the decision route; re-fetch by key.
+            if client.dry_run:
+                status_counts["decided"] += 1
+                continue
+            try:
+                _, body = client.get("/v1/findings?limit=50")
+            except Exception:
+                status_counts["failed"] += 1
+                continue
+            row = next((f for f in body.get("findings", [])
+                        if (f.get("finding_date", ""), f.get("target", ""), f.get("suggestion", "")) == key), None)
+            if row is None:
+                status_counts["failed"] += 1
+                continue
+        else:
+            status_counts["skipped"] += 1
 
+        if md_status != "proposed" and row.get("status") != md_status:
+            decision = {
+                "status": md_status,
+                "approver": finding["_approver"] or "FINDINGS.md",
+                "note": "reconciled from FINDINGS.md",
+            }
+            if finding["_date_approved"]:
+                decision["date_approved"] = finding["_date_approved"]
+            if client.write("POST", f"/v1/findings/{row['id']}/decision", decision,
+                            f"status {row.get('status')} -> {md_status}"):
+                status_counts["decided"] += 1
+            else:
+                status_counts["failed"] += 1
+
+    return status_counts
+
+
+FINDING_STATUSES = ("proposed", "approved", "applied", "rejected", "retired", "superseded")
+
+
+def reconcile_directives(client, root):
+    """Mirror reference/DIRECTIVES.md into the directives table (upsert by DIR id)."""
+    status_counts = {"parsed": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "fetch_failed": 0}
+    existing = {}
+    try:
+        _, body = client.get("/v1/directives")
+        for d in body.get("directives", []):
+            if d.get("directive_id"):
+                existing[d["directive_id"]] = d
+    except Exception as exc:
+        print("  !! GET /v1/directives: could not fetch existing (network error, service down, or timeout)", file=sys.stderr)
+        print(f"     {exc}", file=sys.stderr)
+        status_counts["fetch_failed"] = 1
+        return status_counts
+
+    directives = parse_directives(root)
+    status_counts["parsed"] = len(directives)
+    for d in directives:
+        row = existing.get(d["directive_id"])
+        payload = {k: v for k, v in d.items() if k != "directive_id"}
+        if row is not None and all((row.get(k) or "") == (payload.get(k) or "") for k in ("title", "rule", "rationale", "ratified_at")):
+            status_counts["skipped"] += 1
+            continue
+        if client.write("PUT", f"/v1/directives/{d['directive_id']}", prune(payload), d["directive_id"]):
+            status_counts["created" if row is None else "updated"] += 1
+        else:
+            status_counts["failed"] += 1
     return status_counts
 
 
@@ -880,6 +995,14 @@ def main():
     parser.add_argument("--root", required=True, help="Path to the .claude/memory tree.")
     parser.add_argument("--url", default=os.environ.get("BISHOP_MEMORY_URL", "http://127.0.0.1:8787"),
                         help="Base URL of the bishop-memory HTTP API.")
+    # BISHOP_HARNESS is a harness-wide identity variable, also read by the MCP adapter.
+    # Unlike BISHOP_MEMORY_URL (scoped to exactly one purpose), it may be set in an
+    # operator's shell for unrelated reasons. A stale or cross-project export would silently
+    # attribute manual reconcile runs to the wrong harness — corrupting shared multi-harness
+    # data. Require it to be passed explicitly rather than falling back to the environment,
+    # so the value must be deliberate.
+    parser.add_argument("--harness", default="",
+                        help="Harness identity for audit trail attribution. Omitting it causes reconciliation to proceed unattributed.")
     parser.add_argument("--dry-run", action="store_true",
                         help="Parse and report what would be written; send nothing.")
     parser.add_argument("--include-journal", action="store_true",
@@ -899,6 +1022,8 @@ def main():
 
     print(f"[reconcile] memory root: {root}")
     print(f"[reconcile] api:         {client.base}")
+    harness_display = args.harness if args.harness else "not attributed"
+    print(f"[reconcile] harness:     {harness_display}")
     if args.dry_run:
         print("[reconcile] DRY RUN — nothing will be written")
     if args.include_journal:
@@ -913,9 +1038,20 @@ def main():
     total_fetch_failures = 0     # Track count of fetch failures
     total_entities = 0
 
+    # --- Register this harness's memory root --------
+    # bishop-memory keeps a harnesses table so the triage exporter can find
+    # the Markdown tree to write decisions back to. The reconciler is the one
+    # process that knows both the harness name and the root, so it registers
+    # them on every run.
+    if args.harness:
+        if not client.write("PUT", f"/v1/harnesses/{args.harness}", {"memory_root": root}, "register harness"):
+            total_failed_operations += 1
+        print(f"[harness] {args.harness} -> {root}")
+        print()
+
     # --- Sync documents first (if not disabled) ----
     if not args.no_sync_documents:
-        if not client.write("POST", "/v1/documents/sync", {}, "trigger index sync"):
+        if not client.write("POST", "/v1/documents/sync", {"root": root}, "trigger index sync"):
             total_failed_operations += 1
         print("[documents] sync triggered")
     print()
@@ -963,13 +1099,22 @@ def main():
 
     # --- Findings --------
     print()
-    counts = reconcile_findings(client, root)
+    counts = reconcile_findings(client, root, harness=args.harness)
     fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[findings] {counts['parsed']} parsed, {counts['created']} created, " +
+          f"{counts['skipped']} unchanged, {counts['decided']} status mirrored, {counts['failed']} failed{fetch_status}")
+    total_failed_operations += counts['failed']
+    total_fetch_failures += counts.get('fetch_failed', 0)
+    total_entities += counts['created'] + counts['decided']
+
+    # --- Directives ------
+    counts = reconcile_directives(client, root)
+    fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
+    print(f"[directives] {counts['parsed']} parsed, {counts['created']} created, {counts['updated']} updated, " +
           f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
     total_failed_operations += counts['failed']
     total_fetch_failures += counts.get('fetch_failed', 0)
-    total_entities += counts['created']
+    total_entities += counts['created'] + counts['updated']
 
     # --- Patterns --------
     counts = reconcile_patterns(client, root)
