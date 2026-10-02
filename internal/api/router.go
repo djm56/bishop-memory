@@ -8,6 +8,7 @@ import (
 
 	"bishop-memory/internal/config"
 	"bishop-memory/internal/middleware"
+	"bishop-memory/internal/ui"
 )
 
 func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
@@ -24,6 +25,10 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	)
 
 	router.GET("/healthz", healthHandler(db))
+
+	// The operator's review page. A single embedded HTML file that talks to
+	// the /v1 triage routes with fetch; loopback-only like everything else.
+	router.GET("/triage", ui.TriagePageHandler())
 
 	v1 := router.Group("/v1")
 	{
@@ -49,6 +54,10 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		// Knowledge surface: findings, patterns, service records, and directives.
 		v1.GET("/findings", listFindingsHandler(db))
 		v1.POST("/findings", createFindingHandler(db))
+		// Operator-only: the single write path for findings.status. Not
+		// registered in any mcpd profile.
+		v1.POST("/findings/:findingID/decision", decideFindingHandler(db))
+		v1.PUT("/findings/:findingID/harness", setFindingHarnessHandler(db))
 
 		v1.GET("/patterns", listPatternsHandler(db))
 		v1.POST("/patterns", createPatternHandler(db))
@@ -57,8 +66,33 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		v1.POST("/service-records", createServiceRecordHandler(db))
 
 		v1.GET("/directives", listDirectivesHandler(db))
-		// Note: No POST, PATCH, or DELETE for directives. Directives are read-only
-		// by design — agents must have no mechanism to write a directive.
+		// Operator-side mirror of DIRECTIVES.md (reconciler). No mcpd profile
+		// registers it — agents still have no mechanism to write a directive.
+		v1.PUT("/directives/:directiveID", upsertDirectiveHandler(db))
+
+		// Findings triage (docs/FINDINGS-TRIAGE.md). The triage agents reach
+		// these through mcpd's triage profile; the operator through the review
+		// page at /triage and the scripts.
+		v1.GET("/finding-categories", listFindingCategoriesHandler(db))
+		v1.PUT("/finding-categories/:slug", upsertFindingCategoryHandler(db))
+		v1.GET("/finding-groups", listFindingGroupsHandler(db))
+		v1.POST("/finding-groups", createFindingGroupHandler(db))
+		v1.POST("/finding-recommendations", recommendFindingsHandler(db))
+		v1.GET("/directive-proposals", listDirectiveProposalsHandler(db))
+		v1.POST("/directive-proposals", createDirectiveProposalHandler(db))
+		v1.POST("/directive-proposals/:proposalID/decision", decideDirectiveProposalHandler(db))
+		v1.GET("/harnesses", listHarnessesHandler(db))
+		v1.PUT("/harnesses/:name", upsertHarnessHandler(db))
+		triage := v1.Group("/triage")
+		{
+			triage.GET("/pending", pendingTriageHandler(db))
+			triage.GET("/decisions", recentDecisionsHandler(db))
+			triage.GET("/next-category", nextCategoryHandler(db))
+			triage.PUT("/classifications", classifyFindingsHandler(db))
+			triage.GET("/runs", listTriageRunsHandler(db))
+			triage.POST("/runs", startTriageRunHandler(db))
+			triage.PATCH("/runs/:runID", finishTriageRunHandler(db))
+		}
 
 		memory := v1.Group("/memory")
 		{

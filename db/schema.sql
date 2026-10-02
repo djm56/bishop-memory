@@ -10,9 +10,13 @@
 --   5. findings         — improvement ledger (mirrors .claude/memory/findings/FINDINGS.md)
 --   6. patterns         — advisory patterns (mirrors .claude/memory/findings/PATTERNS.md)
 --   7. service_records  — per-agent service history
---   8. directives       — binding rules (read-only, never written by agents)
+--   8. directives       — binding rules (never written by agents; mirrored from DIRECTIVES.md)
 --   9. documents        — imported Markdown/JSONL files
 --  10. documents_fts    — FTS5 virtual table indexing documents for /v1/memory/search
+--
+-- Findings triage objects (appended at the end of this file; see
+-- docs/FINDINGS-TRIAGE.md): harnesses, finding_categories, triage_runs,
+-- finding_triage, finding_groups, finding_recommendations, directive_proposals.
 --
 -- All access goes through modernc.org/sqlite (CGo-free); the service runs
 -- in WAL mode so reads do not block writes. ApplySchema
@@ -129,7 +133,12 @@ CREATE TABLE IF NOT EXISTS crew (
 --
 -- status belongs to the human operator alone — no agent ever sets or changes it.
 -- Starts at 'proposed' when appended by an agent; status transitions are
--- human-driven only. The API exposes no write path for status.
+-- human-driven only. The only write path for status is the operator decision
+-- route POST /v1/findings/:id/decision, which no MCP profile registers.
+--
+-- harness and decision_note are additive columns applied by
+-- internal/store/migrate.go (EnsureColumns) on databases created before they
+-- existed; they are declared here so a fresh database has them from the start.
 --
 -- Vocabulary: proposed, approved, applied, rejected, retired, superseded
 CREATE TABLE IF NOT EXISTS findings (
@@ -142,6 +151,8 @@ CREATE TABLE IF NOT EXISTS findings (
     approver      TEXT,
     date_approved TEXT,
     mission_id    TEXT,
+    harness       TEXT,
+    decision_note TEXT,
     created_at    TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 
     CHECK (status IN ('proposed', 'approved', 'applied', 'rejected', 'retired', 'superseded'))
@@ -179,7 +190,9 @@ CREATE TABLE IF NOT EXISTS service_records (
 );
 
 -- directives — binding, human-ratified rules.
--- Exposed read-only: no write endpoint, no MCP write tool. Agents read only.
+-- No MCP profile registers a write tool for this table. The only writers are
+-- the reconciler (PUT /v1/directives/:directive_id, mirroring DIRECTIVES.md)
+-- and the operator's directive-proposal decision route. Agents read only.
 --
 -- directive_id is the natural key for a future sync mirror with
 -- .claude/memory/reference/DIRECTIVES.md; UNIQUE so callers can safely
@@ -276,3 +289,139 @@ CREATE INDEX IF NOT EXISTS idx_findings_status ON findings(status);
 
 -- idx_service_records_agent — supports per-agent record lookups.
 CREATE INDEX IF NOT EXISTS idx_service_records_agent ON service_records(agent);
+
+-- ---------------------------------------------------------------------------
+-- Findings triage (2026-10-02). Everything below is additive and lives beside
+-- the ledger rather than inside it: findings.status stays the human-only
+-- field it always was, and the model-written state (category, grouping,
+-- recommendation, directive draft) sits in its own tables so no CHECK
+-- constraint on the ledger has to change. See docs/FINDINGS-TRIAGE.md.
+-- ---------------------------------------------------------------------------
+
+-- harnesses — where each harness's Markdown memory tree lives. Upserted by
+-- scripts/reconcile-memory.py on every run (it already knows --root and
+-- --harness), so bishop-memory can write decisions back to the right
+-- FINDINGS.md / DIRECTIVES.md without a config file of its own.
+CREATE TABLE IF NOT EXISTS harnesses (
+    name         TEXT    PRIMARY KEY,
+    memory_root  TEXT    NOT NULL,
+    last_seen_at TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- finding_categories — the taxonomy the classifier assigns from. Seeded from
+-- db/finding-categories.json by scripts/triage-seed-categories.py; the
+-- classifier reads descriptions from here at run time, never from its prompt.
+-- last_processed_at is the rotation pointer the nightly processor uses to pick
+-- the next category.
+CREATE TABLE IF NOT EXISTS finding_categories (
+    slug              TEXT    PRIMARY KEY,
+    name              TEXT    NOT NULL,
+    description       TEXT    NOT NULL,
+    examples          TEXT,
+    sort_order        INTEGER NOT NULL DEFAULT 0,
+    active            INTEGER NOT NULL DEFAULT 1,
+    last_processed_at TEXT,
+    created_at        TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- triage_runs — one row per scheduled or manual classifier/processor run.
+CREATE TABLE IF NOT EXISTS triage_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT    NOT NULL,
+    category    TEXT,
+    model       TEXT,
+    status      TEXT    NOT NULL DEFAULT 'running',
+    considered  INTEGER NOT NULL DEFAULT 0,
+    written     INTEGER NOT NULL DEFAULT 0,
+    notes       TEXT,
+    started_at  TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    finished_at TEXT,
+
+    CHECK (kind IN ('classify', 'process')),
+    CHECK (status IN ('running', 'done', 'failed'))
+);
+
+-- finding_triage — one row per classified finding. Re-classification
+-- overwrites the row (upsert on finding_id).
+CREATE TABLE IF NOT EXISTS finding_triage (
+    finding_id          INTEGER PRIMARY KEY REFERENCES findings(id) ON DELETE CASCADE,
+    category            TEXT    NOT NULL REFERENCES finding_categories(slug),
+    secondary_category  TEXT    REFERENCES finding_categories(slug),
+    directive_candidate INTEGER NOT NULL DEFAULT 0,
+    confidence          REAL,
+    summary             TEXT,
+    classified_by       TEXT    NOT NULL,
+    run_id              INTEGER REFERENCES triage_runs(id),
+    classified_at       TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- finding_groups — a cluster of findings the processor judged to be instances
+-- of one underlying rule.
+CREATE TABLE IF NOT EXISTS finding_groups (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    category   TEXT    NOT NULL REFERENCES finding_categories(slug),
+    title      TEXT    NOT NULL,
+    summary    TEXT    NOT NULL,
+    target     TEXT,
+    run_id     INTEGER REFERENCES triage_runs(id),
+    created_at TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- finding_recommendations — the processor's pre-decision on one finding.
+-- state is the recommendation's own lifecycle; the finding's status is
+-- changed only by POST /v1/findings/:id/decision, which also closes the
+-- pending recommendation. The partial unique index keeps at most one
+-- pending recommendation per finding.
+CREATE TABLE IF NOT EXISTS finding_recommendations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    finding_id      INTEGER NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+    group_id        INTEGER REFERENCES finding_groups(id),
+    recommendation  TEXT    NOT NULL,
+    superseded_by   INTEGER REFERENCES findings(id),
+    rationale       TEXT    NOT NULL,
+    proposed_change TEXT,
+    state           TEXT    NOT NULL DEFAULT 'pending',
+    decided_by      TEXT,
+    decided_at      TEXT,
+    run_id          INTEGER REFERENCES triage_runs(id),
+    created_at      TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+
+    CHECK (recommendation IN ('approve', 'reject', 'supersede', 'defer')),
+    CHECK (state IN ('pending', 'accepted', 'declined', 'expired'))
+);
+
+-- directive_proposals — a drafted DIRECTIVES.md entry awaiting ratification.
+-- Fields mirror .claude/templates/reference/DIRECTIVES-TEMPLATE.md. evidence
+-- is a JSON array of finding ids. directive_id is DIR-NNN once accepted.
+CREATE TABLE IF NOT EXISTS directive_proposals (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id       INTEGER REFERENCES finding_groups(id),
+    harness        TEXT,
+    title          TEXT    NOT NULL,
+    applies_when   TEXT    NOT NULL,
+    rule           TEXT    NOT NULL,
+    rationale      TEXT    NOT NULL,
+    reviewer_check TEXT    NOT NULL,
+    example        TEXT,
+    evidence       TEXT    NOT NULL,
+    state          TEXT    NOT NULL DEFAULT 'pending',
+    directive_id   TEXT,
+    decided_by     TEXT,
+    decided_at     TEXT,
+    decision_note  TEXT,
+    run_id         INTEGER REFERENCES triage_runs(id),
+    created_at     TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+
+    CHECK (state IN ('pending', 'accepted', 'declined', 'expired'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_pending
+    ON finding_recommendations(finding_id) WHERE state = 'pending';
+CREATE INDEX IF NOT EXISTS idx_recommendations_group ON finding_recommendations(group_id);
+CREATE INDEX IF NOT EXISTS idx_finding_triage_category ON finding_triage(category);
+
+-- idx_findings_harness is NOT declared here. findings.harness is an additive
+-- column applied by internal/store/migrate.go AFTER this file runs, and an
+-- index on a column that does not exist yet fails the whole bootstrap on a
+-- database created before the column. The index is created by EnsureColumns
+-- once the column is guaranteed present.

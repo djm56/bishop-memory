@@ -24,6 +24,9 @@
 //     (default http://127.0.0.1:8787).
 //   - BISHOP_HARNESS: harness / agent-family prefix used in the composed
 //     Agent identity (default "claude-code").
+//   - MCPD_PROFILE: which tool set to register — "harness" (default; the
+//     16 tools below) or "triage" (the findings-triage tool set in
+//     triage.go, used only by the scheduled triage agents).
 //
 // The 15 MCP tools are real HTTP proxies with typed input schemas
 // (matching the bishop-memory wire shapes) and agent-identity composition
@@ -109,9 +112,17 @@ func main() {
 
 	s := server.NewMCPServer("mcpd", "0.1.0")
 
-	registerTools(s, c)
+	profile := envOrDefault("MCPD_PROFILE", profileHarness)
+	switch profile {
+	case profileHarness:
+		registerTools(s, c)
+	case profileTriage:
+		registerTriageTools(s, c)
+	default:
+		log.Fatalf("mcpd: invalid MCPD_PROFILE %q: must be %q or %q", profile, profileHarness, profileTriage)
+	}
 
-	log.Printf("mcpd serving stdio (base_url=%s harness=%s)", c.baseURL, c.harness)
+	log.Printf("mcpd serving stdio (base_url=%s harness=%s profile=%s)", c.baseURL, c.harness, profile)
 
 	if err := server.ServeStdio(s); err != nil {
 		log.Fatalf("mcpd: stdio serve failed: %v", err)
@@ -371,6 +382,18 @@ func registerTools(s *server.MCPServer, c *client) {
 			mcp.WithString("status",
 				mcp.Description("Optional status filter: one of proposed|approved|applied|rejected|retired|superseded. Omit to list all findings regardless of status."),
 			),
+			mcp.WithString("category",
+				mcp.Description("Optional triage category slug (see docs/FINDINGS-TRIAGE.md), or 'uncategorised' for findings with no classification. Omit for all categories."),
+			),
+			mcp.WithString("harness",
+				mcp.Description("Optional owning-harness filter. Omit for every harness."),
+			),
+			mcp.WithString("ids",
+				mcp.Description("Optional comma-separated list of finding ids."),
+			),
+			mcp.WithInteger("limit",
+				mcp.Description("Optional page size; omit for everything."),
+			),
 		),
 		makeFindingListHandler(c),
 	)
@@ -574,6 +597,10 @@ type createFindingBody struct {
 	Suggestion  string `json:"suggestion"`
 	Rationale   string `json:"rationale,omitempty"`
 	MissionID   string `json:"mission_id,omitempty"`
+	// Harness is the owning harness, filled from BISHOP_HARNESS so a
+	// decision made in bishop-memory can be written back to the right
+	// FINDINGS.md. The caller never supplies it.
+	Harness string `json:"harness,omitempty"`
 }
 
 // createPatternBody is the JSON body for POST /v1/patterns. It mirrors
@@ -1068,15 +1095,17 @@ func makeFindingListHandler(c *client) func(ctx context.Context, req mcp.CallToo
 		}
 		u = u.JoinPath("v1", "findings")
 
-		// Optional status filter. If supplied, pass it through; server validates.
-		if status, ok := req.GetArguments()["status"]; ok {
-			statusStr := strings.TrimSpace(fmt.Sprint(status))
-			if statusStr != "" {
-				qry := u.Query()
-				qry.Set("status", statusStr)
-				u.RawQuery = qry.Encode()
+		// Optional filters. If supplied, pass them through; the server validates.
+		qry := u.Query()
+		for _, key := range []string{"status", "category", "harness", "ids", "limit"} {
+			if raw, ok := req.GetArguments()[key]; ok && raw != nil {
+				value := strings.TrimSpace(fmt.Sprint(raw))
+				if value != "" {
+					qry.Set(key, value)
+				}
 			}
 		}
+		u.RawQuery = qry.Encode()
 
 		body, httpStatus, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
 		if httpErr != nil {
@@ -1173,6 +1202,7 @@ func makeFindingAppendHandler(c *client) func(ctx context.Context, req mcp.CallT
 			Suggestion:  suggestion,
 			Rationale:   mcp.ParseString(req, "rationale", ""),
 			MissionID:   strings.TrimSpace(mcp.ParseString(req, "mission_id", "")),
+			Harness:     c.harness,
 		}
 
 		u, err := url.Parse(c.baseURL)

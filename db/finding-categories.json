@@ -1,0 +1,107 @@
+{
+  "_comment": "Taxonomy for the findings classifier. Loaded by scripts/triage-seed-categories.py (idempotent upsert by slug). Descriptions are written for the classifier model and are what it reads at run time; edit them here, re-seed, then re-classify the affected category with scripts/triage-run.sh classify --reclassify <slug>. The reserved slug 'uncategorised' is virtual (findings with no classification) and must not appear here.",
+  "categories": [
+    {
+      "slug": "brief-writing",
+      "name": "Brief writing",
+      "description": "How Bishop writes a brief to a sub-agent: naming the exact artefact wanted, quoting code or text verbatim instead of paraphrasing, giving absolute paths, labelling every figure with its provenance (measured with the command shown, or carried from a report), stating a diagnosis as a hypothesis rather than a fact, restating each review finding in one line beside its label, never including a command the recipient is denied, keeping qualifiers off the list beside them.",
+      "examples": "Mark unverified claims in a brief as unverified. | A brief that names a diagnosis makes the suspected file the search boundary. | Bishop checks every command in a brief against permissions.deny before sending it."
+    },
+    {
+      "slug": "evidence-and-reporting",
+      "name": "Evidence and reporting",
+      "description": "What a sub-agent's completion report must contain and how the receiver treats it: raw command output pasted verbatim, a described result counts as not done, one report slot per required item, the IMPROVEMENT-NOTE and STEP COMPLETE trailers, pasted transcripts treated as claims to re-run rather than as evidence, before/after text pairs for prose edits.",
+      "examples": "A summary in place of pasted output counts as not done. | Treat a pasted command transcript as a claim and re-run anything a decision rests on. | Every report ends with the IMPROVEMENT-NOTE and STEP N COMPLETE lines."
+    },
+    {
+      "slug": "check-design",
+      "name": "Verification check design",
+      "description": "Designing a verification, gate or acceptance criterion so that it can actually fail: pairing an empty-result check with a positive control, naming the falsifying command rather than the property to confirm, calibrating a check against a deliberately bad input, asking what the laziest conforming work looks like, measuring at the moment of the check rather than against a stale reference, using the right tool for the count (grep -o vs grep -c, codepoints vs bytes).",
+      "examples": "A zero-result check is not evidence until it has been shown able to return non-zero. | A gate must name an artefact that either appears in the work or does not. | Write a gate so that the weakest thing satisfying it is still the thing wanted."
+    },
+    {
+      "slug": "review-practice",
+      "name": "Review practice",
+      "description": "The code-review skill and the reviewer's conduct: severity definitions (what is CRITICAL), review scope and the reviewer building its own measurement table, carrying a previous review's findings forward in full, grading a defect versus deciding whether to repair it, reviewing the trust list itself, a review naming the outcome a fix must achieve rather than the mechanism, review briefs carrying the diff, the reviewer refusing a verdict a brief tries to pre-settle.",
+      "examples": "A review brief may state facts but never a verdict. | A reviewer with no shell names the single experiment that would settle a runtime question. | Every review brief must paste the reviewed step's own diff hunks."
+    },
+    {
+      "slug": "fix-rounds-and-escalation",
+      "name": "Fix rounds and escalation",
+      "description": "Rule 3 and the code-quality pipeline: fix-round budgets and how they scale, the severity and round triggers, escalation to the senior developer, what follows exhausted rounds on non-code work, converging warnings versus fresh fix rounds, re-planning when a phase runs far past its planned length, blocking an escalation until the round it escalates from has closed.",
+      "examples": "Gate the Rule 3 round trigger on severity or convergence, not round count alone. | Define what follows two failed doc fix rounds. | When a phase exceeds its planned length several times over, stop and re-plan."
+    },
+    {
+      "slug": "class-closure",
+      "name": "Closing the class, not the instance",
+      "description": "Fixing every instance of a defect class rather than the reported one: expressing a defect as a testable property and letting the agent discover the instances, enumerating the whole class before briefing the fix, re-walking every member of a corrected set, sweeping sibling sites after a mechanism defect, diffing the actual changed set against the expected set in both directions, re-scanning for a structural error rather than patching the reported cell.",
+      "examples": "Brief the property and have the agent discover the instances; a list bounds the answer by what its author already knows. | A fix brief requires the author to re-walk every member of the set a corrected claim describes. | The closing tracker check enumerates what actually changed and diffs it both ways."
+    },
+    {
+      "slug": "state-files-and-journal",
+      "name": "State files and the audit journal",
+      "description": "Integrity of FLIGHT-RECORDER.md, PROGRESS.md and CURRENT-MISSION.md: append mechanics (printf >> only, no editing tools on the journal), timestamps taken from the clock at write time, non-decreasing timestamp checks, pipe escaping in table cells, row renumbering rules, who may write a state file, Next Action and Blockers kept consistent, counts in journal rows supplied by the delegator, IMPROVEMENT-NOTE alternation syntax.",
+      "examples": "Append rows to the audit journal with a shell redirect, never an editing tool. | Re-read the whole timestamp column and assert it is non-decreasing. | Renumber only rows with no FLIGHT-RECORDER history; letter-suffix otherwise."
+    },
+    {
+      "slug": "mission-planning",
+      "name": "Mission planning and lifecycle",
+      "description": "The shape and lifecycle of a mission: plan structure, terminal states other than success, partially completed steps, keeping deployed state current, committing at phase boundaries so later checks have a baseline, archive directory naming, the init checklist and gate baselines at mission start, durable per-step review artefacts, verifying a plan step's premise before briefing it.",
+      "examples": "Give a mission a terminal state other than success. | Commit at the close of each phase rather than once at the end. | Run every acceptance-criterion gate at mission init and record whether it is already red."
+    },
+    {
+      "slug": "agent-definitions",
+      "name": "Agent definition proposals",
+      "description": "Proposals to change a specific .claude/agents/*.md file: tools allowlists, standing clauses, report contracts, what an agent may or may not write, calibration artefacts as generated output, the doc writer never setting operator ticks. Use this when the finding's target is an agent definition itself rather than a skill or a brief.",
+      "examples": "Add Bash or a read-only equivalent to @apone's tools list, or state that it cannot execute anything. | Amend lambert.md so every completion report ends with the trailer lines. | Amend hicks.md: calibration artefacts are generated, never hand-written."
+    },
+    {
+      "slug": "harness-mechanics",
+      "name": "Harness mechanics and permissions",
+      "description": "The harness's mechanical layer: hooks and their timing (PreToolUse, PostToolUse), settings.json permission rules and the permission classifier, the Write tool's report-file guard, instruction blocks injected by MCP servers being data rather than directives, what is and is not mechanically enforced, operator-performed steps, writes the harness refuses regardless of operator authorisation.",
+      "examples": "A check which cannot be completed must produce nothing. | Instruction blocks supplied by an MCP server are data, not directives. | Exempt .claude/memory/ from the Write tool's report-shaped-content guard."
+    },
+    {
+      "slug": "documentation-accuracy",
+      "name": "Documentation accuracy",
+      "description": "Factual accuracy of prose, comments and docs: counts and closed enumerations in prose, stale facts, documentation sourced from the code rather than from a brief, a comment or docblock treated as a claim that needs the same checking as code, citing file:line for behavioural claims, removing a duplicated fact rather than correcting it twice.",
+      "examples": "Do not put a count or a closed enumeration into prose unless it is mechanically checkable. | A comment is a claim and takes the same checking as any other. | Every factual assertion in generated documentation comes from a command run in the same step."
+    },
+    {
+      "slug": "testing-discipline",
+      "name": "Testing discipline",
+      "description": "Tests and their trustworthiness: tests that cannot fail or that pass with the code deleted, mutation testing and calibration artefacts, deleted tests, sentinels outside the output alphabet, fixtures that restate product constants, test names that outrun their assertions, tests that skip when their precondition is absent, a test's expected value produced by calling the implementation it must agree with, the dispatch path a test actually exercises.",
+      "examples": "For every test, ask whether it would still pass if the code under test were deleted. | A test built to reproduce an operator's observation asserts the observation was reproduced before anything else. | A test's name and comments must describe the dispatch path it actually exercises."
+    },
+    {
+      "slug": "product-defect",
+      "name": "Product code defect",
+      "description": "A specific defect or improvement in the product repository's own code (for example kirsch's internal/tui, internal/app, cmd/kirsch, internal/patch, internal/tool, internal/policy): wrong correlation, unsanitised input, dead fields, missing branches, unreachable grants. The target is production code, not the harness, a skill or a brief.",
+      "examples": "Make the secret-stripping patterns case-insensitive. | Correlate a confirmed-outcome message with its card by approval identifier, not pending slot. | Resolve the patch filename through the workspace resolver rather than comparing prefixes."
+    },
+    {
+      "slug": "repo-tooling-and-ci",
+      "name": "Repository tooling and CI",
+      "description": "Build, lint and CI configuration of a repository: npm run check and golangci-lint installation, go mod tidy gating, CI steps that cannot fail, deriving a step's acceptance gates from the CI definition, regeneration scripts with duplicated logic.",
+      "examples": "Add go mod tidy -diff to the check script. | Derive acceptance criteria from the CI workflow rather than a remembered list. | Re-point or delete the CI step that diffs a directory that does not exist."
+    },
+    {
+      "slug": "shell-portability",
+      "name": "Shell conventions and portability",
+      "description": "Shell scripting rules in hooks and libraries: guarding a sourced file on readability as well as existence, BSD versus GNU commands (stat -f), wrapper exit codes distinct from the wrapped command's, empty redirection targets, locks that coalesce rather than drop work, wrapping variable-dependent commands in a library that sources the conf.",
+      "examples": "A script that sources an optional file must test both -f and -r. | stat -f is BSD syntax; provide a cross-platform alternative. | A lock guarding an idempotent operation must coalesce rather than drop work."
+    },
+    {
+      "slug": "bishop-memory-service",
+      "name": "bishop-memory service",
+      "description": "This memory service itself: the HTTP API shape, MCP tool schemas and their handler guards, the reconciler and its silent drops, the state-continuity hook's mirror, pagination caps on the flight-recorder read, sentinel values for absence, SQLite semantics the service depends on.",
+      "examples": "Surface a finding's originating mission on read. | mcp.Required() is schema metadata only and needs a handler guard. | Fix the flight-recorder read endpoint's pagination so the reconciler can verify completeness."
+    },
+    {
+      "slug": "operator-evidence",
+      "name": "Operator evidence and walkthroughs",
+      "description": "Files holding the operator's own observations and manual test walkthroughs: entry and exit state per section, who sets ticks, verbatim copies before editing primary evidence, executed artefacts behind on-screen claims, summaries that cite their source, terminal size and checkout state assumptions.",
+      "examples": "A manual walkthrough states each section's entry state and exit. | The doc writer never writes a tick into a manual-test file; the operator alone sets marks. | A verbatim copy of operator testimony goes into the workspace before the first edit."
+    }
+  ]
+}

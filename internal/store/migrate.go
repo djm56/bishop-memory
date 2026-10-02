@@ -43,10 +43,26 @@ var additiveColumns = []columnMigration{
 	// allocation — and any created by a harness in standalone mode — have
 	// no harness to record.
 	{table: "missions", column: "harness", definition: "TEXT"},
+	// findings.harness records which harness's FINDINGS.md a finding was
+	// mirrored from, so a decision made in bishop-memory can be written
+	// back to the right file. Nullable: rows mirrored before the column
+	// existed are backfilled by scripts/triage-backfill-harness.py.
+	{table: "findings", column: "harness", definition: "TEXT"},
+	// findings.decision_note carries the operator's one-line reason on a
+	// reject, retire or supersede. Written only by the decision route.
+	{table: "findings", column: "decision_note", definition: "TEXT"},
+}
+
+// additiveIndexes are indexes over additive columns. They cannot live in
+// db/schema.sql because ApplySchema runs before EnsureColumns, and SQLite
+// refuses an index on a column the table does not have yet. Each statement is
+// CREATE INDEX IF NOT EXISTS, so repeated boots are no-ops.
+var additiveIndexes = []string{
+	"CREATE INDEX IF NOT EXISTS idx_findings_harness ON findings(harness)",
 }
 
 // EnsureColumns applies every additive column that the database does not
-// already have. It is safe to call on every boot: existing columns are
+// already have, then the indexes that depend on them. It is safe to call on every boot: existing columns are
 // detected via PRAGMA table_info and skipped, so the function is a no-op
 // on an up-to-date database.
 //
@@ -79,6 +95,11 @@ func EnsureColumns(db *sql.DB) error {
 			migration.table, migration.column, migration.definition)
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("add column %s.%s: %w", migration.table, migration.column, err)
+		}
+	}
+	for _, stmt := range additiveIndexes {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("additive index: %w", err)
 		}
 	}
 	return nil
