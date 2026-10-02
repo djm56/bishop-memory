@@ -59,6 +59,13 @@ git clone --quiet "$REMOTE" "$WORK/wiki"
 find "$WORK/wiki" -maxdepth 1 -name '*.md' -delete
 cp "$WIKI_SRC"/*.md "$WORK/wiki/"
 
+# Images (docs/wiki/images/, written by `make screenshots`) are replaced the
+# same way, so a screenshot removed from the source disappears from the wiki.
+rm -rf "$WORK/wiki/images"
+if [[ -d "$WIKI_SRC/images" ]]; then
+  cp -R "$WIKI_SRC/images" "$WORK/wiki/images"
+fi
+
 cd "$WORK/wiki"
 git add -A
 if git diff --cached --quiet; then

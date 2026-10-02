@@ -2,7 +2,7 @@ APP=memoryd
 DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
-        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish
+        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish screenshots
 
 run:
 	go run ./cmd/memoryd
@@ -110,3 +110,9 @@ triage-uninstall:
 # see scripts/publish-wiki.sh for the one-time setup step).
 wiki-publish:
 	scripts/publish-wiki.sh
+
+# Regenerate the review-page screenshots in docs/wiki/images/ from made-up
+# demo data on a throwaway service (scripts/screenshots/run.sh). Your real
+# service and database are not touched. Publish them with `make wiki-publish`.
+screenshots:
+	scripts/screenshots/run.sh

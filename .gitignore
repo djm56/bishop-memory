@@ -67,6 +67,11 @@ coverage.out
 # /memoryd and /mcpd rules above. A full build-all-commands verification
 # must clean those binaries after building.
 
+# --- Screenshot tooling (scripts/screenshots) ---
+# playwright-core is installed here on the first `make screenshots`;
+# package.json and package-lock.json are tracked, the install is not.
+/scripts/screenshots/node_modules/
+
 # --- Python build artifacts ---
 # The scripts are run directly, so CPython leaves bytecode beside them.
 __pycache__/

@@ -1,0 +1,8 @@
+{
+  "name": "bishop-memory-screenshots",
+  "private": true,
+  "description": "Captures the review page for the documentation. Run through `make screenshots`.",
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

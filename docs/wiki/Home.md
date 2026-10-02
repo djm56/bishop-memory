@@ -33,4 +33,6 @@ Separate documents, one per subsystem.
 
 ## The one-paragraph version
 
+![The review page, Pending tab](images/pending-light.png)
+
 The harness writes its memory as Markdown under `.claude/memory/`. bishop-memory keeps a derived copy in SQLite so several harnesses can share mission IDs, an audit journal, a findings ledger and a full-text search index, all reachable through MCP tools. Markdown stays the source of truth; the reconciler mirrors it in. Findings pile up faster than anyone reads them, so a nightly classifier sorts them into categories and a nightly processor groups each category and recommends a decision on every finding; the operator decides on the review page, and the exporter writes those decisions back into the harness's Markdown. No agent ever changes a finding's status.

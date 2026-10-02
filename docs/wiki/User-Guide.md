@@ -85,6 +85,8 @@ you    review page          http://127.0.0.1:8787/triage — decide, one click p
 you    make triage-export   decisions written into the owning harness's FINDINGS.md and DIRECTIVES.md
 ```
 
+![The review page, Pending tab](images/pending-light.png)
+
 First-time setup, after the service is installed:
 
 ```bash

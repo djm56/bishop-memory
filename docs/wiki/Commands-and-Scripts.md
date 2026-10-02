@@ -21,7 +21,8 @@ Every `make` target and every script, with flags, environment, exit codes and wh
 | `make triage-export` | Write decisions to every registered harness's Markdown | Exit 3 means a conflict was skipped |
 | `make triage-review` | Open the review page | |
 | `make triage-install` / `triage-uninstall` | Install or remove the nightly launchd jobs | macOS |
-| `make wiki-publish` | Push `docs/wiki/*.md` to the GitHub wiki | Needs the wiki created once in the web UI |
+| `make wiki-publish` | Push `docs/wiki/` (pages and images) to the GitHub wiki | Needs the wiki created once in the web UI |
+| `make screenshots` | Regenerate the review-page screenshots in `docs/wiki/images/` from demo data | Never touches your service or database |
 
 All `triage-*` targets accept `BISHOP_MEMORY_URL=http://127.0.0.1:8788` to aim at another instance.
 
@@ -121,6 +122,17 @@ Not a command. The helper module the triage scripts share: it loads `reconcile-m
 
 ## Wiki
 
+### `scripts/screenshots/run.sh`
+
+```
+scripts/screenshots/run.sh [--out DIR] [--port N] [--keep]
+make screenshots
+```
+
+Builds `memoryd` into a temporary directory and starts it on port 8790 (`--port` to change) against a fresh database. Loads the taxonomy and the made-up findings in `scripts/screenshots/demo.json` through the HTTP API (`seed-demo.py`, which refuses an instance that already holds findings). Captures each tab in light and dark, plus a phone-width view, with headless Chrome (`capture.js`) into `docs/wiki/images/`. Then it stops the service, checks the port is free, and deletes the temporary directory. `--keep` leaves the demo service running so you can look around it.
+
+Needs `go`, `python3`, `node` 18+ with `npm`, and Chrome or Chromium (`CHROME_PATH` if it is not in a standard place). The first run installs `playwright-core` into `scripts/screenshots/node_modules` (gitignored); no browser is downloaded. If `oxipng` or `optipng` is installed the images are compressed losslessly. To add a shot, add an entry to `SHOTS` in `capture.js`.
+
 ### `scripts/gen-mcp-reference.py`
 
 ```
@@ -135,4 +147,4 @@ Regenerates `docs/wiki/MCP-Tool-Reference.md` from the `mcpd` source so the tool
 scripts/publish-wiki.sh [--dry-run] [--remote git@github.com:owner/repo.wiki.git]
 ```
 
-Clones the wiki repository, replaces every page with `docs/wiki/*.md`, commits and pushes. GitHub creates the wiki repository only when the first page is made in the web UI, so do that once; the script says so if it is missing.
+Clones the wiki repository, replaces every page with `docs/wiki/*.md` and every image with `docs/wiki/images/`, commits and pushes. GitHub creates the wiki repository only when the first page is made in the web UI, so do that once; the script says so if it is missing.

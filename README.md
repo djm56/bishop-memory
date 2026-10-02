@@ -72,6 +72,11 @@ Every tool, with arguments, examples and errors: [MCP Tool Reference](docs/wiki/
 
 ## Findings triage
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/wiki/images/pending-dark.png">
+  <img alt="The findings triage review page: a category rail on the left, and on the right a group of findings that share a rule, each with the processor's recommendation and Approve, Reject and Defer buttons." src="docs/wiki/images/pending-light.png">
+</picture>
+
 Findings accumulate faster than anyone reads them. bishop-memory classifies the ledger into a 17-category taxonomy nightly (Haiku), groups one category's findings by the rule they share and recommends a decision on each (Sonnet), and drafts `DIRECTIVES.md` entries — all for you to decide on a review page at `http://127.0.0.1:8787/triage`. Decisions are written back into the owning harness's Markdown. No agent ever changes a finding's status.
 
 ```bash
@@ -83,7 +88,10 @@ make triage-process                                                  # recommend
 make triage-review                                                   # open the review page
 make triage-export                                                   # write decisions to FINDINGS.md / DIRECTIVES.md
 make triage-install                                                  # nightly launchd jobs (21:00 / 21:20)
+make screenshots                                                     # regenerate the screenshots in the docs
 ```
+
+The screenshots are produced from made-up demo data on a throwaway service (`scripts/screenshots/`), never from a real ledger, because they are published.
 
 Guide: [docs/FINDINGS-TRIAGE.md](docs/FINDINGS-TRIAGE.md). Design record: [docs/FINDINGS-TRIAGE-PLAN.md](docs/FINDINGS-TRIAGE-PLAN.md).
 
