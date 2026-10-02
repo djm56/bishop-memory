@@ -6,11 +6,17 @@ The review page at `http://127.0.0.1:8787/triage` is where findings get decided 
 
 Type your name in the **Approver** box once. It is stored in the browser and written as `Approver` on every decision, so the exported `FINDINGS.md` entry reads `**Approver**: Donovan Maidens` exactly as a hand-approved one does.
 
+## Appearance
+
+The control at the right of the header switches between **Auto**, **Light** and **Dark**. Auto follows the operating system. The choice is saved in the browser and applies on the next visit. Adding `?theme=light` or `?theme=dark` to the URL overrides the saved choice for that page load only.
+
+Below 860 pixels wide the layout stacks: the header wraps and the category list sits above the findings instead of beside them. The page stays usable on a phone over the SSH tunnel.
+
 ## The four tabs
 
 ### Pending
 
-What the processor has recommended and you have not decided. The left rail lists categories with their pending counts; click one to narrow, or stay on **All categories**.
+What the processor has recommended and you have not decided. The left rail lists categories with a count badge: pending recommendations on this tab, proposed findings on the others. Click one to narrow the view, or stay on **All categories**.
 
 Within a category, **groups** come first. A group is a set of findings the processor judged to be instances of one rule; its header shows that rule, the doctrine file the fix belongs in, and **Accept all N recommendations**. Below the groups come **ungrouped** findings.
 
@@ -19,7 +25,7 @@ Each finding card shows:
 - the id, date, owning harness, category, confidence and one-line summary;
 - the target and the classifier's summary, with the full suggestion and rationale one click away;
 - the recommendation badge (`approve`, `reject`, `supersede by #N`, `defer`) and its rationale, written to be checkable: a quoted sentence, a file, a finding id;
-- for an approve, the **proposed change**: before/after text against the target file as it is today, with a copy button. You paste it; the agent never edits a file.
+- for an approve, the **proposed change**: before/after text against the target file as it is today, with a **Copy** button that confirms with a toast. You paste it; the agent never edits a file.
 
 Buttons on a proposed finding:
 
@@ -41,7 +47,7 @@ Every finding, by category and status, with the same buttons. This is where you 
 
 ### Directives
 
-Each pending draft is an editable form: title, applies-when, rule, rationale, reviewer check, example, with the evidence finding ids and the rendered length against the template budget (1,300 typical, 1,510 absolute; the service refuses more).
+Each pending draft is an editable form: title, applies-when, rule, rationale, reviewer check, example, with the evidence finding ids. A meter under the form shows the rendered length against the template budget as you edit. It turns amber above 1,300 characters (the typical size) and red above 1,510 (the absolute maximum, which the service refuses).
 
 **Ratify** allocates the next `DIR-NNN`, stores your edited text, mirrors the directive into the `directives` table, marks every evidence finding `applied` with the note `Ratified as DIR-NNN`, and closes their pending recommendations. **Decline** needs a reason.
 
@@ -53,7 +59,7 @@ Every classifier and processor run: category, model, how many findings it read, 
 
 ## Keyboard
 
-`j` / `k` move the focus between cards. `a` approves, `r` rejects (prompts for the reason), `d` defers.
+`j` / `k` move the focus between cards. `a` approves, `r` rejects (prompts for the reason), `d` defers. The buttons show their key. Shortcuts are ignored while you type in a field and whenever Cmd, Ctrl or Alt is held, so Cmd+A selects text instead of approving the focused finding.
 
 ## Getting decisions into the Markdown
 

@@ -143,7 +143,8 @@ same tunnel that reaches the API reaches the page.
   read, how many rows it wrote, and how many of its recommendations you
   accepted or declined. A category whose acceptance rate drops is the one
   whose description in `db/finding-categories.json` needs tightening.
-- Keys: `j`/`k` move between cards, `a` approve, `r` reject, `d` defer.
+- Keys: `j`/`k` move between cards, `a` approve, `r` reject, `d` defer. They are ignored while Cmd, Ctrl or Alt is held.
+- **Theme**: Auto, Light or Dark from the header. Auto follows the operating system, and the choice is saved in the browser. `?theme=light` or `?theme=dark` in the URL overrides it for one load.
 
 ## Exporting decisions to Markdown
 

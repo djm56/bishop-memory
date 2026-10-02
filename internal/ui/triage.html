@@ -1,64 +1,160 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="system">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Findings Triage</title>
+<script>
+  (function () { try { var q = new URLSearchParams(location.search).get('theme'); document.documentElement.dataset.theme = q || localStorage.getItem('triage.theme') || 'system'; } catch (e) {} })();
+</script>
 <style>
-  :root { --bg:#fafafa; --fg:#1b1b1b; --muted:#666; --card:#fff; --line:#ddd; --accent:#2b5fd9; --ok:#1e7f4c; --bad:#b4332f; --warn:#9a6700; --soft:#eef2fb; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#141517; --fg:#e8e8e8; --muted:#9a9a9a; --card:#1d1f23; --line:#333; --accent:#7aa2ff; --ok:#5fcf8a; --bad:#ff7b76; --warn:#e3b341; --soft:#232838; } }
+  :root {
+    --bg:#f7f6f3; --panel:#ffffff; --fg:#1c1b19; --muted:#66635d; --faint:#97938b; --line:#e7e4dd; --line2:#d7d3ca; --soft:#efede8;
+    --accent:#2f5fb8; --ok:#26774a; --bad:#ad3f38; --warn:#8f620f;
+    --shadow:0 1px 2px rgba(28,27,25,.05), 0 0 0 1px var(--line);
+    --sans:-apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --mono:ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme:light;
+  }
+  :root[data-theme=dark] {
+    --bg:#151514; --panel:#1d1d1b; --fg:#ecebe7; --muted:#a6a39c; --faint:#77746e; --line:#2b2a28; --line2:#3a3936; --soft:#252422;
+    --accent:#8db0ff; --ok:#6cc893; --bad:#ff8a7f; --warn:#e2b55a; --shadow:0 0 0 1px var(--line); color-scheme:dark;
+  }
+  @media (prefers-color-scheme: dark) { :root[data-theme=system] {
+    --bg:#151514; --panel:#1d1d1b; --fg:#ecebe7; --muted:#a6a39c; --faint:#77746e; --line:#2b2a28; --line2:#3a3936; --soft:#252422;
+    --accent:#8db0ff; --ok:#6cc893; --bad:#ff8a7f; --warn:#e2b55a; --shadow:0 0 0 1px var(--line); color-scheme:dark;
+  } }
   * { box-sizing:border-box }
-  body { margin:0; font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background:var(--bg); color:var(--fg) }
-  header { display:flex; gap:16px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:2; flex-wrap:wrap }
-  header h1 { font-size:16px; margin:0 12px 0 0 }
-  header nav button { background:none; border:1px solid var(--line); color:var(--fg); padding:5px 10px; border-radius:6px; cursor:pointer }
-  header nav button.on { background:var(--accent); color:#fff; border-color:var(--accent) }
-  header .spacer { flex:1 }
-  header label { color:var(--muted) }
-  header input { padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg) }
-  main { display:grid; grid-template-columns:260px 1fr; min-height:calc(100vh - 52px) }
-  aside { border-right:1px solid var(--line); padding:12px; overflow:auto }
-  aside .cat { display:flex; justify-content:space-between; padding:6px 8px; border-radius:6px; cursor:pointer }
-  aside .cat:hover { background:var(--soft) }
-  aside .cat.on { background:var(--accent); color:#fff }
-  aside .cat small { color:inherit; opacity:.75 }
-  section { padding:16px; overflow:auto }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px }
-  .card.focus { outline:2px solid var(--accent) }
-  .group { border-left:4px solid var(--accent); margin-bottom:18px; padding-left:10px }
-  .group h3 { margin:4px 0 2px }
-  .group .meta, .meta { color:var(--muted); font-size:12px }
-  .rec { display:inline-block; padding:1px 8px; border-radius:10px; font-size:12px; font-weight:600; margin-right:6px }
-  .rec.approve { background:var(--ok); color:#fff } .rec.reject { background:var(--bad); color:#fff } .rec.defer { background:var(--warn); color:#fff } .rec.supersede { background:var(--muted); color:#fff }
-  .status { font-size:12px; color:var(--muted) }
-  .btns { margin-top:8px; display:flex; gap:6px; flex-wrap:wrap }
-  .btns button { border:1px solid var(--line); background:var(--bg); color:var(--fg); padding:4px 10px; border-radius:6px; cursor:pointer }
-  .btns button.ok { border-color:var(--ok); color:var(--ok) } .btns button.bad { border-color:var(--bad); color:var(--bad) }
-  .btns button:hover { background:var(--soft) }
-  details summary { cursor:pointer; color:var(--accent) }
-  pre { background:var(--soft); padding:8px; border-radius:6px; white-space:pre-wrap; font-size:12px; max-height:260px; overflow:auto }
-  .sugg { margin:4px 0 }
-  .empty { color:var(--muted); padding:20px }
-  table { border-collapse:collapse; width:100% } td, th { border-bottom:1px solid var(--line); padding:6px 8px; text-align:left; font-size:13px }
-  textarea, input.wide { width:100%; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); font:inherit }
-  .field { margin-bottom:8px } .field label { display:block; font-size:12px; color:var(--muted) }
-  .toast { position:fixed; bottom:16px; right:16px; background:var(--card); border:1px solid var(--line); padding:10px 14px; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,.2) }
-  kbd { border:1px solid var(--line); border-radius:4px; padding:0 4px; font-size:11px }
+  html, body { margin:0 }
+  body { font:14px/1.5 var(--sans); background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased }
+  a { color:var(--accent) } a:hover { text-decoration:none }
+  code, kbd, pre { font-family:var(--mono) }
+  header.top { position:sticky; top:0; z-index:5; height:56px; display:flex; align-items:center; gap:20px; padding:0 20px; background:color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line) }
+  .brand { display:flex; align-items:center; gap:10px }
+  .brand h1 { font-size:15px; font-weight:600; margin:0; letter-spacing:-.01em; white-space:nowrap }
+  .mark { width:10px; height:10px; border-radius:3px; background:var(--accent) }
+  .seg { display:inline-flex; padding:3px; gap:2px; background:var(--soft); border-radius:9px }
+  .seg button { border:0; background:none; color:var(--muted); font:500 13px/1 var(--sans); padding:7px 12px; border-radius:7px; cursor:pointer; text-transform:capitalize }
+  .seg button:hover { color:var(--fg) }
+  .seg button.on { background:var(--panel); color:var(--fg); box-shadow:var(--shadow) }
+  .seg.sm button { padding:5px 9px; font-size:12px }
+  .spacer { flex:1 }
+  .stats { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap }
+  .stats b { color:var(--fg); font-weight:600 }
+  .approver { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px }
+  input, textarea { font:inherit; color:var(--fg); background:var(--panel); border:1px solid var(--line2); border-radius:8px; padding:6px 10px; outline:none }
+  input:focus, textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent) }
+  #approver { width:150px }
+  main { display:grid; grid-template-columns:272px minmax(0,1fr) }
+  aside { position:sticky; top:56px; height:calc(100vh - 56px); overflow:auto; padding:16px 12px; border-right:1px solid var(--line); display:flex; flex-direction:column; gap:1px }
+  .rail-head { display:flex; justify-content:space-between; padding:0 10px 8px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--faint) }
+  .cat { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:7px 10px; border-radius:8px; cursor:pointer; font-size:13.5px }
+  .cat span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .cat:hover { background:var(--soft) }
+  .cat.on { background:var(--panel); box-shadow:var(--shadow); font-weight:500 }
+  .count { font:600 11.5px/1 var(--sans); font-variant-numeric:tabular-nums; padding:4px 7px; border-radius:999px; background:color-mix(in srgb, var(--accent) 13%, transparent); color:var(--accent) }
+  .count.zero { background:none; color:var(--faint); font-weight:500 }
+  .keys { margin-top:auto; padding:20px 10px 4px; color:var(--faint); font-size:12px; display:flex; flex-wrap:wrap; gap:6px 14px }
+  kbd { display:inline-block; min-width:18px; text-align:center; font-size:11px; line-height:16px; padding:0 4px; border:1px solid var(--line2); border-bottom-width:2px; border-radius:4px; color:var(--muted); background:var(--panel) }
+  #view { padding:28px 36px 96px; max-width:1100px; width:100% }
+  .cat-block { margin-bottom:44px }
+  .cat-title { display:flex; align-items:baseline; gap:12px; margin:0 0 22px }
+  .cat-title h2 { font-size:22px; font-weight:600; letter-spacing:-.015em; margin:0 }
+  .cat-title code { font-size:12px; color:var(--faint) }
+  .group { margin-bottom:30px }
+  .group-head { display:flex; gap:20px; align-items:flex-start; justify-content:space-between; margin-bottom:12px }
+  .group-head h3 { font-size:15.5px; font-weight:600; margin:0 0 4px; text-wrap:pretty }
+  .group-head p { margin:0; color:var(--muted); font-size:13px; text-wrap:pretty; max-width:76ch }
+  .group-head .btn { flex:none }
+  .path { display:inline-block; margin-top:8px; font:12px/1.4 var(--mono); color:var(--muted); background:var(--soft); padding:2px 7px; border-radius:5px; word-break:break-all }
+  .group-body, .list { display:flex; flex-direction:column; gap:10px }
+  .group-body { padding-left:16px; border-left:2px solid var(--line) }
+  .card { background:var(--panel); border-radius:12px; padding:16px 18px; box-shadow:var(--shadow); transition:box-shadow .15s }
+  .card.focus { box-shadow:0 0 0 2px var(--accent), 0 6px 20px rgba(0,0,0,.06) }
+  .meta-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .meta-row .id { font-family:var(--mono); color:var(--fg); font-weight:600 }
+  .tag { padding:1px 7px; border-radius:5px; background:var(--soft); color:var(--muted) }
+  .tag.dc { background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent) }
+  .target { font-weight:600; margin-top:8px }
+  .sugg { margin-top:2px; text-wrap:pretty }
+  details { margin-top:8px }
+  summary { cursor:pointer; color:var(--muted); font-size:13px; list-style:none; display:inline-flex; align-items:center; gap:7px }
+  summary::-webkit-details-marker { display:none }
+  summary::before { content:""; border-left:5px solid currentColor; border-top:4px solid transparent; border-bottom:4px solid transparent; transition:transform .15s }
+  details[open] > summary::before { transform:rotate(90deg) }
+  summary:hover { color:var(--fg) }
+  .detail { margin-top:8px; padding:10px 12px; background:var(--soft); border-radius:8px; font-size:13px } .detail p { margin:0 0 6px } .detail p:last-child { margin:0 }
+  .rec-row { display:flex; gap:10px; align-items:flex-start; margin-top:12px; padding-top:12px; border-top:1px dashed var(--line) }
+  .rec-row p { margin:0; font-size:13.5px; text-wrap:pretty }
+  .rec { flex:none; font:600 11.5px/1 var(--sans); padding:4px 8px; border-radius:6px; text-transform:capitalize; margin-top:1px; white-space:nowrap }
+  .rec.approve { background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok) }
+  .rec.reject { background:color-mix(in srgb, var(--bad) 15%, transparent); color:var(--bad) }
+  .rec.defer { background:color-mix(in srgb, var(--warn) 17%, transparent); color:var(--warn) }
+  .rec.supersede { background:var(--soft); color:var(--muted) }
+  pre { font-size:12px; line-height:1.5; background:var(--soft); padding:10px 12px; border-radius:8px; white-space:pre-wrap; max-height:280px; overflow:auto; margin:8px 0 }
+  .status { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; font-size:12.5px; color:var(--muted) }
+  .pill { font:600 11.5px/1 var(--sans); padding:4px 8px; border-radius:999px; background:var(--soft); color:var(--muted); text-transform:capitalize; white-space:nowrap }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.finished { background:color-mix(in srgb, var(--ok) 15%, transparent); color:var(--ok) }
+  .pill.rejected, .pill.declined, .pill.failed { background:color-mix(in srgb, var(--bad) 15%, transparent); color:var(--bad) }
+  .pill.running, .pill.proposed, .pill.pending { background:color-mix(in srgb, var(--accent) 13%, transparent); color:var(--accent) }
+  .btns { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:14px }
+  .btns .sep { width:1px; height:18px; background:var(--line2); margin:0 4px }
+  .btn, .btns button { display:inline-flex; align-items:center; gap:7px; font:500 13px/1 var(--sans); padding:7px 11px; border-radius:8px; border:1px solid var(--line2); background:var(--panel); color:var(--fg); cursor:pointer; white-space:nowrap }
+  .btn:hover, .btns button:hover { background:var(--soft) }
+  .btn.ok, .btns button.ok { background:var(--ok); border-color:var(--ok); color:var(--panel) }
+  .btn.ok:hover, .btns button.ok:hover { background:var(--ok); filter:brightness(1.08) }
+  .btns button.bad { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 40%, var(--line2)) }
+  .btn kbd, .btns button kbd { background:transparent; border-color:currentColor; color:inherit; opacity:.55; border-bottom-width:1px; line-height:14px }
+  .btn.sm { padding:5px 9px; font-size:12px }
+  .empty { padding:56px 0; color:var(--muted); text-align:center; text-wrap:pretty }
+  .empty code, .status code { background:var(--soft); padding:2px 6px; border-radius:4px; font-size:12.5px }
+  .filter { display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap; color:var(--muted); font-size:13px }
+  .table-wrap { background:var(--panel); border-radius:12px; box-shadow:var(--shadow); overflow:auto }
+  table { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums }
+  th { text-align:left; font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); padding:11px 14px; border-bottom:1px solid var(--line); white-space:nowrap }
+  td { padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:top }
+  tr:last-child td { border-bottom:0 }
+  th.num, td.num { text-align:right }
+  td.mono { font-family:var(--mono); font-size:12px }
+  .sub { margin:36px 0 12px; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--faint) }
+  .fields { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px 14px; margin-top:14px }
+  .field.full { grid-column:1 / -1 }
+  .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:5px; font-weight:500 }
+  .field input, .field textarea { width:100% }
+  .len-row { display:flex; align-items:center; gap:12px; margin-top:14px; font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .lenbar { width:160px; height:4px; border-radius:2px; background:var(--soft); overflow:hidden }
+  .lenbar i { display:block; height:100%; background:var(--ok); transition:width .15s }
+  .len-row.warn .lenbar i { background:var(--warn) } .len-row.over .lenbar i { background:var(--bad) } .len-row.over b { color:var(--bad) }
+  .toast { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:10; background:var(--fg); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:13px; box-shadow:0 10px 30px rgba(0,0,0,.2); animation:toast-in .18s ease-out }
+  @keyframes toast-in { from { opacity:0; transform:translate(-50%, 6px) } }
+  @media (max-width: 1100px) { .stats { display:none } }
+  @media (max-width: 860px) {
+    header.top { height:auto; flex-wrap:wrap; padding:10px 16px; gap:10px 14px }
+    main { grid-template-columns:1fr }
+    aside { position:static; height:auto; border-right:0; border-bottom:1px solid var(--line) }
+    #view { padding:20px 16px 80px }
+    .fields { grid-template-columns:1fr }
+    .group-head { flex-direction:column }
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Findings Triage</h1>
-  <nav>
+<header class="top">
+  <div class="brand"><span class="mark"></span><h1>Findings Triage</h1></div>
+  <nav class="seg tabs" id="tabs">
     <button data-tab="pending" class="on">Pending</button>
     <button data-tab="browse">Browse</button>
     <button data-tab="directives">Directives</button>
     <button data-tab="runs">Runs</button>
   </nav>
   <span class="spacer"></span>
-  <span id="stats" class="meta"></span>
-  <label>Approver <input id="approver" placeholder="your name" size="18"></label>
-  <span class="meta"><kbd>j</kbd>/<kbd>k</kbd> move · <kbd>a</kbd> approve · <kbd>r</kbd> reject · <kbd>d</kbd> defer</span>
+  <span id="stats" class="stats"></span>
+  <label class="approver">Approver <input id="approver" placeholder="your name"></label>
+  <div class="seg sm" id="theme" title="Theme">
+    <button data-set="system">Auto</button>
+    <button data-set="light">Light</button>
+    <button data-set="dark">Dark</button>
+  </div>
 </header>
 <main>
   <aside id="rail"></aside>
@@ -72,8 +168,15 @@
   try { approverInput.value = localStorage.getItem('triage.approver') || ''; } catch (e) {}
   approverInput.addEventListener('change', () => { try { localStorage.setItem('triage.approver', approverInput.value); } catch (e) {} });
 
+  const root = document.documentElement;
+  const paintTheme = () => $('#theme').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.set === root.dataset.theme));
+  $('#theme').querySelectorAll('button').forEach(b => b.onclick = () => { root.dataset.theme = b.dataset.set; try { localStorage.setItem('triage.theme', b.dataset.set); } catch (e) {} paintTheme(); });
+  paintTheme();
+
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const toast = msg => { const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
+  const human = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+  const catName = slug => (state.categories.find(c => c.slug === slug) || {}).name || slug;
+  const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   const api = async (method, path, body) => {
     const r = await fetch(path, { method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
     const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
@@ -88,31 +191,44 @@
     renderRail();
   }
   function renderRail() {
+    const pending = state.tab === 'pending';
     const pendingBy = {};
     (state.pending?.categories || []).forEach(c => { pendingBy[c.slug] = c.groups.reduce((n,g) => n + g.findings.length, 0) + c.ungrouped.length; });
     const rows = [{slug:null, name:'All categories'}].concat(state.categories, [{slug:'uncategorised', name:'Uncategorised', proposed_count: state.uncategorised}]);
-    $('#rail').innerHTML = rows.map(c => `<div class="cat ${state.category===c.slug?'on':''}" data-slug="${c.slug ?? ''}">
-      <span>${esc(c.name)}</span><small>${c.slug===null ? '' : (state.tab==='pending' ? (pendingBy[c.slug]||0)+' pending' : (c.proposed_count ?? 0)+' proposed')}</small></div>`).join('');
+    const count = c => c.slug === null
+      ? (pending ? (state.pending?.pending_findings ?? '') : rows.slice(1).reduce((n, r) => n + (r.proposed_count || 0), 0))
+      : (pending ? (pendingBy[c.slug] || 0) : (c.proposed_count ?? 0));
+    $('#rail').innerHTML = `<div class="rail-head"><span>Categories</span><span>${pending ? 'Pending' : 'Proposed'}</span></div>` +
+      rows.map(c => { const n = count(c); return `<div class="cat ${state.category===c.slug?'on':''}" data-slug="${c.slug ?? ''}" title="${esc(c.name)}">
+        <span>${esc(c.name)}</span>${n === '' ? '' : `<small class="count ${n === 0 ? 'zero' : ''}">${n}</small>`}</div>`; }).join('') +
+      `<div class="keys"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>a</kbd> approve</span><span><kbd>r</kbd> reject</span><span><kbd>d</kbd> defer</span></div>`;
     $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.focus = 0; render(); });
   }
 
-  function findingCard(f, opts={}) {
+  function findingCard(f) {
     const t = f.triage, r = f.recommendation;
-    const conf = t?.confidence != null ? ` · conf ${Number(t.confidence).toFixed(2)}` : '';
-    const cats = t ? `${esc(t.category)}${t.secondary_category ? ' / ' + esc(t.secondary_category) : ''}${t.directive_candidate ? ' · directive candidate' : ''}${conf}` : 'uncategorised';
-    const rec = r ? `<div style="margin:6px 0"><span class="rec ${r.recommendation}">${r.recommendation}${r.superseded_by ? ' by #' + r.superseded_by : ''}</span><span>${esc(r.rationale)}</span></div>
-      ${r.proposed_change ? `<details><summary>Proposed change</summary><pre>${esc(r.proposed_change)}</pre><button onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">Copy</button></details>` : ''}` : '';
-    const decided = f.status !== 'proposed' ? `<div class="status">${esc(f.status)} · ${esc(f.approver||'')} · ${esc(f.date_approved||'')}${f.decision_note ? ' · ' + esc(f.decision_note) : ''}</div>` : '';
+    const meta = [
+      `<span class="id">#${f.id}</span>`,
+      f.finding_date ? `<span>${esc(f.finding_date)}</span>` : '',
+      `<span>${esc(f.harness || '?')}</span>`,
+      t ? `<span class="tag">${esc(t.category)}${t.secondary_category ? ' / ' + esc(t.secondary_category) : ''}</span>` : '<span class="tag">uncategorised</span>',
+      t?.directive_candidate ? '<span class="tag dc">directive candidate</span>' : '',
+      t?.confidence != null ? `<span>conf ${Number(t.confidence).toFixed(2)}</span>` : ''
+    ].join('');
+    const rec = r ? `<div class="rec-row"><span class="rec ${esc(r.recommendation)}">${esc(r.recommendation)}${r.superseded_by ? ' by #' + r.superseded_by : ''}</span><p>${esc(r.rationale)}</p></div>
+      ${r.proposed_change ? `<details><summary>Proposed change</summary><pre>${esc(r.proposed_change)}</pre><button class="btn sm" data-copy>Copy</button></details>` : ''}` : '';
+    const decided = f.status !== 'proposed' ? `<div class="status"><span class="pill ${esc(f.status)}">${esc(f.status)}</span><span>${[f.approver, f.date_approved, f.decision_note].filter(Boolean).map(esc).join(' · ')}</span></div>` : '';
     return `<div class="card" data-id="${f.id}">
-      <div class="meta">#${f.id} · ${esc(f.finding_date||'')} · ${esc(f.harness||'?')} · ${cats}</div>
-      <div><strong>${esc(f.target||'')}</strong></div>
+      <div class="meta-row">${meta}</div>
+      ${f.target ? `<div class="target">${esc(f.target)}</div>` : ''}
       <div class="sugg">${esc(t?.summary || f.suggestion)}</div>
-      <details><summary>Full suggestion and rationale</summary><p>${esc(f.suggestion)}</p><p class="meta">${esc(f.rationale||'')}</p></details>
+      <details><summary>Full suggestion and rationale</summary><div class="detail"><p>${esc(f.suggestion)}</p>${f.rationale ? `<p style="color:var(--muted)">${esc(f.rationale)}</p>` : ''}</div></details>
       ${rec}${decided}
       ${f.status === 'proposed' ? `<div class="btns">
-        <button class="ok" data-act="approved">Approve</button>
-        <button class="bad" data-act="rejected">Reject</button>
-        <button data-act="defer">Defer</button>
+        <button class="ok" data-act="approved">Approve <kbd>a</kbd></button>
+        <button class="bad" data-act="rejected">Reject <kbd>r</kbd></button>
+        <button data-act="defer">Defer <kbd>d</kbd></button>
+        <span class="sep"></span>
         <button data-act="superseded">Supersede…</button>
         <button data-act="retired">Retire</button>
       </div>` : `<div class="btns"><button data-act="proposed">Reopen</button></div>`}
@@ -141,6 +257,7 @@
         else await decide(id, act);
       } catch (e) { if (e.message !== 'no approver') toast('Error: ' + e.message); }
     });
+    root.querySelectorAll('[data-copy]').forEach(btn => btn.onclick = () => navigator.clipboard.writeText(btn.previousElementSibling.textContent).then(() => toast('Copied')));
   }
 
   async function acceptGroup(g) {
@@ -162,18 +279,20 @@
     const p = state.pending; const view = $('#view');
     const cats = (p.categories || []).filter(c => !state.category || c.slug === state.category);
     if (!cats.length) { view.innerHTML = `<div class="empty">Nothing pending${state.category ? ' in this category' : ''}. The processor runs nightly; <code>make triage-process</code> runs it now.</div>`; return; }
-    view.innerHTML = cats.map(c => `<h2>${esc(c.slug)}</h2>` + c.groups.map(g => `<div class="group" data-gid="${g.id}">
-        <h3>${esc(g.title)}</h3><div class="meta">${esc(g.summary)}${g.target ? ' · ' + esc(g.target) : ''}</div>
-        <div class="btns"><button class="ok" data-accept="${g.id}">Accept all ${g.findings.length} recommendations</button></div>
-        ${g.findings.map(f => findingCard(f)).join('')}</div>`).join('') +
-      (c.ungrouped.length ? `<div class="group"><h3>Ungrouped</h3>${c.ungrouped.map(f => findingCard(f)).join('')}</div>` : '')).join('');
+    view.innerHTML = cats.map(c => `<section class="cat-block"><div class="cat-title"><h2>${esc(catName(c.slug))}</h2><code>${esc(c.slug)}</code></div>` +
+      c.groups.map(g => `<div class="group" data-gid="${g.id}">
+        <div class="group-head"><div><h3>${esc(g.title)}</h3><p>${esc(g.summary)}</p>${g.target ? `<span class="path">${esc(g.target)}</span>` : ''}</div>
+          <button class="btn ok" data-accept="${g.id}">Accept all ${g.findings.length} recommendations</button></div>
+        <div class="group-body">${g.findings.map(f => findingCard(f)).join('')}</div></div>`).join('') +
+      (c.ungrouped.length ? `<div class="group"><div class="group-head"><div><h3>Ungrouped</h3></div></div><div class="group-body">${c.ungrouped.map(f => findingCard(f)).join('')}</div></div>` : '') +
+      '</section>').join('');
     wireCards(view);
     view.querySelectorAll('[data-accept]').forEach(b => b.onclick = async () => {
       const gid = Number(b.dataset.accept);
       const g = cats.flatMap(c => c.groups).find(x => x.id === gid);
       try { await acceptGroup(g); } catch (e) { if (e.message !== 'no approver') toast('Error: ' + e.message); }
     });
-    focusCard();
+    focusCard(false);
   }
 
   async function renderBrowse() {
@@ -181,10 +300,10 @@
     const q = new URLSearchParams(); if (state.category) q.set('category', state.category); if (state.browseStatus) q.set('status', state.browseStatus); q.set('limit', '200');
     const d = await api('GET', '/v1/findings?' + q.toString());
     const statuses = ['proposed','approved','applied','rejected','retired','superseded',''];
-    view.innerHTML = `<div class="meta" style="margin-bottom:10px">Status: ${statuses.map(s => `<button data-st="${s}" style="margin-right:4px;${s===state.browseStatus?'font-weight:700':''}">${s||'all'}</button>`).join('')} · ${d.findings.length} shown</div>` +
-      (d.findings.length ? d.findings.map(f => findingCard(f)).join('') : '<div class="empty">No findings match.</div>');
+    view.innerHTML = `<div class="filter"><div class="seg sm">${statuses.map(s => `<button data-st="${s}" class="${s===state.browseStatus?'on':''}">${s||'all'}</button>`).join('')}</div><span>${d.findings.length} shown</span></div>` +
+      (d.findings.length ? `<div class="list">${d.findings.map(f => findingCard(f)).join('')}</div>` : '<div class="empty">No findings match.</div>');
     view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; renderBrowse(); });
-    wireCards(view); focusCard();
+    wireCards(view); focusCard(false);
   }
 
   async function renderDirectives() {
@@ -192,48 +311,58 @@
     const d = await api('GET', '/v1/directive-proposals');
     const pending = d.directive_proposals.filter(p => p.state === 'pending');
     const done = d.directive_proposals.filter(p => p.state !== 'pending');
+    const keys = ['title','applies_when','rule','rationale','reviewer_check','example'];
     const form = p => `<div class="card" data-pid="${p.id}">
-      <div class="meta">proposal #${p.id} · ${esc(p.harness || 'every harness')} · evidence ${p.evidence.map(i => '#' + i).join(', ')}${p.group_id ? ' · group ' + p.group_id : ''}</div>
-      ${['title','applies_when','rule','rationale','reviewer_check','example'].map(k => `<div class="field"><label>${k}</label>${k==='rule' ? `<textarea rows="3" name="${k}">${esc(p[k]||'')}</textarea>` : `<input class="wide" name="${k}" value="${esc(p[k]||'')}">`}</div>`).join('')}
-      <div class="meta">Rendered length: <span class="len"></span> / 1,510 (typical ≤ 1,300)</div>
+      <div class="meta-row"><span class="id">proposal #${p.id}</span><span>${esc(p.harness || 'every harness')}</span><span>evidence ${p.evidence.map(i => '#' + i).join(', ')}</span>${p.group_id ? `<span>group ${p.group_id}</span>` : ''}</div>
+      <div class="fields">${keys.map(k => `<div class="field ${['title','rule','rationale'].includes(k) ? 'full' : ''}"><label>${human(k)}</label>${k==='rule' ? `<textarea rows="3" name="${k}">${esc(p[k]||'')}</textarea>` : `<input class="wide" name="${k}" value="${esc(p[k]||'')}">`}</div>`).join('')}</div>
+      <div class="len-row"><div class="lenbar"><i></i></div><span>Rendered length <b class="len"></b> / 1,510 (typical ≤ 1,300)</span></div>
       <div class="btns"><button class="ok" data-ratify="${p.id}">Ratify as next DIR-NNN</button><button class="bad" data-decline="${p.id}">Decline…</button></div></div>`;
-    view.innerHTML = (pending.length ? pending.map(form).join('') : '<div class="empty">No directive proposals pending.</div>') +
-      (done.length ? `<h3>Decided</h3><table><tr><th>ID</th><th>Title</th><th>State</th><th>By</th><th>Note</th></tr>${done.map(p => `<tr><td>${esc(p.directive_id||'')}</td><td>${esc(p.title)}</td><td>${esc(p.state)}</td><td>${esc(p.decided_by||'')}</td><td>${esc(p.decision_note||'')}</td></tr>`).join('')}</table>` : '');
+    view.innerHTML = (pending.length ? `<div class="list">${pending.map(form).join('')}</div>` : '<div class="empty">No directive proposals pending.</div>') +
+      (done.length ? `<h3 class="sub">Decided</h3><div class="table-wrap"><table><tr><th>ID</th><th>Title</th><th>State</th><th>By</th><th>Note</th></tr>${done.map(p => `<tr><td class="mono">${esc(p.directive_id||'')}</td><td>${esc(p.title)}</td><td><span class="pill ${esc(p.state)}">${esc(p.state)}</span></td><td>${esc(p.decided_by||'')}</td><td>${esc(p.decision_note||'')}</td></tr>`).join('')}</table></div>` : '');
     const measure = card => {
       const v = n => card.querySelector(`[name=${n}]`).value.trim();
       const text = `### DIR-NNN — ${v('title')}\n- **Applies when:** ${v('applies_when')}\n- **Status:** active\n- **Rule:** ${v('rule')}\n- **Rationale:** ${v('rationale')}\n- **Reviewer check:** ${v('reviewer_check')}\n${v('example') ? '- **Example:** Illustrative — ' + v('example') + '\n' : ''}- **Added:** 2026-01-01 · **Source:** bishop-memory triage · **Evidence:** ${'x'.repeat(80)}\n`;
-      card.querySelector('.len').textContent = new TextEncoder().encode(text).length;
+      const len = new TextEncoder().encode(text).length;
+      card.querySelector('.len').textContent = len.toLocaleString();
+      card.querySelector('.lenbar i').style.width = Math.min(100, len / 1510 * 100) + '%';
+      const row = card.querySelector('.len-row'); row.classList.toggle('warn', len > 1300 && len <= 1510); row.classList.toggle('over', len > 1510);
     };
     view.querySelectorAll('[data-pid]').forEach(card => { measure(card); card.querySelectorAll('input,textarea').forEach(i => i.oninput = () => measure(card)); });
     view.querySelectorAll('[data-ratify]').forEach(b => b.onclick = async () => {
-      const card = b.closest('.card'); const body = { state:'accepted', decided_by: approver() };
-      ['title','applies_when','rule','rationale','reviewer_check','example'].forEach(k => body[k] = card.querySelector(`[name=${k}]`).value);
+      const card = b.closest('.card'); let body;
+      try { body = { state:'accepted', decided_by: approver() }; } catch (e) { return; }
+      keys.forEach(k => body[k] = card.querySelector(`[name=${k}]`).value);
       try { const r = await api('POST', `/v1/directive-proposals/${b.dataset.ratify}/decision`, body); toast(`Ratified ${r.directive_id}. Run make triage-export to write DIRECTIVES.md`); renderDirectives(); loadCategories(); }
       catch (e) { toast('Error: ' + e.message); }
     });
     view.querySelectorAll('[data-decline]').forEach(b => b.onclick = async () => {
+      let who; try { who = approver(); } catch (e) { return; }
       const note = prompt('Reason for declining:'); if (!note) return;
-      try { await api('POST', `/v1/directive-proposals/${b.dataset.decline}/decision`, { state:'declined', decided_by: approver(), note }); toast('Declined'); renderDirectives(); }
+      try { await api('POST', `/v1/directive-proposals/${b.dataset.decline}/decision`, { state:'declined', decided_by: who, note }); toast('Declined'); renderDirectives(); }
       catch (e) { toast('Error: ' + e.message); }
     });
   }
 
   async function renderRuns() {
     const d = await api('GET', '/v1/triage/runs?limit=100');
-    $('#view').innerHTML = d.runs.length ? `<table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th>Read</th><th>Written</th><th>Accepted</th><th>Declined</th><th>Started</th><th>Notes</th></tr>` +
-      d.runs.map(r => `<tr><td>${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td>${esc(r.model||'')}</td><td>${esc(r.status)}</td><td>${r.considered}</td><td>${r.written}</td><td>${r.accepted}</td><td>${r.declined}</td><td>${esc(r.started_at)}</td><td>${esc(r.notes||'')}</td></tr>`).join('') + '</table>'
+    $('#view').innerHTML = d.runs.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th class="num">Read</th><th class="num">Written</th><th class="num">Accepted</th><th class="num">Declined</th><th>Started</th><th>Notes</th></tr>` +
+      d.runs.map(r => `<tr><td class="mono">${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td class="mono">${esc(r.model||'')}</td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td class="num">${r.considered}</td><td class="num">${r.written}</td><td class="num">${r.accepted}</td><td class="num">${r.declined}</td><td class="mono">${esc(r.started_at)}</td><td>${esc(r.notes||'')}</td></tr>`).join('') + '</table></div>'
       : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';
   }
 
-  function focusCard() {
+  function focusCard(scroll = true) {
     const cards = [...$('#view').querySelectorAll('.card[data-id]')];
     cards.forEach(c => c.classList.remove('focus'));
     if (!cards.length) return;
     state.focus = Math.max(0, Math.min(state.focus, cards.length - 1));
-    cards[state.focus].classList.add('focus'); cards[state.focus].scrollIntoView({ block:'nearest' });
+    const el = cards[state.focus]; el.classList.add('focus');
+    if (!scroll) return;
+    const r = el.getBoundingClientRect(), top = $('header.top').offsetHeight + 72;
+    if (r.top < top) window.scrollBy({ top: r.top - top, behavior: 'smooth' });
+    else if (r.bottom > innerHeight - 16) window.scrollBy({ top: Math.min(r.bottom - innerHeight + 16, r.top - top), behavior: 'smooth' });
   }
   document.addEventListener('keydown', e => {
-    if (e.target.matches('input,textarea')) return;
+    if (e.target.matches('input,textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
     const cards = [...$('#view').querySelectorAll('.card[data-id]')]; if (!cards.length) return;
     if (e.key === 'j') { state.focus++; focusCard(); }
     else if (e.key === 'k') { state.focus--; focusCard(); }
@@ -245,7 +374,9 @@
 
   async function refresh() {
     state.pending = await api('GET', '/v1/triage/pending');
-    $('#stats').textContent = `${state.pending.pending_findings} pending · ${state.pending.decided_findings} decided in service (run make triage-export to write Markdown)`;
+    const s = $('#stats');
+    s.innerHTML = `<b>${state.pending.pending_findings}</b> pending · <b>${state.pending.decided_findings}</b> decided in service`;
+    s.title = 'Run make triage-export to write Markdown';
     await loadCategories();
     await render();
   }
@@ -258,9 +389,9 @@
       else await renderRuns();
     } catch (e) { $('#view').innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`; }
   }
-  document.querySelectorAll('header nav button').forEach(b => b.onclick = () => {
-    document.querySelectorAll('header nav button').forEach(x => x.classList.remove('on')); b.classList.add('on');
-    state.tab = b.dataset.tab; state.focus = 0; render();
+  document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    state.tab = b.dataset.tab; state.focus = 0; window.scrollTo(0, 0); render();
   });
   refresh().catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });
 })();

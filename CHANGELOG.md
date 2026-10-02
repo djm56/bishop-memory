@@ -86,6 +86,16 @@ here ahead of an actual release.
 
 ### Added
 
+- **Review page restyle.** `internal/ui/triage.html` is replaced with a new
+  design: a warm neutral palette, a card layout, segmented tabs, a category rail
+  with count badges, and keyboard hints on the buttons. A header control
+  switches between Auto, Light and Dark. Auto follows the operating system, the
+  choice is saved in `localStorage` as `triage.theme`, and `?theme=` in the URL
+  overrides it for one load. API calls, routes and payloads are unchanged.
+  Keyboard shortcuts now ignore Cmd, Ctrl and Alt; previously Cmd+A, meant as
+  select-all, approved the focused finding. The directive form's length meter
+  turns amber above 1,300 characters and red above 1,510, and Copy on a
+  proposed change confirms with a toast.
 - **Documentation split into end-user and developer sets, published to the
   GitHub wiki.** `docs/wiki/` holds fifteen pages — a User Guide, a generated
   MCP Tool Reference covering both `mcpd` profiles with worked examples, a
