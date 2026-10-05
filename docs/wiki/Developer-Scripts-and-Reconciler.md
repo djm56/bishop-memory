@@ -55,7 +55,7 @@ Loads `reconcile-memory.py` through `importlib` (hyphenated file name) and re-ex
 
 ## `scripts/triage-run.sh`
 
-See [Developer: Triage Agents](Developer-Triage-Agents) for what it runs; mechanically it sources `.env`, checks `/healthz`, checks for work, builds `bin/mcpd` if absent, composes the `--mcp-config` JSON inline (so no file is written), opens every registered harness checkout with `--add-dir` for the processor, runs `claude -p` from the checkout root so project-scope agents resolve, and logs. It is bash-3.2 compatible (no `mapfile`, no associative arrays) because macOS ships bash 3.2.
+See [Developer: Triage Agents](Developer-Triage-Agents) for what it runs; mechanically it sources `.env`, checks `/healthz`, checks for work, builds `bin/mcpd` if absent, composes the `--mcp-config` JSON inline (so no file is written), opens every registered harness checkout with `--add-dir` for the processor, runs `claude -p` from the checkout root so project-scope agents resolve, and logs. With `TRIAGE_ENGINE=opencode` it composes `OPENCODE_CONFIG_CONTENT` instead (the same server, the step cap, `external_directory` allows for the checkouts), verifies the agent with `opencode debug agent`, and runs `opencode run --pure`. Every run gets stdin from `/dev/null` and a `TRIAGE_TIMEOUT_MIN` alarm. It is bash-3.2 compatible (no `mapfile`, no associative arrays) because macOS ships bash 3.2.
 
 ## Installers
 

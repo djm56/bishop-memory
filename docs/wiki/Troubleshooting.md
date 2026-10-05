@@ -36,9 +36,13 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 ## Triage
 
-**`triage-run.sh` exits 2.** It printed why: service down, `claude` not on PATH (the PATH baked into the launchd plist is printed by `install-triage-schedule.sh`), or `bin/mcpd` could not be built.
+**`triage-run.sh` exits 2.** It printed why: service down, `claude` or `opencode` not on PATH (the PATH baked into the launchd plist is printed by `install-triage-schedule.sh`), `bin/mcpd` could not be built, a model id that does not fit the engine (`sonnet` under opencode, `opencode-go/...` under claude), or OpenCode did not resolve the agent to its `.opencode/agents/` twin.
 
-**The JSON result says `Not logged in · Please run /login`, or the launchd job hangs before its first tool call.** No credentials. A terminal shell inside Claude Code carries an `ANTHROPIC_API_KEY`, so manual runs work; launchd has none. Put the key in `.env` (mode 0600) in the checkout. The runner warns at start when neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set.
+**The JSON result says `Not logged in · Please run /login`, or the launchd job hangs before its first tool call.** No credentials. A terminal shell inside Claude Code carries an `ANTHROPIC_API_KEY`, so manual runs work; launchd has none. Put the key in `.env` (mode 0600) in the checkout. To bill your Claude plan instead of the API, put `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` there and remove the API key, which wins when both are set. The runner warns at start when neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set. The opencode engine needs neither.
+
+**The log says `agent stopped after TRIAGE_TIMEOUT_MIN=45 minutes`.** The run was stopped at the limit so the next night is not blocked behind it. Its run row stays `running`. Open the result file to see where it stalled; raise the limit in `.env` only if a large backlog genuinely needs longer.
+
+**An opencode run fails with `Unexpected server error`.** OpenCode's provider refused the model. Check that the id appears in `opencode models` and runs by hand: `opencode run -m opencode-go/glm-5.2 "say ok" </dev/null`. Without `</dev/null`, `opencode run` waits for input on stdin.
 
 **A run row stays `running` on the Runs tab.** The agent never reached `triage_run_finish`: it hit the turn or budget cap, or crashed. Open the JSON result in the log directory; `result` and `is_error` say what happened. The next run opens a fresh row; the stale one is harmless.
 

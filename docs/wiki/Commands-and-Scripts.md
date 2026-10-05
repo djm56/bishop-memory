@@ -62,23 +62,25 @@ Mirrors a harness's Markdown into the service with natural-key dedupe, so runnin
 ### `scripts/triage-run.sh`
 
 ```
-scripts/triage-run.sh classify [--reclassify SLUG] [--model M] [--dry-run]
-scripts/triage-run.sh process  [--category SLUG] [--limit N] [--model M] [--dry-run]
+scripts/triage-run.sh classify [--reclassify SLUG] [--engine claude|opencode] [--model M] [--dry-run]
+scripts/triage-run.sh process  [--category SLUG] [--limit N] [--engine claude|opencode] [--model M] [--dry-run]
 ```
 
-The single entry point for both agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for `ANTHROPIC_API_KEY`, checks `/healthz`, checks there is work, then runs Claude Code headless from the checkout with only the `bishop-triage` MCP server and the agent's tools. `--dry-run` prints the exact `claude` command. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's JSON result beside it.
+The single entry point for both agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for credentials and defaults, checks `/healthz`, checks there is work, then runs the agent headless from the checkout with only the `bishop-triage` MCP server and the agent's tools, on Claude Code (`claude -p`, the default) or OpenCode (`opencode run`, using your own OpenCode config for the provider and key). `--dry-run` prints the exact command; on opencode it also checks the agent resolves. `make triage-classify` / `triage-process` take `ENGINE=` and `MODEL=` for one run. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's result beside it (`.json` for claude, `.jsonl` events for opencode).
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | Service URL |
+| `TRIAGE_ENGINE` | `claude` | `claude` or `opencode`; `TRIAGE_CLASSIFY_ENGINE` / `TRIAGE_PROCESS_ENGINE` set one job |
 | `TRIAGE_ITEMS_PER_RUN` | 30 | Findings per processed category |
 | `TRIAGE_CATEGORIES_PER_RUN` | 1 | Categories per `process` call |
-| `TRIAGE_CLASSIFY_MODEL` / `TRIAGE_PROCESS_MODEL` | `haiku` / `sonnet` | Models |
-| `TRIAGE_MAX_TURNS` | 60 / 120 | Turn cap |
-| `TRIAGE_MAX_BUDGET_USD` | 2 / 5 | Spend cap per run |
+| `TRIAGE_CLASSIFY_MODEL` / `TRIAGE_PROCESS_MODEL` | `haiku` / `sonnet`; on opencode `opencode-go/glm-5.3-flash` / `opencode-go/glm-5.2` | Models |
+| `TRIAGE_MAX_TURNS` | 60 / 120 | Turn cap (steps on opencode) |
+| `TRIAGE_MAX_BUDGET_USD` | 2 / 5 | Spend cap per run; claude only |
+| `TRIAGE_TIMEOUT_MIN` | 45 | Stop a run still going after this many minutes; `0` never |
 | `TRIAGE_ADD_DIRS` | every registered harness checkout | Read-only directories for the processor |
 | `TRIAGE_ENV_FILE` | `<checkout>/.env` | Credentials file |
-| `CLAUDE_BIN` | `claude` | CLI |
+| `CLAUDE_BIN` / `OPENCODE_BIN` | `claude` / `opencode` | CLI per engine |
 
 Exit 0 ran or nothing to do, 1 the agent failed, 2 a precondition failed (service down, `claude` missing, `mcpd` unbuildable), 64 usage.
 

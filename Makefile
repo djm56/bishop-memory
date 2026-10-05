@@ -81,14 +81,16 @@ triage-seed:
 triage-backfill:
 	scripts/triage-backfill-harness.py --url $(TRIAGE_URL) $(foreach r,$(REGISTER),--register $(r))
 
-# Run the classifier now (Haiku). Exits 0 with nothing to do when every
-# finding is classified. RECLASSIFY=<slug> re-classifies one category.
+# Run the classifier now (Haiku, or the opencode default). Exits 0 with
+# nothing to do when every finding is classified. RECLASSIFY=<slug>
+# re-classifies one category. ENGINE=claude|opencode and MODEL=<id> override
+# TRIAGE_ENGINE and the model for this run only.
 triage-classify: build-mcpd
-	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh classify $(if $(RECLASSIFY),--reclassify $(RECLASSIFY))
+	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh classify $(if $(RECLASSIFY),--reclassify $(RECLASSIFY)) $(if $(ENGINE),--engine $(ENGINE)) $(if $(MODEL),--model $(MODEL))
 
 # Run the processor now on the next category in rotation, or CATEGORY=<slug>.
 triage-process: build-mcpd
-	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh process $(if $(CATEGORY),--category $(CATEGORY)) $(if $(LIMIT),--limit $(LIMIT))
+	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh process $(if $(CATEGORY),--category $(CATEGORY)) $(if $(LIMIT),--limit $(LIMIT)) $(if $(ENGINE),--engine $(ENGINE)) $(if $(MODEL),--model $(MODEL))
 
 # Write operator decisions back into every registered harness's Markdown.
 triage-export:

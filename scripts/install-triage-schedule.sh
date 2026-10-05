@@ -84,9 +84,10 @@ case "$LOG_DIR" in
   *) echo "install-triage-schedule.sh: --log-dir must be absolute" >&2; exit 64 ;;
 esac
 
-# The PATH baked into the plist: wherever claude, go, python3 and curl live now.
+# The PATH baked into the plist: wherever claude, opencode, go, python3 and
+# curl live now. Re-run this script after installing either CLI somewhere new.
 job_path="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/local/go/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-for tool in claude go; do
+for tool in claude opencode go; do
   if dir="$(dirname "$(command -v "$tool" 2>/dev/null || true)")" && [[ -n "$dir" && "$dir" != "." ]]; then
     case ":$job_path:" in *":$dir:"*) ;; *) job_path="$dir:$job_path" ;; esac
   fi

@@ -77,7 +77,7 @@ Every tool, with arguments, examples and errors: [MCP Tool Reference](docs/wiki/
   <img alt="The findings triage review page: a category rail on the left, and on the right a group of findings that share a rule, each with the processor's recommendation and Approve, Reject and Defer buttons." src="docs/wiki/images/pending-light.png">
 </picture>
 
-Findings accumulate faster than anyone reads them. bishop-memory classifies the ledger into a 17-category taxonomy nightly (Haiku), groups one category's findings by the rule they share and recommends a decision on each (Sonnet), and drafts `DIRECTIVES.md` entries — all for you to decide on a review page at `http://127.0.0.1:8787/triage`. Decisions are written back into the owning harness's Markdown. No agent ever changes a finding's status.
+Findings accumulate faster than anyone reads them. bishop-memory classifies the ledger into a 17-category taxonomy nightly (Haiku), groups one category's findings by the rule they share and recommends a decision on each (Sonnet), on Claude Code or, with `TRIAGE_ENGINE=opencode`, on any model your OpenCode config reaches, and drafts `DIRECTIVES.md` entries — all for you to decide on a review page at `http://127.0.0.1:8787/triage`. Decisions are written back into the owning harness's Markdown. No agent ever changes a finding's status.
 
 ```bash
 printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env && chmod 600 .env   # scheduled jobs have no Claude login
@@ -110,8 +110,8 @@ Environment variables, with optional `.env` in the working directory (gitignored
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | mcpd, scripts | Service URL |
 | `BISHOP_HARNESS` | `claude-code` | mcpd | Harness identity composed into actors and stored on findings |
 | `MCPD_PROFILE` | `harness` | mcpd | `harness` or `triage` tool set |
-| `ANTHROPIC_API_KEY` | — | triage runner | Required for scheduled agent runs; keep it in `.env`, mode 0600 |
-| `TRIAGE_*` | see guide | triage runner | Item caps, models, budgets, log directory |
+| `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | — | triage runner | Required for scheduled agent runs on the claude engine; keep it in `.env`, mode 0600 |
+| `TRIAGE_*` | see guide | triage runner | Engine (`claude` or `opencode`), item caps, models, budgets, timeout, log directory |
 
 ## Network and security model
 
@@ -136,6 +136,7 @@ cmd/mcpd            MCP adapter          internal/store      SQLite, schema, mig
 db/schema.sql       schema               internal/importer   Markdown → FTS5
 db/finding-categories.json  taxonomy     internal/ui         the /triage review page
 scripts/            installers, reconciler, triage, wiki     .claude/agents, .claude/skills   the triage agents
+                                                             .opencode/agents                 their OpenCode twins
 docs/               reference docs       docs/wiki/          user and developer pages (published to the wiki)
 ```
 

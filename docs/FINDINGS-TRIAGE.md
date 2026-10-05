@@ -21,6 +21,10 @@ The design rationale and the decisions behind it are in
  after review   export     scripts/export-decisions.py                        → FINDINGS.md, DIRECTIVES.md
 ```
 
+The two agents run on Claude Code by default. Either or both can run on
+OpenCode instead, on any model your OpenCode config can reach (for example
+an OpenCode Go plan); see [Running on OpenCode](#running-on-opencode).
+
 Three rules hold throughout:
 
 1. **Only the operator changes a finding's status.** The agents write
@@ -37,17 +41,25 @@ Three rules hold throughout:
 
 ## Install on the central server
 
-Prerequisites beyond the service itself: the Claude Code CLI (`claude`),
-`python3`, `curl`, `go` (to build `bin/mcpd`), and an Anthropic API key. The
-scheduled jobs run headless as the user who installs them, with no terminal
-and no Claude login: a launchd or systemd job that lacks a key stops at
-"Not logged in". The runner therefore sources `<bishop-root>/.env`
-(gitignored; the same file the service reads) before every run:
+Prerequisites beyond the service itself: `python3`, `curl`, `go` (to build
+`bin/mcpd`), and one of the two engines:
+
+- **Claude Code** (`claude`, the default) with Anthropic credentials. The
+  scheduled jobs run headless as the user who installs them, with no terminal
+  and no Claude login: a launchd or systemd job that lacks credentials stops
+  at "Not logged in". The runner therefore sources `<bishop-root>/.env`
+  (gitignored; the same file the service reads) before every run. Put either
+  an API key (billed to the API) or a subscription token from
+  `claude setup-token` (billed to your Claude plan) in it. If both are set,
+  the API key wins.
+- **OpenCode** (`opencode`) with a provider already configured in your own
+  OpenCode config. Nothing goes in `.env`; see
+  [Running on OpenCode](#running-on-opencode).
 
 ```bash
 cd /path/to/bishop-memory
 umask 077
-printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env
+printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env        # or CLAUDE_CODE_OAUTH_TOKEN=... from `claude setup-token`
 chmod 600 .env
 ```
 
@@ -119,6 +131,84 @@ WantedBy=timers.target
 Duplicate for `process` at 21:20, then `systemctl --user enable --now
 bishop-triage-classify.timer bishop-triage-process.timer`.
 
+## Running on OpenCode
+
+The runner can start each agent with OpenCode (`opencode run`) instead of
+Claude Code. The agents, the doctrine and everything they write stay the
+same; only the CLI and the model change. Use it when a cheaper plan, such as
+OpenCode Go, covers the models you want.
+
+**Credentials come from your own OpenCode config.** OpenCode reads the same
+files as when you start it by hand: `~/.config/opencode/opencode.json` for
+providers and API keys, and `~/.local/share/opencode/auth.json` for logins. A
+launchd job runs as you, so it reads them too. Nothing goes in `.env`, and
+bishop-memory never sees the key. For each run, the runner layers a small
+config on top through `OPENCODE_CONFIG_CONTENT`, so no file is written:
+
+- the `bishop-triage` MCP server (mcpd in its triage profile);
+- the step cap (`TRIAGE_MAX_TURNS`);
+- read access to the harness checkouts, for the processor;
+- sharing, snapshots, LSP servers, formatters and auto-update turned off;
+- `small_model` pinned to the run's model, so no side call reaches another
+  provider.
+
+It also passes `--pure`, so your OpenCode plugins do not load during triage.
+
+**The agents have OpenCode twins.** `.opencode/agents/findings-classifier.md`
+and `.opencode/agents/findings-processor.md` mirror the two Claude agents.
+Each denies every tool except reading files and its own `bishop-triage`
+tools, and neither can read a `.env` file. OpenCode does not fail on an
+unknown agent name: it falls back to its default agent, which can edit files
+and run commands. So before every run, the runner asks OpenCode how it
+resolves the agent. It refuses to start (exit 2) unless the result is the
+twin, with no edit, write, shell or sub-agent tools.
+
+**To switch over,** add these lines to `<bishop-root>/.env`:
+
+```bash
+TRIAGE_ENGINE=opencode                              # both jobs
+TRIAGE_CLASSIFY_MODEL=opencode-go/glm-5.3-flash     # optional; these are the defaults
+TRIAGE_PROCESS_MODEL=opencode-go/glm-5.2
+```
+
+- Models are `provider/model` ids, as `opencode models` lists them. The
+  runner refuses a model id that does not fit the engine: `sonnet` under
+  opencode, or `opencode-go/...` under claude.
+- To move one job at a time, set `TRIAGE_CLASSIFY_ENGINE` or
+  `TRIAGE_PROCESS_ENGINE` instead of `TRIAGE_ENGINE`.
+- For a single run, use `make triage-process ENGINE=opencode
+  MODEL=opencode-go/kimi-k3` or `scripts/triage-run.sh process --engine
+  opencode`.
+
+The launchd jobs need no reinstall: they read `.env` at every run. If
+`opencode` is installed outside `/opt/homebrew/bin`, `/usr/local/bin` and
+`~/.local/bin` (its own installer uses `~/.opencode/bin`), re-run
+`make triage-install` so that its directory is on the jobs' PATH.
+
+**To check it,** first run `scripts/triage-run.sh process --dry-run`. It
+prints the exact `opencode run` command, and fails if the agent does not
+resolve. Then run `launchctl start com.bishop-memory.triage-process`, which
+takes the real scheduled path:
+
+- `triage.log` shows `engine=opencode`;
+- the Runs tab shows the model;
+- the run's full event stream is kept beside the log as
+  `triage-<kind>-<timestamp>.jsonl`.
+
+**How it differs from the claude engine:**
+
+- **No spend cap.** `TRIAGE_MAX_BUDGET_USD` applies only to Claude Code.
+  Usage counts against your OpenCode plan's limits. The `cost_usd` in the log
+  is OpenCode's list-price estimate, not a charge.
+- **Two other limits stop a runaway run:** the step cap, and
+  `TRIAGE_TIMEOUT_MIN` (45 minutes by default, for both engines).
+- **Recommendation quality depends on the model.** Before relying on a model
+  nightly, compare its accepted and declined counts on the Runs tab with
+  earlier runs.
+
+**To go back,** remove the `TRIAGE_*ENGINE` lines from `.env`, or set them
+to `claude`.
+
 ## Reviewing
 
 Open `http://127.0.0.1:8787/triage` (or `make triage-review`). Over SSH, the
@@ -176,8 +266,9 @@ does nothing.
 | Review page | `internal/ui/triage.html` | Served at `/triage`, embedded in memoryd |
 | MCP adapter | `cmd/mcpd/triage.go` | `MCPD_PROFILE=triage` registers the 13 triage tools; the default harness profile is unchanged apart from `finding_list` filters and `finding_append` carrying the harness |
 | Agents | `.claude/agents/findings-classifier.md`, `.claude/agents/findings-processor.md` | Project-scope agents discovered when `claude -p` runs from this checkout |
-| Doctrine | `.claude/skills/findings-triage/SKILL.md` | The rules both agents read first |
-| Runner | `scripts/triage-run.sh` | Health check, work check, category rotation, the headless `claude` call, logging |
+| OpenCode agents | `.opencode/agents/findings-classifier.md`, `.opencode/agents/findings-processor.md` | The same two agents for `opencode run`; keep each pair in step |
+| Doctrine | `.claude/skills/findings-triage/SKILL.md` | The rules both agents read first, on either engine |
+| Runner | `scripts/triage-run.sh` | Health check, work check, category rotation, the headless `claude` or `opencode` call, logging |
 | Schedule | `scripts/com.bishop-memory.triage.plist`, `scripts/install-triage-schedule.sh` | launchd user agents |
 | Taxonomy | `db/finding-categories.json`, `scripts/triage-seed-categories.py` | 17 categories; edit, re-seed, re-classify |
 | Backfill | `scripts/triage-backfill-harness.py` | Sets `findings.harness` by matching each harness's `FINDINGS.md` |
@@ -198,17 +289,20 @@ plist (or the environment for a manual run) to go faster.
 | Variable | Default | Purpose |
 |---|---|---|
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | Service base URL |
+| `TRIAGE_ENGINE` | `claude` | `claude` or `opencode`, for both jobs |
+| `TRIAGE_CLASSIFY_ENGINE` / `TRIAGE_PROCESS_ENGINE` | — | Engine for one job; wins over `TRIAGE_ENGINE` |
 | `TRIAGE_ITEMS_PER_RUN` | `30` | Findings the processor may recommend on per category |
 | `TRIAGE_CATEGORIES_PER_RUN` | `1` | Categories per `process` invocation |
-| `TRIAGE_CLASSIFY_MODEL` | `haiku` | Model alias or id for the classifier |
-| `TRIAGE_PROCESS_MODEL` | `sonnet` | Model alias or id for the processor |
-| `TRIAGE_MAX_TURNS` | `60` / `120` | Turn cap per run (classify / process) |
-| `TRIAGE_MAX_BUDGET_USD` | `2` / `5` | Spend cap per run |
-| `TRIAGE_LOG_DIR` | `~/Library/Logs/bishop-memory` | `triage.log` plus one JSON result per run |
-| `TRIAGE_ADD_DIRS` | every registered harness checkout | Directories the processor may read (`--add-dir`) |
-| `CLAUDE_BIN` | `claude` | CLI to run |
-| `TRIAGE_ENV_FILE` | `<bishop-root>/.env` | Credentials and defaults sourced before every run (`ANTHROPIC_API_KEY` lives here) |
-| `ANTHROPIC_API_KEY` | — | Required for scheduled runs; set in `.env` |
+| `TRIAGE_CLASSIFY_MODEL` | `haiku` / `opencode-go/glm-5.3-flash` | Model for the classifier (claude / opencode) |
+| `TRIAGE_PROCESS_MODEL` | `sonnet` / `opencode-go/glm-5.2` | Model for the processor (claude / opencode) |
+| `TRIAGE_MAX_TURNS` | `60` / `120` | Turn cap per run (classify / process); OpenCode calls them steps |
+| `TRIAGE_MAX_BUDGET_USD` | `2` / `5` | Spend cap per run; claude engine only |
+| `TRIAGE_TIMEOUT_MIN` | `45` | Stop a run still going after this many minutes; `0` never stops it |
+| `TRIAGE_LOG_DIR` | `~/Library/Logs/bishop-memory` | `triage.log` plus one result per run (`.json` for claude, `.jsonl` events for opencode) |
+| `TRIAGE_ADD_DIRS` | every registered harness checkout | Directories the processor may read |
+| `CLAUDE_BIN` / `OPENCODE_BIN` | `claude` / `opencode` | CLI to run for each engine |
+| `TRIAGE_ENV_FILE` | `<bishop-root>/.env` | Credentials and defaults sourced before every run |
+| `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | — | Required for scheduled runs on the claude engine; set in `.env`. The API key wins if both are set |
 
 ### Changing the taxonomy
 
@@ -228,15 +322,33 @@ skipped by the rotation and refused for new classifications.
 **`healthz` says `schema incomplete` after the upgrade.** The service was not
 restarted after `git pull`; the tables are created at boot. Restart it.
 
-**`triage-run.sh` exits 2.** It printed why: the service is down, `claude` is
-not on the job's PATH, or `bin/mcpd` could not be built. For a launchd job,
-the PATH baked into the plist is printed by `scripts/install-triage-schedule.sh`;
-re-run it after installing tools somewhere new.
+**`triage-run.sh` exits 2.** It printed why: the service is down, `claude`
+or `opencode` is not on the job's PATH, `bin/mcpd` could not be built, the
+model id does not fit the engine, or OpenCode did not resolve the agent to
+its `.opencode/agents/` twin. For a launchd job, the PATH baked into the
+plist is printed by `scripts/install-triage-schedule.sh`; re-run it after
+installing tools somewhere new.
+
+**The log says `agent stopped after TRIAGE_TIMEOUT_MIN=45 minutes`.** The
+run was still going at the limit and was stopped, so the next night is not
+blocked behind it. Its run row stays `running` on the Runs tab. Open the
+result file to see where it stalled. If a large backlog genuinely needs
+longer, raise the limit in `.env`.
+
+**An opencode run fails with `Unexpected server error`.** OpenCode's
+provider refused the model. Check that the id appears in `opencode models`
+and runs by hand, for example `opencode run -m opencode-go/glm-5.2 "say ok"
+</dev/null`. Without the `</dev/null`, `opencode run` waits for input on
+stdin.
 
 **The job runs but the agent exits non-zero.** Open the JSON result in
 `TRIAGE_LOG_DIR` (`triage-<kind>-<timestamp>.json`); `result` carries the
 agent's last message and `is_error` the failure. A run row left `running` in
-the Runs tab means the agent never reached `triage_run_finish`.
+the Runs tab means the agent never reached `triage_run_finish`. On the
+opencode engine the result is `triage-<kind>-<timestamp>.jsonl`. When the log
+line starts `ERROR run closed as failed`, the agent gave up and said why in
+the run's notes on the Runs tab. The usual cause is a tool call that failed
+twice, which the doctrine says to stop on rather than work around.
 
 **The result JSON says `Not logged in · Please run /login`, or the job hangs
 before its first tool call.** The job has no credentials. A terminal shell
