@@ -64,9 +64,12 @@ Goal: every finding carries exactly one primary category from
    - `confidence`: 0 to 1. Below 0.6, set `category` to the best guess anyway
      but say so in the summary with the prefix "LOW:"; the operator's
      uncategorised view will pick it up.
-   - `directive_candidate`: true when the finding states a general rule that
-     would prevent a class of problem (the target often says "DIRECTIVES
-     candidate", or the suggestion begins "Ratify as a binding rule").
+   - `directive_candidate`: true only when the finding itself asks for a
+     binding rule beyond its own case: the target says "DIRECTIVES
+     candidate", or the suggestion begins "Ratify as a binding rule" or
+     otherwise proposes a project-wide rule. A specific fix to one agent,
+     skill or file is not a candidate, however general its wording. Most
+     findings are not candidates; expect a handful per hundred.
    - `summary`: one line, at most 140 characters, restating what the finding
      asks for. No preamble, no "This finding suggests".
 4. Write the batch with one `triage_classify` call (`classified_by` is your
@@ -95,7 +98,8 @@ and a directive draft where a rule has earned one.
 3. Cluster. Two findings belong in one group when they are instances of the
    same underlying rule — the same sentence would close both. Do not group by
    target file alone and do not group by topic word. A finding that stands
-   alone stays ungrouped. For each group call `triage_group_create` with a
+   alone stays ungrouped: never call `triage_group_create` for a single
+   finding, and recommend on it without a `group_id`. For each group call `triage_group_create` with a
    title, a one-to-three-sentence `summary` stating the rule, and `target`
    naming the doctrine file the rule belongs in (read the harness checkout to
    confirm the file exists and quote its path exactly).
@@ -117,9 +121,18 @@ and a directive draft where a rule has earned one.
      has to decide.
    Every rationale is one to three sentences the operator can check. Write
    them all with one `triage_recommend` call.
-5. A group of three or more members whose recommendation is `approve`, or
-   any group the classifier flagged `directive_candidate`, gets a
-   `directive_propose` draft. Follow the DIRECTIVES-TEMPLATE fields exactly:
+5. Directives are rare: most runs should draft none, and a run drafts at
+   most two. A group earns a `directive_propose` draft only when it has
+   three or more members recommended `approve`, or two or more members of
+   which at least one the classifier flagged `directive_candidate`. A lone
+   finding never gets a draft, flagged or not; recommend `approve` on it
+   and let its `proposed_change` carry the fix. Before drafting, read the
+   harness's `.claude/memory/reference/DIRECTIVES.md` under the checkout:
+   if a ratified directive already states the rule, draft nothing and name
+   the directive in the members' rationales. If the operator rejected the
+   same rule before (step 1's recent decisions), draft nothing either. If
+   more than two groups qualify, draft the two with the most members.
+   Follow the DIRECTIVES-TEMPLATE fields exactly:
    `applies_when` phrased "A change that <verb>s <object>", `rule` as MUST /
    MUST NOT in one to four sentences naming no files, `rationale` one
    sentence naming the failure mode, `reviewer_check` one or two yes/no

@@ -214,6 +214,17 @@ here ahead of an actual release.
 
 ### Changed
 
+- **The triage processor drafts far fewer directives.** After the first runs
+  produced 43 pending drafts from about 130 findings, most of them built on a
+  single finding, `.claude/skills/findings-triage/SKILL.md` now caps a run
+  at two drafts. A draft needs three or more members recommended `approve`,
+  or two or more with a `directive_candidate`. A lone finding is never
+  grouped and never drafted; its `proposed_change` carries the fix. The
+  processor drafts nothing for a rule that a ratified directive in the
+  harness's `DIRECTIVES.md` already states, or that the operator has rejected
+  before. The classifier sets `directive_candidate` only when a finding
+  itself asks for a binding, project-wide rule. Flags already set are kept
+  until the category is re-classified.
 - `.gitignore` extended to cover the new cross-compiled Linux binaries
   and other build/test artefacts ahead of this project's first commit.
 
