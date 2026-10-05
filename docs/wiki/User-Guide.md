@@ -10,7 +10,7 @@ Three processes and one file:
 |---|---|---|
 | `memoryd` | The HTTP service. Gin router, SQLite with FTS5, loopback-only on port 8787 | A launchd user agent (macOS) or a systemd service (Linux) |
 | `mcpd` | The MCP adapter. A stdio server that proxies the HTTP API as typed tools | Started by Claude Code from the harness's `.mcp.json`, one per session |
-| Triage agents | Two headless Claude Code agents that classify and pre-decide findings | Nightly launchd jobs, or `make triage-*` by hand |
+| Triage agents | Two headless agents (Claude Code, or OpenCode) that classify and pre-decide findings | Nightly launchd jobs, or `make triage-*` by hand |
 | `data/memory.db` | The database. Missions, steps, audit journal, findings, patterns, service records, directives, documents, and the triage tables | Beside the checkout |
 
 The service has **no authentication**. It binds `127.0.0.1` and stays safe because only local processes can reach it. Reach it from another machine over an SSH tunnel: `ssh -L 8787:127.0.0.1:8787 user@server`.
@@ -96,6 +96,8 @@ make triage-backfill REGISTER="kirsch=/abs/path/kirsch/.claude/memory"
 make triage-classify
 make triage-install                                                    # nightly launchd jobs
 ```
+
+On OpenCode instead (cheaper models, your own OpenCode config and key): skip the `.env` key and add `TRIAGE_ENGINE=opencode` to `.env`. The defaults are `opencode-go/glm-5.3-flash` for the classifier and `opencode-go/glm-5.2` for the processor; the operator guide, `docs/FINDINGS-TRIAGE.md`, covers choosing models and switching one job at a time.
 
 [Review Page Guide](Review-Page-Guide) walks through deciding. [Developer: Triage Agents](Developer-Triage-Agents) explains what the agents read and why their recommendations are checkable.
 
