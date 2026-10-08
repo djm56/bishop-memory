@@ -2,6 +2,13 @@
 
 The review page at `http://127.0.0.1:8787/triage` is where findings get decided and directives get ratified. It is one embedded HTML page served by `memoryd`; nothing to install, reachable through the same SSH tunnel as the API. Open it with `make triage-review`.
 
+## Triage and Missions
+
+The **Triage / Missions** switch in the header moves between this page and the [mission HUD](Mission-HUD-Guide) at `/missions`. The two pages share the theme setting.
+
+- A finding card that has a mission shows the mission id; it links to `/missions#<mission id>`, that mission on the HUD.
+- `/triage?finding=<id>` (or `?finding=12,13`) opens the Browse tab on just those findings, with a **show all** link back to the full list. The HUD's **Open in triage →** links use it.
+
 ## Before you start
 
 Type your name in the **Approver** box once. It is stored in the browser and written as `Approver` on every decision, so the exported `FINDINGS.md` entry reads `**Approver**: Donovan Maidens` exactly as a hand-approved one does.

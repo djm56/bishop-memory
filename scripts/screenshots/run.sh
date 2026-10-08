@@ -7,9 +7,10 @@
 # 1. Builds memoryd into a temporary directory and starts it on a free port
 #    (default 8790) against a FRESH database in that directory. Your real
 #    service and database are never touched.
-# 2. Loads the taxonomy and the made-up demo findings in
-#    scripts/screenshots/demo.json, through the HTTP API.
-# 3. Captures each tab of /triage in light and dark with headless Chrome
+# 2. Loads the taxonomy and the made-up demo findings and missions in
+#    scripts/screenshots/demo.json, through the HTTP API; the missions' files
+#    go in a throwaway harness memory tree in the same directory.
+# 3. Captures each tab of /triage, and /missions, with headless Chrome
 #    (scripts/screenshots/capture.js) into docs/wiki/images/, which
 #    `make wiki-publish` uploads with the wiki pages.
 # 4. Stops the service and removes the temporary directory (--keep leaves
@@ -82,7 +83,7 @@ curl -fsS "$URL/healthz" >/dev/null || { echo "screenshots: the service did not 
 
 echo "[screenshots] loading the taxonomy and the demo data"
 "$BISHOP_ROOT/scripts/triage-seed-categories.py" --url "$URL" >/dev/null
-"$SCRIPT_DIR/seed-demo.py" --url "$URL"
+"$SCRIPT_DIR/seed-demo.py" --url "$URL" --memory-root "$WORK/harness/.claude/memory" --db "$WORK/demo.db"
 
 if [[ ! -d "$SCRIPT_DIR/node_modules/playwright-core" ]]; then
   echo "[screenshots] installing playwright-core (first run only)"

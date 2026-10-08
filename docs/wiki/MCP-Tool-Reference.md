@@ -326,11 +326,11 @@ Upsert keyed on `(mission_id, step)`: the first call creates (201, `created: tru
 
 **Route:** `POST /v1/documents/sync`
 
-Trigger a document sync / import from the configured memory root into the FTS5 index. Returns {"root":...,"synced":true} or a 502 if the import failed.
+Trigger a document sync / import into the FTS5 index: every registered harness memory root (and its agents/ into crew) when root is omitted, else the given root. Returns {"roots":[...],"synced":true}, {"root":...,"synced":true} for one root, or a 502 if the import failed.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `root` | string | no | Optional override of the memory root. Omit to use the server's configured MEMORY_ROOT (or "testdata/memory" default). |
+| `root` | string | no | Optional memory root to sync on its own. Omit to sync every registered harness (or, with none registered, the server's MEMORY_ROOT or "testdata/memory"). |
 
 
 **Example call**

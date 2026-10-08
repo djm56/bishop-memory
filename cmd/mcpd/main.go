@@ -350,9 +350,9 @@ func registerTools(s *server.MCPServer, c *client) {
 	// (the sync is system-driven), so no agent composition.
 	s.AddTool(
 		mcp.NewTool("documents_sync",
-			mcp.WithDescription("Trigger a document sync / import from the configured memory root into the FTS5 index. Returns {\"root\":...,\"synced\":true} or a 502 if the import failed."),
+			mcp.WithDescription("Trigger a document sync / import into the FTS5 index: every registered harness memory root (and its agents/ into crew) when root is omitted, else the given root. Returns {\"roots\":[...],\"synced\":true}, {\"root\":...,\"synced\":true} for one root, or a 502 if the import failed."),
 			mcp.WithString("root",
-				mcp.Description("Optional override of the memory root. Omit to use the server's configured MEMORY_ROOT (or \"testdata/memory\" default)."),
+				mcp.Description("Optional memory root to sync on its own. Omit to sync every registered harness (or, with none registered, the server's MEMORY_ROOT or \"testdata/memory\")."),
 			),
 		),
 		makeDocumentsSyncHandler(c),
@@ -581,7 +581,8 @@ type missionStepBody struct {
 }
 
 // syncBody is the JSON body for POST /v1/documents/sync. Root is
-// optional; the server falls back to MEMORY_ROOT then "testdata/memory".
+// optional; without it the server syncs every registered harness, then falls
+// back to MEMORY_ROOT and "testdata/memory".
 type syncBody struct {
 	Root string `json:"root,omitempty"`
 }
@@ -1022,7 +1023,7 @@ func makeMissionStepRecordHandler(c *client) func(ctx context.Context, req mcp.C
 //
 // Sync is a system trigger, not an agent action, so no agent
 // composition. The body is `{"root": "..."}` when the caller supplied
-// one, or `{}` otherwise (server falls back to MEMORY_ROOT / default).
+// one, or `{}` otherwise (server syncs every registered harness).
 func makeDocumentsSyncHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		body := syncBody{

@@ -10,7 +10,11 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 |---|---|---|---|
 | GET | `/healthz` | `healthHandler` | — |
 | GET | `/triage` | `ui.TriagePageHandler` | — (review page) |
-| GET | `/favicon.svg`, `/favicon.ico` | `ui.FaviconSVGHandler`, `ui.FaviconICOHandler` | — (the review page's icon; `.ico` serves a 32px PNG) |
+| GET | `/missions` | `ui.MissionsPageHandler` | — (mission HUD) |
+| GET | `/` | inline | — (302 to `/missions`) |
+| GET | `/favicon.svg`, `/favicon.ico` | `ui.FaviconSVGHandler`, `ui.FaviconICOHandler` | — (both pages' icon; `.ico` serves a 32px PNG) |
+| GET | `/v1/hud/missions` | `hudMissionsHandler` | — (mission HUD) |
+| GET | `/v1/hud/missions/:missionID` | `hudMissionHandler` | — (mission HUD) |
 | GET | `/v1/missions` | `listMissionsHandler` | `mission_list` (harness) |
 | POST | `/v1/missions` | `createMissionHandler` | `mission_create` (harness) |
 | POST | `/v1/missions/allocate` | `allocateMissionHandler` | `mission_allocate` (harness) |
@@ -44,6 +48,50 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | POST | `/v1/documents/sync` | `syncDocumentsHandler` | `documents_sync` (harness) |
 
 Routes with no tool are the operator/reconciler surface. Keeping them off both `mcpd` profiles is the whole access-control model, so a new route defaults to "no tool" until there is a reason.
+
+## Mission HUD routes
+
+`internal/api/hud.go`. Read-only, under `/v1/hud` so nothing the harnesses, `mcpd` or the triage agents call changed shape. Rows come back as maps keyed by column name (`queryMaps`), so the page can show a new column without a model change.
+
+**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
+
+```json
+{
+  "missions":  [{"id", "title", "status", "outcome", "harness", "owner", "priority",
+                 "opened_at", "closed_at", "updated_at",
+                 "steps", "steps_done", "findings", "patterns", "has_brief", "has_debrief"}],
+  "harnesses": [{"name", "missions"}]
+}
+```
+
+`harnesses` counts missions per non-NULL `missions.harness` and ignores the filters.
+
+**`GET /v1/hud/missions/:missionID`** — one mission; 404 `mission not found`. Keys:
+
+| Key | Rows |
+|---|---|
+| `mission` | The `missions` row, every column |
+| `steps` | `mission_steps` in step order (`CAST(step AS INTEGER), step`), with `summary`, `started_at`, `ended_at` |
+| `events` | The mission's `flight_recorder` rows by id |
+| `documents` | `kind`, `title`, `body`, `source_path`, `updated_at` of its `brief`, `progress` and `debrief` documents (by `documents.mission_id`) |
+| `patterns` | Patterns whose `discovered_mission` is this mission |
+| `directives` | Accepted `directive_proposals` whose `evidence` includes one of the mission's findings, with the directive's `ratified_at` |
+| `crew` | `name`, `role`, `description` of each agent named on a step, matched through `importer.CrewName` |
+| `service_records` | Those agents' service records dated from `opened_at` to `closed_at` (today while open) |
+
+The mission's findings are not in this response. The page takes them from **`GET /v1/findings?mission_id=<id>`**, a filter on the existing route, so they arrive with the triage classification and recommendation in the shape `/triage` uses.
+
+## Side effects added for the HUD
+
+These routes kept their request and response shapes; what changed is what they write.
+
+| Route | Side effect |
+|---|---|
+| `POST /v1/documents/sync` | Body `root`: syncs that root, tagged with the harness registered on it if any; responds `{"synced":true,"root":…}`. Body `harness`: syncs that harness's registered `memory_root` (404 `harness not found` if none); responds with `root`. Neither: syncs every registered harness root (once per root; the most recently seen name wins when two share one) and responds `{"synced":true,"roots":[…]}`; with no harness registered it falls back to `MEMORY_ROOT` (then `testdata/memory`) and answers with `root`. For every root that has a harness, it also imports the `agents/` directory beside the root into `crew`; a crew failure is logged, never returned. The walker now skips hidden directories |
+| `PATCH /v1/missions/:missionID` | After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness or no root: skipped. A failure is logged and never fails the update |
+| `POST /v1/missions/:missionID/steps` | `stampStepTiming`: sets `started_at` the first time the step is stored `in-progress`, and `ended_at` each time it moves into `done` or `failed` from another status, unless the request carried that field. Only for a mission that is not `complete`, since a completed mission's steps arrive from a replayed `PROGRESS.md` |
+| `POST /v1/flight-recorder` | Event `step-sync` with a `mission_id` and `step` copies `note` into that step's `summary`, in the same transaction. A step the mission does not have is left alone |
+| `POST /v1/findings` | No `mission_id` but a `harness`: `openMissionFor` takes that harness's open mission (`in-progress` or `blocked`, most recently updated), unless `finding_date` is before the day it opened, so a replayed backlog is not pinned to whatever is open now |
 
 ## The error contract
 

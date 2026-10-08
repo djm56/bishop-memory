@@ -10,14 +10,24 @@ findings, classifications, runs, groups, recommendations, directive
 proposals, decisions — so a schema or contract change that breaks those
 routes breaks the screenshots run too, instead of silently drifting.
 
+Demo missions are written as a harness memory tree under --memory-root
+(missions/<id>/BRIEF.md, PROGRESS.md, DEBRIEF.md, and agents/ beside it),
+registered as the demo harness, and recorded through the mission, step,
+flight-recorder, pattern and service-record routes, so /missions has
+something to show. --db, the throwaway database file, lets the seeder
+backdate the missions and their journal to the dates in demo.json; the API
+stamps both with the current time.
+
 Refuses to seed a database that already holds findings: this is for a
 throwaway instance only (scripts/screenshots/run.sh starts one).
 
 Usage: seed-demo.py --url http://127.0.0.1:8790 [--file demo.json]
+                    [--memory-root DIR --db FILE]
 """
 import argparse
 import json
 import os
+import sqlite3
 import sys
 import urllib.error
 
@@ -33,10 +43,137 @@ def call(url, method, path, body=None):
         tc.die(f"[seed-demo] {method} {path} -> HTTP {exc.code}: {exc.read().decode(errors='replace')[:300]}")
 
 
+BRIEF = """# Brief — {id}
+
+## Goal
+{goal}
+
+## Acceptance Criteria
+{criteria}
+
+## Key Files
+{files}
+"""
+
+PROGRESS = """# Progress — {id}
+
+| Step | Phase | Agent | Status | Notes |
+|------|-------|-------|--------|-------|
+{rows}
+"""
+
+DEBRIEF = """# Debrief — {id}
+
+## Mission Summary
+- Goal: {goal}
+- Outcome: {outcome}
+- Completed: {closed} UTC
+
+## Acceptance Criteria Outcome
+{outcomes}
+
+## Logical Step Recap
+| Step | Phase | Agent | Status | Notes |
+|------|-------|-------|--------|-------|
+{recap}
+
+## Deliverables Changed
+{files}
+
+## Wrong Assumptions (Mandatory)
+{wrong}
+
+## Sub-Agent Mistakes and Corrections (Mandatory)
+{mistakes}
+
+## Findings and Patterns Linked
+- Findings entry refs: {refs}
+- Pattern entry refs: {patterns}
+"""
+
+
+def write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def seed_missions(url, demo, memory_root, db_path):
+    """Record the demo missions and write their files. Returns {finding key: mission id}."""
+    harness = demo["harness"]
+    for a in demo.get("agents", []):
+        write(os.path.join(os.path.dirname(memory_root), "agents", a["name"] + ".md"),
+              f"---\nname: {a['name']}\ndescription: \"{a['description']}\"\n---\n\n# {a['name'].title()}\n")
+    call(url, "PUT", f"/v1/harnesses/{harness}", {"memory_root": memory_root})
+
+    findings_by_key = {f["key"]: f for f in demo["findings"]}
+    mission_of = {}
+    for m in demo.get("missions", []):
+        mid = call(url, "POST", "/v1/missions/allocate", {"harness": harness, "title": m["title"], "owner": m["owner"]})["id"]
+        bullets = lambda items: "\n".join("- " + i for i in items)
+        rows = lambda: "\n".join(f"| {s['step']} | {s['phase'] or '—'} | {s['agent']} | {s['status']} | {s['summary'] or s['notes']} |" for s in m["steps"])
+        folder = os.path.join(memory_root, "missions", mid)
+        write(os.path.join(folder, "BRIEF.md"), BRIEF.format(id=mid, goal=m["goal"],
+              criteria=bullets(c for c, _ in m["criteria"]), files=bullets(m["files"])))
+        write(os.path.join(folder, "PROGRESS.md"), PROGRESS.format(id=mid, rows=rows()))
+        if m["status"] == "complete":
+            refs = "; ".join(f"[{findings_by_key[k]['date']}] — {findings_by_key[k]['target']}" for k in m["findings"]) or "none"
+            write(os.path.join(folder, "DEBRIEF.md"), DEBRIEF.format(
+                id=mid, goal=m["goal"], outcome=m["outcome"], closed=m["closed"],
+                outcomes="\n".join(f"- [x] {c} — {e}" for c, e in m["criteria"]),
+                recap=rows(), files=bullets(m["files"]), wrong=m["wrong"], mistakes=m["mistakes"],
+                refs=refs, patterns="; ".join(p["name"] for p in m["patterns"]) or "none"))
+
+        call(url, "PATCH", f"/v1/missions/{mid}", {"status": "in-progress"})
+        for s in m["steps"]:
+            body = {k: s[k] for k in ("step", "agent", "status", "notes")}
+            if s["phase"]:
+                body["phase"] = s["phase"]
+            if s["start"]:
+                body["started_at"] = s["start"]
+            if s["end"]:
+                body["ended_at"] = s["end"]
+            call(url, "POST", f"/v1/missions/{mid}/steps", body)
+            if s["summary"]:
+                call(url, "POST", "/v1/flight-recorder", {"mission_id": mid, "step": s["step"], "agent": s["agent"],
+                                                          "event": "step-sync", "note": s["summary"]})
+        for p in m["patterns"]:
+            call(url, "POST", "/v1/patterns", dict(p, discovered_at=m["opened"][:10], discovered_mission=mid))
+        for r in m["service_records"]:
+            call(url, "POST", "/v1/service-records", dict(r, record_date=m["opened"][:10]))
+        if m["status"] == "complete":
+            call(url, "POST", "/v1/flight-recorder", {"mission_id": mid, "agent": "@bishop", "event": "complete", "note": m["title"]})
+            call(url, "PATCH", f"/v1/missions/{mid}", {"status": "complete", "outcome": m["outcome"]})
+        else:
+            call(url, "PATCH", f"/v1/missions/{mid}", {"next_action": m["next_action"]})
+        for k in m["findings"]:
+            mission_of[k] = mid
+
+        # The API stamps the mission and its journal with the current time;
+        # move them to the demo's dates, spreading the journal across them.
+        if db_path:
+            db = sqlite3.connect(db_path)
+            end = m["closed"] or m["steps"][-1]["start"]
+            db.execute("UPDATE missions SET opened_at = ?, closed_at = ?, created_at = ?, updated_at = ? WHERE id = ?",
+                       (m["opened"], m["closed"], m["opened"], end, mid))
+            ids = [r[0] for r in db.execute("SELECT id FROM flight_recorder WHERE mission_id = ? ORDER BY id", (mid,))]
+            for i, rid in enumerate(ids):
+                db.execute("""UPDATE flight_recorder SET created_at = datetime(?, '+' ||
+                              CAST((julianday(?) - julianday(?)) * 86400 * ? / ? AS INTEGER) || ' seconds') WHERE id = ?""",
+                           (m["opened"], end, m["opened"], i, max(len(ids) - 1, 1), rid))
+            db.commit()
+            db.close()
+
+    call(url, "POST", "/v1/documents/sync", {"harness": harness})
+    return mission_of
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True)
     parser.add_argument("--file", default=os.path.join(HERE, "demo.json"))
+    parser.add_argument("--memory-root", help="where to write the demo harness's mission files (enables demo missions)")
+    parser.add_argument("--db", help="the throwaway database file, to backdate the demo missions")
     args = parser.parse_args()
     url = args.url.rstrip("/")
     demo = json.load(open(args.file, encoding="utf-8"))
@@ -47,13 +184,16 @@ def main():
     harness = demo["harness"]
     approver = demo["approver"]
 
+    mission_of = seed_missions(url, demo, os.path.abspath(args.memory_root), args.db) if args.memory_root else {}
+
     # Findings, created the way finding_append and the reconciler create them.
     ids = {}
     for f in demo["findings"]:
-        out = call(url, "POST", "/v1/findings", {
-            "finding_date": f["date"], "target": f["target"],
-            "suggestion": f["suggestion"], "rationale": f["rationale"], "harness": harness,
-        })
+        body = {"finding_date": f["date"], "target": f["target"],
+                "suggestion": f["suggestion"], "rationale": f["rationale"], "harness": harness}
+        if f["key"] in mission_of:
+            body["mission_id"] = mission_of[f["key"]]
+        out = call(url, "POST", "/v1/findings", body)
         ids[f["key"]] = out["id"]
 
     group_ids = {}
@@ -114,7 +254,8 @@ def main():
              {"state": "accepted", "decided_by": approver})
 
     pending = call(url, "GET", "/v1/triage/pending")
-    print(f"[seed-demo] {len(ids)} findings, {len(demo['runs'])} runs, "
+    missions = len(demo.get("missions", [])) if args.memory_root else 0
+    print(f"[seed-demo] {missions} missions, {len(ids)} findings, {len(demo['runs'])} runs, "
           f"{pending['pending_findings']} pending recommendations, "
           f"{len(pending['directive_proposals'])} pending directive drafts")
 

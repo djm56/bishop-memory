@@ -1,6 +1,6 @@
 # User Guide
 
-How to use bishop-memory from the operator's seat: install it, connect a harness, understand what the crew can do with it, review findings, and keep the Markdown and the service in step. Reference detail lives in [MCP Tool Reference](MCP-Tool-Reference) and [Commands and Scripts](Commands-and-Scripts); this page is the narrative.
+How to use bishop-memory from the operator's seat: install it, connect a harness, understand what the crew can do with it, review findings, follow missions, and keep the Markdown and the service in step. Reference detail lives in [MCP Tool Reference](MCP-Tool-Reference) and [Commands and Scripts](Commands-and-Scripts); this page is the narrative.
 
 ## 1. What you are running
 
@@ -101,7 +101,22 @@ On OpenCode instead (cheaper models, your own OpenCode config and key): skip the
 
 [Review Page Guide](Review-Page-Guide) walks through deciding. [Developer: Triage Agents](Developer-Triage-Agents) explains what the agents read and why their recommendations are checkable.
 
-## 6. Keeping Markdown and the service in step
+## 6. Following a mission
+
+The mission HUD at `http://127.0.0.1:8787/missions` (also where `/` lands) shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, start time, duration and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew and service records that came out of it. A **Triage / Missions** switch in the header moves between it and the review page.
+
+![The mission HUD](images/missions-light.png)
+
+The brief, progress and debrief reach it as documents. Once the harness is registered (a reconcile with `--harness` does that), sync them:
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/documents/sync     # every registered harness, plus its agent definitions
+make mission-links APPLY=1                                # once, to link older findings and steps
+```
+
+After that each mission update re-imports its own three files. [Mission HUD Guide](Mission-HUD-Guide) covers the page, the backfill and `make scratch-clean` for old workspace scratch.
+
+## 7. Keeping Markdown and the service in step
 
 Markdown under `.claude/memory/` is the record. The service is a derived copy, kept current three ways:
 
@@ -111,7 +126,7 @@ Markdown under `.claude/memory/` is the record. The service is a derived copy, k
 
 One flow runs the other way: your decisions on the review page go back into the Markdown through `make triage-export`. The exporter changes only the three status lines of an entry and appends ratified directives, backs the file up first, and refuses when the file already disagrees. A status you set by hand in `FINDINGS.md` is mirrored into the service by the next reconcile.
 
-## 7. Day-to-day checks
+## 8. Day-to-day checks
 
 ```bash
 make health                                  # liveness and schema

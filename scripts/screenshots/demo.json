@@ -174,5 +174,254 @@
     {"finding": "t1", "status": "approved"},
     {"finding": "p2", "status": "retired", "note": "Fixed in the product before the finding was reviewed."}
   ],
-  "ratify": ["gr1"]
+  "ratify": ["gr1"],
+  "agents": [
+    {
+      "name": "bishop",
+      "description": "Bishop — commands the crew. Plans missions, writes briefs, verifies every report before accepting it."
+    },
+    {
+      "name": "hicks",
+      "description": "Junior implementer (hicks). Builds exactly what the brief asks, with tests, and reports evidence."
+    },
+    {
+      "name": "apone",
+      "description": "Code reviewer (apone). Reads diffs for correctness, security, style and craft. Advisory only."
+    },
+    {
+      "name": "lambert",
+      "description": "Doc writer (lambert). Keeps trackers, changelogs and guides in step with the code."
+    }
+  ],
+  "missions": [
+    {
+      "key": "retry",
+      "title": "Retry transient provider errors with capped backoff",
+      "owner": "bishop",
+      "opened": "2026-09-23 08:12:00",
+      "closed": "2026-09-23 11:40:00",
+      "status": "complete",
+      "outcome": "done",
+      "goal": "Retry 429 and 5xx responses from the provider with capped exponential backoff, so a brief outage does not end a session. Never retry a 4xx other than 429.",
+      "criteria": [
+        [
+          "A 429 or 5xx is retried up to three times with backoff capped at 8 seconds.",
+          "pass: TestRetryBackoff and TestRetryCap"
+        ],
+        [
+          "A `Retry-After` header overrides the computed delay.",
+          "pass: TestRetryAfterHeader"
+        ],
+        [
+          "Any other 4xx fails at once, with no retry.",
+          "pass: TestNoRetryOn4xx"
+        ],
+        [
+          "The TUI shows a retry notice, not an error, while retrying.",
+          "pass: walkthrough §3, screenshot in the step 4 report"
+        ]
+      ],
+      "files": [
+        "internal/provider/retry.go — the backoff loop",
+        "internal/provider/retry_test.go — five cases",
+        "internal/tui/status.go — the retry notice",
+        "CHANGELOG.md — a Changed entry"
+      ],
+      "wrong": "- Assumed the provider always sends `Retry-After` on a 429. It does not on burst limits; the computed delay covers that case.",
+      "mistakes": "- @hicks's first report claimed the cap was tested; the test asserted the delay sequence but not the cap. Returned once; the redo adds TestRetryCap.",
+      "steps": [
+        {
+          "step": "1",
+          "phase": "A Build",
+          "agent": "@hicks",
+          "status": "done",
+          "start": "2026-09-23 08:20:00",
+          "end": "2026-09-23 09:05:00",
+          "summary": "Backoff loop built with a 3-try cap; first report overclaimed the cap test and was returned",
+          "notes": "Added retry.go with jittered exponential backoff (base 500ms, cap 8s, 3 tries). Bishop re-ran go test ./internal/provider: green. Returned once: TestRetryBackoff checked the sequence but nothing asserted the cap."
+        },
+        {
+          "step": "2",
+          "phase": "A Build",
+          "agent": "@apone",
+          "status": "done",
+          "start": "2026-09-23 09:10:00",
+          "end": "2026-09-23 09:32:00",
+          "summary": "Review NOT APPROVED: Retry-After ignored on 503; one CRITICAL, two warnings",
+          "notes": "CRITICAL: Retry-After is read only on 429; a 503 with the header retries early. W1: jitter can push the delay past the cap. W2: no test for a non-numeric Retry-After."
+        },
+        {
+          "step": "3",
+          "phase": "A Build",
+          "agent": "@hicks",
+          "status": "done",
+          "start": "2026-09-23 09:40:00",
+          "end": "2026-09-23 10:18:00",
+          "summary": "Fix round 1: Retry-After honoured on every retried status, jitter clamped, two tests added",
+          "notes": "Fixes the CRITICAL and both warnings. Bishop re-ran the provider tests and the race detector: clean."
+        },
+        {
+          "step": "4",
+          "phase": "B Surface",
+          "agent": "@hicks",
+          "status": "done",
+          "start": "2026-09-23 10:25:00",
+          "end": "2026-09-23 10:58:00",
+          "summary": "TUI shows \"Retrying in 4s (2 of 3)\" in the status line while a retry waits",
+          "notes": "status.go renders the notice; walkthrough §3 updated with a screenshot."
+        },
+        {
+          "step": "5",
+          "phase": "C Docs",
+          "agent": "@lambert",
+          "status": "done",
+          "start": "2026-09-23 11:05:00",
+          "end": "2026-09-23 11:31:00",
+          "summary": "CHANGELOG, walkthrough and the provider ADR updated for retries",
+          "notes": "ADR 0006 gains a Retries section; CHANGELOG has a Changed entry."
+        }
+      ],
+      "findings": [
+        "t1",
+        "c3",
+        "b4"
+      ],
+      "patterns": [
+        {
+          "name": "Clamp jitter after applying it",
+          "context": "Backoff with jitter can exceed its own cap when jitter is added after the cap is applied.",
+          "solution": "Compute the delay, add jitter, then clamp to the cap, and test the clamp with a fixed random source.",
+          "example": "delay = min(cap, base*2^n + jitter)"
+        }
+      ],
+      "service_records": [
+        {
+          "agent": "hicks",
+          "title": "Claimed a test that did not exist",
+          "note": "The first report said the cap was tested; no assertion checked it. Caught by Bishop's re-run, fixed in one round.",
+          "adjustment": "State which assertion proves each claim, by test name.",
+          "source": "bishop-observed"
+        }
+      ]
+    },
+    {
+      "key": "config",
+      "title": "Document the config file format",
+      "owner": "bishop",
+      "opened": "2026-09-25 13:02:00",
+      "closed": "2026-09-25 14:10:00",
+      "status": "complete",
+      "outcome": "done",
+      "goal": "Write a reference page for the config file: every key, its type, its default and an example.",
+      "criteria": [
+        [
+          "Every key in `config.Defaults()` appears in the reference with its type and default.",
+          "pass: Bishop's key-by-key comparison"
+        ],
+        [
+          "The example config in the page loads without error.",
+          "pass: TestDocExampleLoads"
+        ]
+      ],
+      "files": [
+        "docs/config.md — the reference page",
+        "internal/config/doc_test.go — loads the example"
+      ],
+      "wrong": "- None recorded.",
+      "mistakes": "- None.",
+      "steps": [
+        {
+          "step": "1",
+          "phase": "",
+          "agent": "@lambert",
+          "status": "done",
+          "start": "2026-09-25 13:10:00",
+          "end": "2026-09-25 13:48:00",
+          "summary": "Reference page written for all 14 keys, with an example that loads",
+          "notes": "docs/config.md lists 14 keys. doc_test.go loads the example block."
+        },
+        {
+          "step": "2",
+          "phase": "",
+          "agent": "@apone",
+          "status": "done",
+          "start": "2026-09-25 13:52:00",
+          "end": "2026-09-25 14:04:00",
+          "summary": "Review APPROVED; one suggestion on ordering keys by section",
+          "notes": "S1: group keys by section to match the file layout."
+        }
+      ],
+      "findings": [
+        "b5"
+      ],
+      "patterns": [],
+      "service_records": []
+    },
+    {
+      "key": "stream",
+      "title": "Stream tool-call arguments as they arrive",
+      "owner": "bishop",
+      "opened": "2026-09-27 09:00:00",
+      "closed": null,
+      "status": "in-progress",
+      "outcome": null,
+      "next_action": "@apone reviews step 2",
+      "goal": "Render tool-call arguments in the TUI as the provider streams them, instead of waiting for the whole call.",
+      "criteria": [
+        [
+          "Partial JSON arguments accumulate across deltas without loss.",
+          ""
+        ],
+        [
+          "The TUI updates the tool-call panel at most every 50ms.",
+          ""
+        ],
+        [
+          "A malformed final payload is reported, not silently dropped.",
+          ""
+        ]
+      ],
+      "files": [
+        "internal/provider/stream.go",
+        "internal/tui/toolcall.go"
+      ],
+      "steps": [
+        {
+          "step": "1",
+          "phase": "A Decode",
+          "agent": "@hicks",
+          "status": "done",
+          "start": "2026-09-27 09:10:00",
+          "end": "2026-09-27 10:02:00",
+          "summary": "Delta accumulator built; replays three recorded streams byte-for-byte",
+          "notes": "stream.go accumulates partial JSON per tool-call index."
+        },
+        {
+          "step": "2",
+          "phase": "B Render",
+          "agent": "@hicks",
+          "status": "done",
+          "start": "2026-09-27 10:10:00",
+          "end": "2026-09-27 10:55:00",
+          "summary": "Tool-call panel redraws on a 50ms throttle",
+          "notes": "toolcall.go throttles redraws; tests use a fake clock."
+        },
+        {
+          "step": "3",
+          "phase": "B Render",
+          "agent": "@apone",
+          "status": "in-progress",
+          "start": "2026-09-27 11:00:00",
+          "end": null,
+          "summary": "",
+          "notes": "Reviewing steps 1 and 2."
+        }
+      ],
+      "findings": [
+        "t3"
+      ],
+      "patterns": [],
+      "service_records": []
+    }
+  ]
 }

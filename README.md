@@ -1,6 +1,6 @@
 # bishop-memory
 
-A locally bound memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, and a nightly findings-triage loop with a review page for the operator.
+A locally bound memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, and a mission HUD that shows each mission's history on one page.
 
 - **Go + Gin + SQLite (FTS5)**, `modernc.org/sqlite`, so there is no C toolchain and the binary cross-compiles statically.
 - **Loopback-only, no authentication.** Reach it from elsewhere over an SSH tunnel.
@@ -10,9 +10,9 @@ A locally bound memory service for the Bishop agent harness. One Go binary, one 
 
 | Audience | Start here |
 |---|---|
-| **End users** — run a harness against it, review findings | [User Guide](docs/wiki/User-Guide.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
+| **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
 | **Developers** — change the service | [Overview](docs/wiki/Developer-Overview.md) · [HTTP API](docs/wiki/Developer-HTTP-API.md) · [Database](docs/wiki/Developer-Database.md) · [MCP Adapter](docs/wiki/Developer-MCP-Adapter.md) · [Scripts and Reconciler](docs/wiki/Developer-Scripts-and-Reconciler.md) · [Triage Agents](docs/wiki/Developer-Triage-Agents.md) · [Testing and CI](docs/wiki/Developer-Testing-and-CI.md) · [Harness Integration](docs/wiki/Developer-Harness-Integration.md) |
-| **Reference** | [API contract](docs/api-contract.md) · [Architecture](docs/architecture.md) · [Install](docs/INSTALL.md) · [Harness integration](docs/HARNESS-INTEGRATION.md) · [Memory setup](docs/MEMORY-SETUP.md) · [Findings triage](docs/FINDINGS-TRIAGE.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) |
+| **Reference** | [API contract](docs/api-contract.md) · [Architecture](docs/architecture.md) · [Install](docs/INSTALL.md) · [Harness integration](docs/HARNESS-INTEGRATION.md) · [Memory setup](docs/MEMORY-SETUP.md) · [Findings triage](docs/FINDINGS-TRIAGE.md) · [Mission HUD plan](docs/MISSION-HUD-PLAN.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) |
 
 The pages under `docs/wiki/` are also published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth.
 
@@ -95,6 +95,23 @@ The screenshots are produced from made-up demo data on a throwaway service (`scr
 
 Guide: [docs/FINDINGS-TRIAGE.md](docs/FINDINGS-TRIAGE.md). Design record: [docs/FINDINGS-TRIAGE-PLAN.md](docs/FINDINGS-TRIAGE-PLAN.md).
 
+## Mission HUD
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/wiki/images/missions-dark.png">
+  <img alt="The mission HUD: the mission list with search and filters on the left, and on the right a completed mission with its status, tiles for steps, duration, findings and criteria, and its brief." src="docs/wiki/images/missions-light.png">
+</picture>
+
+`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A Triage / Missions switch links the two pages, and each finding links across to the other.
+
+```bash
+curl -X POST http://127.0.0.1:8787/v1/documents/sync   # import every registered harness's memory tree and agents
+make mission-links                                     # one-off: link existing findings and steps (APPLY=1 to write)
+make scratch-clean                                     # list workspace scratch older than 30 days (APPLY=1 to move to the Trash)
+```
+
+Guide: [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md). Design record: [docs/MISSION-HUD-PLAN.md](docs/MISSION-HUD-PLAN.md).
+
 ## Configuration
 
 Environment variables, with optional `.env` in the working directory (gitignored).
@@ -106,7 +123,7 @@ Environment variables, with optional `.env` in the working directory (gitignored
 | `DB_PATH` | `data/memory.db` | memoryd | SQLite file; relative to the working directory |
 | `APP_ENV` | `development` | memoryd | Gin mode |
 | `LOG_LEVEL` | `info` | memoryd | Advisory |
-| `MEMORY_ROOT` | `testdata/memory` | memoryd | Default root for `documents_sync` when the caller omits one |
+| `MEMORY_ROOT` | `testdata/memory` | memoryd | Root for `documents_sync` when the caller omits one and no harness is registered |
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | mcpd, scripts | Service URL |
 | `BISHOP_HARNESS` | `claude-code` | mcpd | Harness identity composed into actors and stored on findings |
 | `MCPD_PROFILE` | `harness` | mcpd | `harness` or `triage` tool set |
@@ -134,7 +151,7 @@ CI (`.github/workflows/ci.yml`) runs build, vet, gofmt, test and test -race on L
 cmd/memoryd         HTTP daemon          internal/api        handlers and router
 cmd/mcpd            MCP adapter          internal/store      SQLite, schema, migrations
 db/schema.sql       schema               internal/importer   Markdown → FTS5
-db/finding-categories.json  taxonomy     internal/ui         the /triage review page
+db/finding-categories.json  taxonomy     internal/ui         /triage and /missions pages
 scripts/            installers, reconciler, triage, wiki     .claude/agents, .claude/skills   the triage agents
                                                              .opencode/agents                 their OpenCode twins
 docs/               reference docs       docs/wiki/          user and developer pages (published to the wiki)

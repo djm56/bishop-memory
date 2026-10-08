@@ -1,4 +1,4 @@
-// scripts/screenshots/capture.js — capture the review page for the docs.
+// scripts/screenshots/capture.js — capture the review page and the mission HUD for the docs.
 //
 // Usage: node capture.js <base-url> <output-dir>
 //
@@ -17,7 +17,8 @@ if (!base || !outDir) { console.error('usage: node capture.js <base-url> <output
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
-// name, theme, viewport, tab, and an optional step run after the tab loads.
+// name, theme, viewport, tab (a /triage tab) or mission (a /missions title to
+// open), and an optional step run after the page loads.
 const SHOTS = [
   { name: 'pending-light', theme: 'light', viewport: DESKTOP, tab: 'pending' },
   { name: 'pending-dark', theme: 'dark', viewport: DESKTOP, tab: 'pending' },
@@ -26,6 +27,12 @@ const SHOTS = [
   { name: 'directives-light', theme: 'light', viewport: DESKTOP, tab: 'directives' },
   { name: 'directives-dark', theme: 'dark', viewport: DESKTOP, tab: 'directives' },
   { name: 'runs-light', theme: 'light', viewport: DESKTOP, tab: 'runs' },
+  { name: 'missions-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors' },
+  { name: 'missions-dark', theme: 'dark', viewport: DESKTOP, mission: 'Retry transient provider errors' },
+  { name: 'missions-steps-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors',
+    after: async (page) => { await scrollToSection(page, 1); } },
+  { name: 'missions-phone-light', theme: 'light', viewport: PHONE, mission: 'Retry transient provider errors',
+    after: async (page) => { await scrollToSection(page, -1); } },
   { name: 'phone-light', theme: 'light', viewport: PHONE, tab: 'pending',
     // Scroll past the stacked category list so the first group sits just
     // below the sticky header, rather than under it.
@@ -37,6 +44,17 @@ const SHOTS = [
       await page.waitForTimeout(300);
     } },
 ];
+
+// Scrolls the mission view so section i (-1: the mission header) sits just
+// below the sticky header.
+async function scrollToSection(page, i) {
+  await page.evaluate(i => {
+    const el = i < 0 ? document.querySelector('#view') : document.querySelectorAll('#view section.sec')[i];
+    const header = document.querySelector('header.top').offsetHeight;
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - header - 12);
+  }, i);
+  await page.waitForTimeout(300);
+}
 
 function chromePath() {
   if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
@@ -64,9 +82,16 @@ function chromePath() {
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(`${shot.name}: ${e.message}`));
     page.on('console', m => { if (m.type() === 'error') errors.push(`${shot.name}: ${m.text()}`); });
-    await page.goto(`${base}/triage?theme=${shot.theme}`);
-    await page.waitForSelector('#view .card, #view table, #view .empty');
-    if (shot.tab !== 'pending') {
+    if (shot.mission) {
+      await page.goto(`${base}/missions?theme=${shot.theme}`);
+      await page.click(`.mrow:has-text(${JSON.stringify(shot.mission)})`);
+      await page.waitForSelector('#view .head');
+      await page.waitForTimeout(300);
+    } else {
+      await page.goto(`${base}/triage?theme=${shot.theme}`);
+      await page.waitForSelector('#view .card, #view table, #view .empty');
+    }
+    if (shot.tab && shot.tab !== 'pending') {
       await page.click(`#tabs button[data-tab="${shot.tab}"]`);
       await page.waitForTimeout(500);
       await page.waitForSelector('#view .card, #view table, #view .empty');

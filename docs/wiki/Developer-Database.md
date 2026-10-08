@@ -20,14 +20,14 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 | Table | Key | Notes |
 |---|---|---|
 | `missions` | `id` text (`mission-YYYYMMDD-NN`) | `status` CHECK not-started/in-progress/blocked/complete; `outcome` done/failed or NULL; `harness` additive; `closed_at` stamped on complete |
-| `mission_steps` | autoincrement; unique `(mission_id, step)` | `step` is text so `3a` works; `status` CHECK pending/in-progress/done/failed; FK cascade |
+| `mission_steps` | autoincrement; unique `(mission_id, step)` | `step` is text so `3a` works; `status` CHECK pending/in-progress/done/failed; FK cascade; `started_at`/`ended_at` stamped by the steps route, `summary` copied from `step-sync` journal rows |
 | `flight_recorder` | autoincrement | append-only by convention; `occurred_at` (caller time) separate from `created_at`; `agent` free text; FK to missions, nullable |
-| `crew` | `name` unique | registered agents; currently unused by handlers |
-| `findings` | autoincrement | `status` CHECK of six values; `harness`, `decision_note` additive; natural key `(finding_date, target, suggestion)` enforced by the reconciler, not the schema |
+| `crew` | `name` unique | one row per agent, filled by document sync from each harness's `agents/*.md` (`importer.SyncAgents`); `name` lower-cased without `@`, so an agent defined in several harnesses is one row carrying the definition synced last; `role` is the description's first sentence; `description`, `source_path` additive |
+| `findings` | autoincrement | `status` CHECK of six values; `harness`, `decision_note` additive; `mission_id` free text, no FK, defaulted to the harness's open mission on create; natural key `(finding_date, target, suggestion)` enforced by the reconciler, not the schema |
 | `patterns` | autoincrement | natural key `name` |
 | `service_records` | autoincrement | `source` CHECK self-reported/bishop-observed; natural key `(agent, record_date, title)` |
 | `directives` | `directive_id` unique (`DIR-NNN`) | written by the reconciler and the proposal decision route |
-| `documents` | `source_path` unique | `sha256` for incremental sync |
+| `documents` | `source_path` unique | `sha256` for incremental sync; `mission_id` (indexed) and `harness` additive, set by the importer |
 | `documents_fts` | FTS5 virtual, standalone | `tokenize='porter unicode61'`; the importer writes both tables in one transaction; no triggers |
 
 ### Findings triage
@@ -41,6 +41,21 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 | `finding_groups` | autoincrement | `category` FK |
 | `finding_recommendations` | autoincrement; partial unique on `finding_id WHERE state='pending'` | `recommendation` CHECK approve/reject/supersede/defer; `state` pending/accepted/declined/expired |
 | `directive_proposals` | autoincrement | six template fields; `evidence` JSON array of finding ids; `directive_id` once accepted |
+
+## Mission links
+
+Four additive columns and one index, in `additiveColumns` and `additiveIndexes`, back the mission HUD:
+
+| Column | Set by | Meaning |
+|---|---|---|
+| `documents.mission_id` | the importer | `<id>` for `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` (exactly one directory under `missions/`); NULL otherwise |
+| `documents.harness` | the importer | The harness whose memory root was synced; NULL for a root no harness is registered on. A sync with no harness leaves an existing value alone |
+| `crew.description` | `importer.SyncAgents` | The agent definition's full `description` line |
+| `crew.source_path` | `importer.SyncAgents` | The agent definition file |
+
+`idx_documents_mission_id` indexes `documents(mission_id)`. An unchanged file (same hash) still gets its `mission_id`, `harness` and `kind` corrected on the next sync, so a re-sync backfills existing rows without rewriting the FTS index.
+
+Document kinds are no longer polluted by hidden directories: the walker skips `.claude`, `.opencode`, `.git` and every other directory whose name starts with `.`, so a sync pointed at a repository instead of its memory root cannot file the repository under kinds like `.claude`. Rows imported that way before the change are removed by `scripts/backfill-mission-links.py` (orphan documents), which also fills `findings.mission_id` and the step columns for older rows.
 
 ## Why triage state is not in `findings`
 

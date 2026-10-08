@@ -21,10 +21,12 @@ Every `make` target and every script, with flags, environment, exit codes and wh
 | `make triage-export` | Write decisions to every registered harness's Markdown | Exit 3 means a conflict was skipped |
 | `make triage-review` | Open the review page | |
 | `make triage-install` / `triage-uninstall` | Install or remove the nightly launchd jobs | macOS |
+| `make mission-links [RENAME="old=new …"] [APPLY=1]` | One-off backfill of mission links: findings, step times and summaries, orphan documents, stray harness names | Dry run unless `APPLY=1`; run `POST /v1/documents/sync` first |
+| `make scratch-clean [DAYS=30] [HARNESS=name] [APPLY=1]` | Move harness workspace files older than `DAYS` to the macOS Trash and drop them from search | Dry run unless `APPLY=1`; default every registered harness |
 | `make wiki-publish` | Push `docs/wiki/` (pages and images) to the GitHub wiki | Needs the wiki created once in the web UI |
-| `make screenshots` | Regenerate the review-page screenshots in `docs/wiki/images/` from demo data | Never touches your service or database |
+| `make screenshots` | Regenerate the review-page and mission HUD screenshots in `docs/wiki/images/` from demo data | Never touches your service or database |
 
-All `triage-*` targets accept `BISHOP_MEMORY_URL=http://127.0.0.1:8788` to aim at another instance.
+All `triage-*` targets accept `BISHOP_MEMORY_URL=http://127.0.0.1:8788` to aim at another instance. `mission-links` and `scratch-clean` open the database file directly instead; both take `DB=` (default `data/memory.db`).
 
 ## Service scripts
 
@@ -122,6 +124,30 @@ Writes decided findings and ratified directives into the harness's Markdown. Exi
 
 Not a command. The helper module the triage scripts share: it loads `reconcile-memory.py` as a module so every script computes a finding's natural key with the reconciler's own parser.
 
+## Mission HUD
+
+Both scripts work on the database file, not through the API, and are dry runs unless told to write. See [Mission HUD Guide](Mission-HUD-Guide) for when to run them.
+
+### `scripts/backfill-mission-links.py`
+
+```
+scripts/backfill-mission-links.py [--db data/memory.db] [--rename-harness OLD=NEW ...] [--apply] [--verbose]
+make mission-links [RENAME="old=new ..."] [APPLY=1]
+```
+
+Fills the mission links the database never recorded, in one transaction, in this order: moves rows in `missions`, `findings`, `directive_proposals` and `documents` from each `OLD` harness name to `NEW` and deletes the `OLD` harnesses row; deletes documents (and their search rows) under no registered harness memory root; fills empty `mission_steps.started_at`, `ended_at` and `summary` from the journal's `mission.step` and `step-sync` events; sets empty `findings.mission_id` from the `[YYYY-MM-DD] — target` lines in each debrief's **Findings and Patterns Linked** section, then from the one mission of the finding's harness that was open when the finding was recorded (up to two hours after it closed). It never overwrites a set column. `--verbose` (the make target always passes it) lists findings that fit several missions.
+
+`--apply` first copies the database with SQLite's backup API to `data/memory.bak-<timestamp>.db` (safe while `memoryd` runs), and refuses with exit 1 while a triage run is `running`. Run it after deploying the matching `memoryd` and `POST /v1/documents/sync`, so debriefs carry their mission.
+
+### `scripts/clean-scratch.py`
+
+```
+scripts/clean-scratch.py [--days 30] [--harness NAME] [--db data/memory.db] [--apply]
+make scratch-clean [DAYS=30] [HARNESS=name] [APPLY=1]
+```
+
+For every registered harness (or `--harness`), lists the files under `<memory root>/workspace/` whose modification time is older than `--days`, with their size and search-document count. `--apply` moves them into `~/.Trash/bishop-scratch-<timestamp>/<harness>/`, deletes their documents and search rows, and removes directories left empty. `workspace/README.md` and hidden files (`.gitkeep` and the like) are always kept. Exit 1 for an unregistered `--harness`, 2 for `--days` below 1.
+
 ## Wiki
 
 ### `scripts/screenshots/run.sh`
@@ -131,7 +157,7 @@ scripts/screenshots/run.sh [--out DIR] [--port N] [--keep]
 make screenshots
 ```
 
-Builds `memoryd` into a temporary directory and starts it on port 8790 (`--port` to change) against a fresh database. Loads the taxonomy and the made-up findings in `scripts/screenshots/demo.json` through the HTTP API (`seed-demo.py`, which refuses an instance that already holds findings). Captures each tab in light and dark, plus a phone-width view, with headless Chrome (`capture.js`) into `docs/wiki/images/`. Then it stops the service, checks the port is free, and deletes the temporary directory. `--keep` leaves the demo service running so you can look around it.
+Builds `memoryd` into a temporary directory and starts it on port 8790 (`--port` to change) against a fresh database. Loads the taxonomy and the made-up findings and missions in `scripts/screenshots/demo.json` through the HTTP API (`seed-demo.py`, which refuses an instance that already holds findings). Captures each tab of `/triage` and a mission on `/missions` in light and dark, plus phone-width views, with headless Chrome (`capture.js`) into `docs/wiki/images/`. Then it stops the service, checks the port is free, and deletes the temporary directory. `--keep` leaves the demo service running so you can look around it.
 
 Needs `go`, `python3`, `node` 18+ with `npm`, and Chrome or Chromium (`CHROME_PATH` if it is not in a standard place). The first run installs `playwright-core` into `scripts/screenshots/node_modules` (gitignored); no browser is downloaded. If `oxipng` or `optipng` is installed the images are compressed losslessly. To add a shot, add an entry to `SHOTS` in `capture.js`.
 

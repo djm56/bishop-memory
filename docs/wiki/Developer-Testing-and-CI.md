@@ -24,9 +24,12 @@ go test -race ./... -count=1
 | `internal/api` | `allocate_test.go` | Allocation is global across harnesses, resets per day, ignores non-sequence ids, widens past 99, is unique under concurrency |
 | `internal/api` | `triage_test.go` | Decision transitions and their refusals, recommendation closure, classification upsert and slug validation, directive ratification allocating `DIR-NNN` and applying evidence, length budget, category rotation, the pending view, directive and harness upserts |
 | `internal/api` | `search_test.go` | Punctuated words are matched literally instead of returning 500; embedded quotes are doubled, not concatenated; combining marks count as word runes; a schema fault returns 500 rather than being blamed on the caller; no input ever produces a 500 or echoes `q` |
+| `internal/api` | `mission_links_test.go` | A live mission's steps get `started_at` and `ended_at`, a caller's value wins, a completed mission's replayed steps get neither; a `step-sync` row becomes the step summary and one for an unknown step changes nothing; a finding takes its harness's open mission, but not when it predates it or none is open; a sync with no root imports every registered harness tagged with its name, and a mission update imports that mission's new files; the HUD board's counts and filters, the mission detail's linked records, and `GET /v1/findings?mission_id=` |
 | `internal/api` | `errors_test.go`, `events_test.go` | The error contract never echoes request text; the filesystem root is refused for sync |
 | `cmd/mcpd` | `main_test.go` | Dot-segment ids are refused before any request; every tool's method and path matches exactly one registered route |
 | `cmd/memoryd` | `main_test.go` | SIGTERM shuts down gracefully (subprocess test under `t.TempDir()`) |
+| `internal/importer` | `mission_test.go` | Mission documents get `mission_id`, every document its `harness`; an unchanged file is re-tagged and its stale kind corrected, and a later sync with no harness keeps the stored one; a root pointed at a repository skips its `.claude` and `.git` trees; `SyncMission` imports only the named mission's files and refuses an id that is not one path segment; `SyncAgents` makes one crew row per name, and a second harness defining the same agent updates it; `CrewName` normalises `@Hicks`, `hicks`, `harness:hicks` |
+| `internal/ui` | `ui_test.go` | Both pages are served as HTML, link both icons, and carry the Triage / Missions switch |
 | `internal/importer`, `internal/middleware`, `internal/config` | — | Import kinds and hashing, recovery and request id, loopback detection |
 
 ## Conventions
@@ -47,6 +50,8 @@ export BISHOP_MEMORY_URL=http://127.0.0.1:8788
 
 scripts/reconcile-memory.py --root /path/to/.claude/memory --harness x --dry-run
 scripts/export-decisions.py --harness x --dry-run
+scripts/backfill-mission-links.py --db /tmp/copy.db --verbose      # dry run against the copy
+scripts/clean-scratch.py --db /tmp/copy.db                          # dry run; lists, moves nothing
 scripts/triage-run.sh classify --dry-run
 make triage-classify            # a real classifier run against the copy
 ```

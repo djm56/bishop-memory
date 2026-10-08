@@ -12,7 +12,7 @@ internal/model/     request/response structs with binding tags
 internal/store/     SQLite open (WAL, FKs, busy timeout, one writer), schema bootstrap, additive migrations
 internal/importer/  Markdown/JSONL walker and FTS5 indexer behind POST /v1/documents/sync
 internal/middleware/ request id, access log, panic recovery
-internal/ui/        the embedded review page (triage.html) and its handler
+internal/ui/        the embedded pages (triage.html, the review page; missions.html, the mission HUD) and their handlers
 internal/renderer/  deliberate stub; the service does not render Markdown views
 db/schema.sql       the schema, CREATE … IF NOT EXISTS throughout
 db/finding-categories.json  the triage taxonomy
@@ -33,7 +33,7 @@ harness (.claude/memory Markdown)  ──reconciler──▶  memoryd HTTP API  
           └─────────────────────────────────────────────┘      │
 crew (Claude Code) ──▶ mcpd harness profile ──▶ HTTP ──────────┘
 triage agents      ──▶ mcpd triage profile  ──▶ HTTP ──────────┘
-operator           ──▶ /triage page         ──▶ HTTP ──────────┘
+operator           ──▶ /triage, /missions   ──▶ HTTP ──────────┘
 ```
 
 - `mcpd` never touches the database; it is an HTTP client with typed tool schemas. That keeps one code path for every mutation and one place to validate.

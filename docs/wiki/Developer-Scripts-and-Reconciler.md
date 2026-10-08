@@ -45,6 +45,22 @@ Every write: backup to `<memory_root>/workspace/triage-backups/<file>.bak-<utc s
 
 Parses every registered harness's `FINDINGS.md` into keys, lists all findings, and for each row with no harness sets it via `PUT /v1/findings/:id/harness` when exactly one harness owns the key. `--register NAME=/abs/path` upserts harnesses first for a fresh service. Reports unmatched and ambiguous rows and leaves them NULL.
 
+## `scripts/backfill-mission-links.py`
+
+**Direction:** database → database. One-off, for rows written before the mission HUD; see `docs/MISSION-HUD-PLAN.md` §2.4.
+
+Four parts in one `BEGIN IMMEDIATE` transaction, rolled back on a dry run: `rename_harnesses` (each `--rename-harness OLD=NEW` across `missions`, `findings`, `directive_proposals`, `documents`, then the `OLD` harnesses row is deleted); `delete_orphan_documents` (documents and their `documents_fts` rows whose `source_path` lies under no `harnesses.memory_root`); `backfill_steps` (`started_at` from the first `mission.step` event whose note says `(status: in-progress)`, `ended_at` from the last saying `done` or `failed`, only events before the mission closed; `summary` from the latest `step-sync` note); `link_findings` (debrief `[YYYY-MM-DD] — target` references in the **Findings and Patterns Linked** section, matched on date and a target prefix in either direction, then a time window `opened_at` to `closed_at` + 2 hours on `findings.created_at`). Every update has `AND <column> IS NULL`. A finding is linked only when exactly one candidate matches; `--verbose` lists the ambiguous ones.
+
+`--apply` takes a backup through `sqlite3.Connection.backup` to `<db stem>.bak-<timestamp>.db` (the `.db` suffix keeps it under `.gitignore`), and exits 1 while any `triage_runs` row is `running`.
+
+## `scripts/clean-scratch.py`
+
+**Direction:** harness tree → macOS Trash, and deletes from the database. Run by hand only (`docs/MISSION-HUD-PLAN.md` decision D2).
+
+For each registered harness (deduplicated by resolved workspace path), walks `<memory root>/workspace/` without following directory symlinks, skips hidden files and the top-level `README.md`, and takes files whose `mtime` is older than `--days`. With `--apply` each file is moved to `~/.Trash/bishop-scratch-<timestamp>/<harness>/<relative path>`, its `documents` rows (matched by `source_path`, or `source_path:<line>` for JSONL) and `documents_fts` rows are deleted, and empty directories are pruned.
+
+These two scripts are the exception to "talk to the API" below: they open `data/memory.db` with `sqlite3` because no route deletes documents or bulk-fills nullable columns, and a busy timeout of 30 seconds lets them run beside `memoryd`.
+
 ## `scripts/triage-seed-categories.py`
 
 Upserts `db/finding-categories.json` through `PUT /v1/finding-categories/:slug`. `--deactivate-missing` sets `active=false` on slugs absent from the file.

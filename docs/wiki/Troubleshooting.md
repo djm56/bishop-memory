@@ -58,6 +58,20 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 **Everything landed in `brief-writing` and `mission-planning`.** The classifier leans on those two when a finding is about a brief or a process. Tighten the neighbouring category descriptions in `db/finding-categories.json`, `make triage-seed`, then `make triage-classify RECLASSIFY=brief-writing`.
 
+## Mission HUD
+
+**A mission shows "No brief imported".** Its `BRIEF.md` is not in `documents` with its `mission_id`. Either the harness has no registered memory root (`curl -s http://127.0.0.1:8787/v1/harnesses | jq`), or no sync has run since the file was written or since the upgrade. Register it (`curl -X PUT http://127.0.0.1:8787/v1/harnesses/<name> -d '{"memory_root":"/abs/path/.claude/memory"}'`, or reconcile once with `--harness`), then `curl -X POST http://127.0.0.1:8787/v1/documents/sync`.
+
+**A harness's missions are missing documents although the harness is registered.** A mission update re-imports a mission's files only when `missions.harness` names a registered harness. Missions created through `POST /v1/missions` (the reconciler) rather than `mission_allocate` have no harness, so only a full sync reaches them. Run `POST /v1/documents/sync`. If the harness was registered under a second name for the same memory root (`kirsch-opencode` and `kirschopencode`), merge them with `make mission-links RENAME="kirsch-opencode=kirschopencode" APPLY=1`.
+
+**Document kinds such as `.claude` or `.opencode` appear in search.** Left by a sync once pointed at a repository instead of its memory root. The walker now skips hidden directories, so it cannot happen again; `make mission-links APPLY=1` deletes the rows that lie under no registered memory root.
+
+**A mission has no findings, or steps with no times.** Rows recorded before the HUD carry no link. Run `make mission-links` to see what it would fill, then with `APPLY=1`. A finding that fits more than one mission is left unlinked and listed; set its mission by hand if it matters.
+
+**The step list shows agents but the Crew section is empty.** The harness keeps no `agents/` directory beside its memory root, or no sync has run since the upgrade. The sync reads `<checkout>/.claude/agents/*.md` for a root at `<checkout>/.claude/memory`.
+
+**Search returns old scratch files, or the database keeps growing.** Workspace scratch under `<memory root>/workspace/` is imported like any other file. `make scratch-clean` lists files older than 30 days; `make scratch-clean APPLY=1` moves them to the Trash and drops them from search.
+
 ## Wiki
 
 **`make wiki-publish` says the wiki repository does not exist.** GitHub creates `<repo>.wiki.git` only when the first page is made in the web UI. Open the repository's Wiki tab, create any page, run the target again.
