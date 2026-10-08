@@ -25,6 +25,8 @@ go test -race ./... -count=1
 | `internal/api` | `triage_test.go` | Decision transitions and their refusals, recommendation closure, classification upsert and slug validation, directive ratification allocating `DIR-NNN` and applying evidence, length budget, category rotation, the pending view, directive and harness upserts |
 | `internal/api` | `search_test.go` | Punctuated words are matched literally instead of returning 500; embedded quotes are doubled, not concatenated; combining marks count as word runes; a schema fault returns 500 rather than being blamed on the caller; no input ever produces a 500 or echoes `q` |
 | `internal/api` | `mission_links_test.go` | A live mission's steps get `started_at` and `ended_at`, a caller's value wins, a completed mission's replayed steps get neither; a `step-sync` row becomes the step summary and one for an unknown step changes nothing; a finding takes its harness's open mission, but not when it predates it or none is open; a sync with no root imports every registered harness tagged with its name, and a mission update imports that mission's new files; the HUD board's counts and filters, the mission detail's linked records, and `GET /v1/findings?mission_id=` |
+| `internal/api` | `network_test.go` | `TestAPIKeyGuard`: on loopback with no keys `/v1` is open; on a network address with no keys it answers 401, and opens only with `BISHOP_ALLOW_NO_AUTH`; once a key exists both refuse no key and a wrong key and accept the right one, as `Bearer` or `X-API-Key`; `/healthz`, both pages and the icon need no key. `TestDocumentPush`: a pushed brief is filed under its mission and harness, an agent becomes crew, bad `rel_path`s and non-Markdown are refused with 400, hashes come back by `source_path`, and delete removes the document and its search row |
+| `internal/auth` | `keys_test.go` | A missing keys file is an empty store; an added key looks generated (`bm_`), the file is mode 0600 and holds no key in clear, the key verifies by name and others do not; duplicate and malformed names are refused; a revoked key stops verifying without a restart; revoking a missing name fails; `BISHOP_API_KEY` makes the store non-empty and verifies as `env`; a malformed file is refused |
 | `internal/api` | `errors_test.go`, `events_test.go` | The error contract never echoes request text; the filesystem root is refused for sync |
 | `cmd/mcpd` | `main_test.go` | Dot-segment ids are refused before any request; every tool's method and path matches exactly one registered route |
 | `cmd/memoryd` | `main_test.go` | SIGTERM shuts down gracefully (subprocess test under `t.TempDir()`) |
@@ -51,7 +53,7 @@ export BISHOP_MEMORY_URL=http://127.0.0.1:8788
 scripts/reconcile-memory.py --root /path/to/.claude/memory --harness x --dry-run
 scripts/export-decisions.py --harness x --dry-run
 scripts/backfill-mission-links.py --db /tmp/copy.db --verbose      # dry run against the copy
-scripts/clean-scratch.py --db /tmp/copy.db                          # dry run; lists, moves nothing
+scripts/clean-scratch.py                                            # dry run against $BISHOP_MEMORY_URL; lists, moves nothing
 scripts/triage-run.sh classify --dry-run
 make triage-classify            # a real classifier run against the copy
 ```

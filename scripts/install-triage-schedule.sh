@@ -13,7 +13,7 @@
 #
 # Defaults: classify at 21:00, process at 21:20, URL http://127.0.0.1:8787,
 # logs in ~/Library/Logs/bishop-memory. macOS only (launchd); on Linux write a
-# systemd timer that runs the same two commands — see docs/FINDINGS-TRIAGE.md.
+# systemd timer that runs the same two commands — see the wiki page Developer-Triage-Agents.
 #
 # Idempotent: re-running unloads and reloads both jobs with the new plists.
 # Loading never triggers a run (RunAtLoad is false); to run now use
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 if [[ "$(uname)" != "Darwin" ]]; then
-  echo "install-triage-schedule.sh: launchd is macOS-only. On Linux, schedule scripts/triage-run.sh with a systemd timer (see docs/FINDINGS-TRIAGE.md)." >&2
+  echo "install-triage-schedule.sh: launchd is macOS-only. On Linux, schedule scripts/triage-run.sh with a systemd timer (see the wiki page Developer-Triage-Agents)." >&2
   exit 1
 fi
 

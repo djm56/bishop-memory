@@ -36,7 +36,7 @@ func TestIsLoopbackHost(t *testing.T) {
 
 // TestMustLoad_DefaultsToLoopback confirms MustLoad's HTTP_HOST default
 // is loopback-only when the env var is unset, matching every
-// "locally-bound" claim in README.md and docs/api-contract.md.
+// "locally-bound" claim in README.md and the wiki page Developer-HTTP-API.
 func TestMustLoad_DefaultsToLoopback(t *testing.T) {
 	t.Setenv("HTTP_HOST", "")
 	// envOrDefault treats an unset OR empty-string var as "use the

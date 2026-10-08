@@ -12,7 +12,7 @@ import (
 
 // TestValidationError_PreservesHandAuthoredMessages is the regression
 // test for the CONV-048 defect found in Step 5's review of Step 4's
-// CONV-033 fix (docs/api-contract.md is silent on the exact literal
+// CONV-033 fix (the wiki page Developer-HTTP-API is silent on the exact literal
 // text handlers construct, but every call site below is a real
 // errors.New/fmt.Errorf a handler in this package passes to
 // validationError, and each one previously reached the caller verbatim

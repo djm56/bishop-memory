@@ -3,7 +3,7 @@ DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
         triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
-        mission-links scratch-clean
+        mission-links scratch-clean dist
 
 run:
 	go run ./cmd/memoryd
@@ -41,6 +41,26 @@ dist-linux-arm64:
 
 dist-linux: dist-linux-amd64 dist-linux-arm64
 
+# Release archives for every supported server and client platform:
+# dist/bishop-memory-<version>-<os>-<arch>.tar.gz, each with bin/memoryd,
+# bin/mcpd (schema embedded), scripts/, db/ and the README. Unpack anywhere
+# and run scripts/install.sh (server or client); no Go toolchain needed.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64
+dist:
+	rm -rf dist/stage && mkdir -p dist
+	@set -e; for p in $(PLATFORMS); do \
+	  os=$${p%/*}; arch=$${p#*/}; name=bishop-memory-$(VERSION)-$$os-$$arch; dir=dist/stage/$$name; \
+	  mkdir -p $$dir/bin; \
+	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" -o $$dir/bin/memoryd ./cmd/memoryd; \
+	  CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "-s -w" -o $$dir/bin/mcpd ./cmd/mcpd; \
+	  cp -R scripts db README.md LICENSE $$dir/ 2>/dev/null || cp -R scripts db README.md $$dir/; \
+	  rm -rf $$dir/scripts/__pycache__ $$dir/scripts/screenshots/node_modules; \
+	  tar -C dist/stage -czf dist/$$name.tar.gz $$name; \
+	  echo "dist/$$name.tar.gz"; \
+	done
+	rm -rf dist/stage
+
 test:
 	go test ./...
 
@@ -64,7 +84,7 @@ reset-db:
 health:
 	curl --silent http://127.0.0.1:8787/healthz | jq
 
-# --- Findings triage (docs/FINDINGS-TRIAGE.md) -----------------------------
+# --- Findings triage (the wiki page Developer-Triage-Agents) -----------------------------
 #
 # All targets talk to the running service at BISHOP_MEMORY_URL (default
 # http://127.0.0.1:8787). Override per invocation: make triage-classify
@@ -82,7 +102,7 @@ triage-seed:
 triage-backfill:
 	scripts/triage-backfill-harness.py --url $(TRIAGE_URL) $(foreach r,$(REGISTER),--register $(r))
 
-# One-off mission backfill (docs/MISSION-HUD-PLAN.md §2.4): links findings and
+# One-off mission backfill (docs/plans/MISSION-HUD-PLAN.md §2.4): links findings and
 # documents to missions, fills step timing, drops orphan documents. Dry run
 # unless APPLY=1; RENAME="old=new ..." merges stray harness names. Sync
 # documents first (POST /v1/documents/sync) so debriefs carry their mission.
@@ -90,10 +110,10 @@ mission-links:
 	scripts/backfill-mission-links.py --db $(DB) $(foreach r,$(RENAME),--rename-harness $(r)) $(if $(APPLY),--apply) --verbose
 
 # Clear harness workspace scratch older than DAYS (default 30) into the Trash
-# and drop it from search. Dry run unless APPLY=1; HARNESS=<name> limits it.
+# and drop it from search. Runs on the machine that holds the harness checkouts. Dry run unless APPLY=1; HARNESS=<name> limits it.
 DAYS ?= 30
 scratch-clean:
-	scripts/clean-scratch.py --db $(DB) --days $(DAYS) $(if $(HARNESS),--harness $(HARNESS)) $(if $(APPLY),--apply)
+	scripts/clean-scratch.py --url $(TRIAGE_URL) --days $(DAYS) $(if $(HARNESS),--harness $(HARNESS)) $(if $(APPLY),--apply)
 
 # Run the classifier now (Haiku, or the opencode default). Exits 0 with
 # nothing to do when every finding is classified. RECLASSIFY=<slug>

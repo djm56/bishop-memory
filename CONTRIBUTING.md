@@ -76,8 +76,8 @@ contributor skimming the tree can otherwise mistake "empty" for
 - `internal/renderer/renderer.go`
 
 These are Phase 2/Phase 3 groundwork placeholders (see each file's own
-`// TODO: implement in Phase 2/3` comment and `docs/migration-plan.md`'s
-completion record). The current architecture deliberately keeps the SQL
+`// TODO: implement in Phase 2/3` comment, and the deferred entry in
+`docs/ROADMAP.md`). The current architecture deliberately keeps the SQL
 inline in `internal/api/*.go`; moving it into typed store helpers, and
 building the Markdown/JSONL renderer (for bidirectional sync), are
 separately-scoped future work with their own design decisions still to

@@ -31,7 +31,7 @@
 
 [Unit]
 Description=bishop-memory — locally-bound memory service for AI agents
-Documentation=file://__BISHOP_ROOT__/README.md file://__BISHOP_ROOT__/docs/api-contract.md
+Documentation=file://__BISHOP_ROOT__/README.md file://__BISHOP_ROOT__/the wiki page Developer-HTTP-API
 # local-fs.target: /var/lib (StateDirectory) must be mounted first.
 # network.target: harmless ordering even though the service only ever
 # binds loopback, which is always up before network.target — this just
@@ -66,6 +66,12 @@ Environment=APP_ENV=production
 # system units (systemd.exec(5), specifier %S); "bishop-memory" is the
 # StateDirectory= value itself.
 Environment=DB_PATH=/var/lib/bishop-memory/memory.db
+# Site settings — HTTP_HOST, PORT, TLS_CERT_FILE, TLS_KEY_FILE — written by
+# scripts/install.sh server. Optional ("-"); values there override the
+# defaults above. API keys live beside the database
+# (/var/lib/bishop-memory/api-keys); add one with
+#   sudo -u bishop-memory env DB_PATH=/var/lib/bishop-memory/memory.db <bin>/memoryd keys add <name>
+EnvironmentFile=-/etc/bishop-memory/memoryd.env
 
 # --- Restart policy ------------------------------------------------------
 # on-failure (not "always"): a clean `systemctl stop` must not trigger

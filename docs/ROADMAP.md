@@ -1,86 +1,197 @@
 # Roadmap — bishop-memory
 
-## What Exists Now
+The single list of outstanding work. Each item says where it stands and links
+its plan where one exists. How the shipped system works is in the wiki
+(`docs/wiki/`), not here. Remove an item when it ships; git history keeps it.
 
-Bishop-memory provides the HTTP service, the MCP adapter, the reconciler, and daemon installers for running the memory service as a managed system service. The service tracks missions, mission steps, findings, patterns, service records, and journal events in SQLite with an FTS5 search index.
+Status words: **in progress**, **planned** (a plan exists, not started),
+**open** (agreed, no plan yet), **deferred** (decided not now),
+**decision** (waiting on the operator), **check** (may already be done;
+confirm before working on it).
 
-A bishop-harness opts in through its own `.claude/bishop-memory.conf`; with no configuration file, or with `BISHOP_MEMORY_MODE=standalone`, the harness remains entirely self-contained and bishop-memory need not be installed or running. The harness generates its own `.mcp.json` from its configuration, keeping both the service and the harness self-contained and preventing reach from one into the other.
+Last checked against the code: 2026-10-08.
 
-## How The Derived Copy Is Kept Current
+## Planned work
 
-State this precisely:
+**Network deployment.** Run memoryd on any Unix server and reach it over the
+network from harness machines, the triage agents and the operator's browser:
+named API keys, transport (Tailscale, built-in TLS or a reverse proxy),
+clients pushing memory files instead of the server reading paths, and a
+one-step installer. Status: in progress (phase 1). Plan:
+[plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md).
 
-The harness's `state-continuity.sh` hook mirrors each new `FLIGHT-RECORDER.md` row as it is written, guarded by a cursor file so the same row is not re-posted and a file lock so two concurrent invocations cannot both post it. This keeps the journal (audit trail) current during normal operation.
+**Optional PostgreSQL backend.** Let the operator choose SQLite (the default)
+or PostgreSQL with the same API, pages, tools and behaviour. Status: planned.
+Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 
-The hook also mirrors mission steps live via the `POST /v1/missions/{id}/steps` endpoint, which uses upsert semantics keyed on `(mission_id, step)`. The first write returns 201; a repost of the same step returns 200. This allows steps to be mirrored while `in-progress` and updated to `done`, keeping the database current as steps run.
+**Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
+`mission_criteria`, `mission_deliverables` and `mission_lessons`, so the HUD
+can filter on unmet criteria, wrong assumptions and files that change often.
+Status: deferred (decision D3) until the debrief format settles. Plan:
+[plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md) §3.
 
-The closing sequence's step H runs the reconciler, which brings all structured tables — missions, mission steps, findings, patterns, and service records — into line with the Markdown as a backstop. A full reconcile measures approximately 0.2 seconds, well inside the hook's 10-second timeout.
+## Findings triage
 
-## Findings Triage
+The rest of phase 4 of the shipped design, plus what the earlier, unbuilt
+design covered and the shipped one does not. Already done and not listed:
+`--reclassify`, calibration on the last 20 decisions, per-run accepted and
+declined counts.
 
-Shipped 2026-10-02: nightly classification of the ledger (Haiku), per-category grouping and recommendations (Sonnet), directive drafts, the `/triage` review page, and the write-back of decisions into each harness's `FINDINGS.md` / `DIRECTIVES.md`. Guide: `docs/FINDINGS-TRIAGE.md`; design record: `docs/FINDINGS-TRIAGE-PLAN.md`.
+**Pending recommendations never expire by age.** A recommendation is expired
+only when a re-run replaces it. A sweep that expires pending ones older than N
+days (the `expired` state exists) would keep the review page honest after a
+long gap. Status: open.
 
-Still open from that plan's phase 4:
+**No acceptance rate per category over time.** The Runs tab shows accepted and
+declined counts per run. Nothing yet shows the rate per category across runs,
+which is the signal for a category description that needs tightening or a
+model that is not good enough. Status: open.
 
-**Recommendations never expire.** A pending recommendation stays pending until the operator decides it or the processor replaces it. An age-based `expired` sweep (the state exists) would keep the review page honest after a long gap.
+**Directive drafts are compared with ratified directives only loosely.** The
+processor now reads the harness's `DIRECTIVES.md` and drafts nothing when a
+ratified directive already states the rule. It cannot propose an amendment
+or a supersession, and it does not read the `directives` table. The earlier
+design proposed four outcomes per draft: new, amend, supersede, duplicate.
+Status: open, partly done. This matters more as directives accumulate.
 
-**Patterns are not categorised.** The processor can search them (`pattern_list`, `memory_search`) but nothing links a finding to the pattern that already answers it.
+**`CONVENTIONS.md` is outside the pipeline.** The 28 `CONV-` entries in the
+Bishop harness's `reference/CONVENTIONS.md` are human-ratified rules, but they
+are not in the `directives` table and the processor does not read them.
+Whether to import them as directives is undecided. Status: decision.
 
-**No one-click apply of a `proposed_change`.** The page offers the text to copy; applying it to a skill or agent file is the operator's own edit, as the harness doctrine requires. A `scripts/triage-apply.py` that applies an accepted change and shows the diff was deliberately left out of the first cut.
+**Patterns are not linked to findings.** The processor can search patterns
+(`pattern_list`, `memory_search`), but nothing records which pattern already
+answers a finding. Status: open.
 
-**Directive drafts are never compared against existing directives.** The processor checks whether a finding is already covered by reading the target skill or agent file. It does not load the `directives` table, so it can draft a directive that duplicates or amends one already ratified. `TRIAGE-PLAN.md` section 7 describes the comparison, using the dispositions new, amend, supersede and duplicate. It does no harm while the table is empty and starts to matter once directives accumulate.
+**No one-step apply of an accepted `proposed_change`.** The review page offers
+the text to copy; applying it to a skill or agent file is the operator's own
+edit, as the harness doctrine requires. A `scripts/triage-apply.py` that
+applies an accepted change and shows the diff was deliberately left out.
+Status: deferred (decision 6 of the triage plan: no auto-apply).
 
-**`CONVENTIONS.md` is outside the pipeline.** The 28 `CONV-` entries in the Bishop harness's `reference/CONVENTIONS.md` are human-ratified rules, but they are neither in the `directives` table nor read by the processor. Importing them is the open decision 1 recorded in `TRIAGE-PLAN.md`.
+**Taxonomy tuning.** After the first full run `class-closure` received no
+findings and `brief-writing` received 70. Tighten the descriptions in
+`db/finding-categories.json`, or merge categories, then re-classify. Status:
+check against the current distribution on the Runs tab.
 
-**The processor's calibration is one-shot.** It reads the last 20 decisions in a category before recommending; nothing yet measures acceptance rate per category over time beyond the Runs tab.
+**The exporter does not check for a mission in progress.** Running
+`make triage-export` while a mission in that harness is mid-sync is safe from
+loops but can interleave with the crew's own writes. The design had the page
+warn when the harness's `CURRENT-MISSION.md` is `in-progress`; today the rule
+is only written down. Status: open, low.
 
-## Outstanding Items
+**Export conflicts are reported only by the exporter.** A conflict (file and
+service disagree, both decided) is printed and gives exit 3; the review page
+does not show it. Status: open, low.
 
-**The reconciler's `[flight-recorder]` summary does not sum to `parsed`.** Events for missions outside the parsed set are skipped with no counter accounting for them. Behind the opt-in `--include-journal`.
+**Sub-themes across runs and recurrence detection.** Groups are formed within
+one processor run, so nothing carries a sub-theme from one run to the next or
+notices a rule that keeps coming back. Neither design built this. Status:
+open, idea only.
 
-**A `warned` counter in the journal reconciliation is never incremented.** So its "at cap" summary branch is unreachable and a cap hit reports as a generic fetch failure. Also behind `--include-journal`.
+**A read-only `/findings-digest` command in the harness.** Lets Bishop see
+ratified findings for the area it is about to brief. Status: open, harness
+side.
 
-**The hook leaks its `mktemp` temp file when the subshell is signalled.** Because the TERM trap releases only the lock. The file's older mirror section already uses trap-based cleanup for its own temp file and this does not reuse that convention.
+**Retire the old triage machinery in the Bishop harness.** Still on disk under
+`/Volumes/DATA/Bishop`: `.claude/skills/improvement-triage/`,
+`.claude/scripts/run-triage.sh`, and the unloaded `net.airfleet.bishop.triage`
+plist in `~/Library/LaunchAgents`. Status: open, outside this repository.
 
-**One hook comment claims a narrower guarantee than the code gives.** It asserts the winning fire's own post-reconcile check will pick up a marker touched after that check has already run. The higher-level invariant holds — either that fire answers it or the next does — but the sentence does not.
+## Reconciler
 
-**The hook's function-scoped variables are globals.** POSIX `sh` having no locals. No collisions exist today and no naming convention guards against a future one.
+**An unrecognised step status is dropped silently.** `parse_steps` in
+`scripts/reconcile-memory.py` turns a status outside `pending`,
+`in-progress`, `done`, `failed` into an empty string and removes it from the
+payload, so the run reports `unchanged` while the database keeps a stale
+value. Seen when a harness wrote the mission status `blocked` into a step row.
+It should warn and count the row instead. Status: open.
 
-**`stat -f '%m'` is BSD and macOS syntax.** On a Linux host the lock mtime comes back empty and stale-lock reclamation silently never triggers. This predates this mission and appears in the older mirror section too, but it matters directly to this project's cross-platform intent.
+**The `[flight-recorder]` summary does not add up to `parsed`.** Events for
+missions outside the parsed set are skipped with no counter. Behind the
+opt-in `--include-journal`. Status: open.
 
-**`SIGKILL` cannot be trapped.** A hard kill mid-reconcile leaves the lock directory until the next staleness check reclaims it. A delay rather than a loss, with step H as backstop.
+**The journal's `warned` counter is never incremented.** So the "at cap"
+summary branch cannot run, and a mission skipped at the 100-row cap is
+reported as a generic fetch failure. Behind `--include-journal`. Status: open.
 
-**The hook runs the reconciler from the working tree.** `state-continuity.sh` invokes `reconcile-memory.py` by path, so any edit to that script is in force on the next write under the memory tree — which a state-sync guarantees within seconds. Consequences: an edit reaches the live database before the review that would have caught a defect in it, and a step briefed as dry-run-only cannot be held to that while the hook is armed. Observed on this mission, where the change was applied unattended before its review completed.
+**`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
+which needs it for Markdown tables; a value from the JSON API does not. It is
+applied to both sides and only for comparison, so it cannot cause a false
+mismatch, but a `next_action` containing a literal `\|` is altered for no
+reason. Status: open, low.
 
-**Decision recorded for clarity: the canonical value for an absent next action is the empty string.** It is the contract's own clearing mechanism under CONV-030, and the API deliberately has no path back to SQL `NULL` once a value is set. The literal `none` was considered and rejected as the canonical value — it is a non-empty string that the reconciler simultaneously treats as a placeholder, so a consumer unaware of its special meaning would display it as a real next action, reproducing the very problem the field had. Six historical rows were normalised once through the API, so the writes appear in the audit journal. New rows receive the empty string naturally, so this is not enforced by ongoing reconciler logic — the inconsistency was historical, and encoding a permanent check would leave the reconciler evaluating a condition only legacy data could satisfy.
+**A malformed non-string `next_action` from the API triggers a corrective
+PATCH.** Self-healing in the normal case; it becomes a repeat-write loop only
+if the service keeps returning a malformed value, which would be a service
+defect. Status: open, watch only.
 
-**The `PLACEHOLDERS` set recognises `none` and `None` but not `NONE`, and widening it was declined.** This decision stands because the canonical stored value is the empty string, which leaves the case gap a narrow cosmetic exposure — a literal `NONE` typed into one bullet field, self-correcting at the next sync. Had `none` been chosen as the canonical value, `none` versus `NONE` would have become the difference between canonical absence and real data, one keystroke apart, and widening `PLACEHOLDERS` would have had to be revisited. This is a recorded dependency: a future reader who changes the canonical value knows this decision is downstream of it.
+**Replaying FINDINGS.md into an empty database fails some status changes.**
+Against a fresh database the reconciler's status mirroring sends decisions the
+decision route refuses (HTTP 400): 38 of 263 kirsch findings on 2026-10-08,
+for example a finding already `applied` in Markdown that the service has never
+seen `approved`. A live database is unaffected because it saw each step. It
+matters when moving to a new server: copy the database (Server-Install wiki
+page), do not rebuild it by reconciling. Status: open; fix by replaying the
+transition path, or by an import route that sets status directly.
 
-**A borrowed rationale in `normalize_empty`.** It unescapes `\|` because `clean()` does, but `clean()` needs that for the Markdown table format and a value arriving from a JSON API has no such requirement. Applied symmetrically to both sides of the comparison so it cannot introduce a false mismatch, and comparison-only rather than persisted — but a `next_action` containing a literal `\|` is altered for comparison purposes with no reason to be.
+## Harness side (bishop-harness repository)
 
-**A malformed non-string `next_action` from the API is corrective, not inert.** The guard stops it raising, but unequal types never compare equal, so it produces a PATCH sending the harness's proper string. Self-healing in the ordinary case; a genuine repeat-write loop only if the service keeps emitting a malformed value after being corrected, which would be a service-side defect.
+Recorded here because they affect this service; the fixes belong in the
+harness's `state-continuity.sh` hook and `connect-bishop-memory.sh`.
 
-**Decision recorded for clarity: the endpoint's `max=16` on `step` validates before trimming.** A label exceeding 16 characters only through surrounding whitespace is rejected. Left as it is, because changing it would make `step` the only field validated unlike its siblings, and it fails safe.
+**`stat -f '%m'` is BSD and macOS syntax.** On Linux the lock's mtime comes
+back empty and stale-lock reclamation never fires. This matters directly to
+running harnesses on Linux (see the network deployment plan). Status: open.
 
-**Proposal for human ratification: control-flow and lock/loop changes should require comment rewrites.** Six findings on one mission were comments asserting a property the code did not have, across four different agents, which points at how changes are briefed rather than at any one agent.
+**The hook runs the reconciler from the working tree.** An edit to
+`reconcile-memory.py` is live on the next memory-tree write, before the review
+that would catch a defect in it, and a step briefed as dry-run-only cannot be
+held to that while the hook is armed. Status: open.
 
-**Two findings still await operator ratification:** one concerns guarding a sourced file on readability as well as existence (a present file that is not readable can appear missing and cause silent failure); the other concerns quoting code verbatim in briefs rather than paraphrasing (agent behaviours around code citation vary, and consistency strengthens clarity).
+**The hook leaks its `mktemp` file when the subshell is signalled.** The TERM
+trap releases only the lock; the older mirror section already uses trap-based
+cleanup. Status: open.
 
-**The conf parser is shared and sourced by both consumers** — the MCP registration generator and the post-mission hook — which closes the drift risk between them.
+**One hook comment claims more than the code guarantees.** It says the
+winning fire's post-reconcile check will pick up a marker touched after that
+check ran. The invariant holds (that fire or the next answers it); the
+sentence does not. Status: open.
 
-**The hook's mirror does not attribute a harness.** Rows the hook posts carry the agent name from the Markdown, while rows written through the MCP tools compose `<harness>:<agent>`. The mission's own `harness` column makes it derivable, so this is a provenance design decision rather than a defect. Changing it would make new rows inconsistent with those already imported from earlier harnesses.
+**The hook's function variables are globals.** POSIX `sh` has no locals. No
+collision exists today, and no naming convention prevents one. Status: open,
+low.
 
-**Residual stderr suppression in the harness's generator remains necessary.** The `.claude/connect-bishop-memory.sh` generator suppresses stderr during capability probing. Capability probing now diagnoses a missing interpreter correctly, but a present-but-broken interpreter could still be masked by the suppression. The suppression was originally added to hide an error that no longer occurs, but the underlying risk persists.
+**`SIGKILL` mid-reconcile leaves the lock directory** until the next
+staleness check reclaims it. A delay, not a loss; step H is the backstop.
+Status: accepted.
 
-**opencode support was removed,** along with both harness installers, so nothing in this repository patches another repository.
+**Stderr is still suppressed during capability probing** in
+`connect-bishop-memory.sh`. A missing interpreter is now diagnosed, but a
+present-but-broken one could be masked. Status: open.
 
-**The reconciler silently drops an unrecognised mission step status.** `parse_steps` in `scripts/reconcile-memory.py` maps any step status outside the legal set (`pending`, `in-progress`, `done`, `failed`) to the empty string and removes the empty field from the payload; the drift comparison then inspects only keys the payload contains. So an invalid status in `PROGRESS.md` produces no write, no warning, and an `unchanged` count — indistinguishable from correctness. Discovered when the harness conflated mission.status and mission_steps.status vocabularies and wrote `blocked` (a mission status) into a step row. The reconciler reported no drift while the database held the stale value. A format validator which normalises unrecognised input to nothing tells the caller "nothing wrong" when it should report "I found something I cannot parse".
+## Service
 
-## How To Pick This Up
+**Rate limiting and lockout.** None today. The network deployment plan puts
+lockout after repeated 401s in its phase 3. Status: planned.
 
-Before starting work:
+**`POST /v1/documents/sync` accepts any absolute root except `/`.** There is
+no allow-list of memory roots. The network plan replaces server-side reads
+with clients pushing files (decision N3); if that lands, the `root` parameter
+should be narrowed or removed. Status: planned with network deployment.
 
-1. Read the harness configuration to find the runtime environment. This is stored in `.claude/bishop-memory.conf` in the harness checkout; check it for mode, URL, and `BISHOP_MEMORY_HOME`.
-2. Confirm the service answers. Run `curl -s <url>/healthz` substituting the URL from the config.
-3. Check which branches are unmerged in both repositories. In the harness, run `git log main..HEAD --oneline` to see work not yet on main. In bishop-memory, run the same.
-4. Run the reconciler with `--dry-run` to see whether the derived copy is currently in step. The command is: `$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness <your-harness-name> --dry-run`, substituting `BISHOP_MEMORY_HOME` from the config and `<your-harness-name>` from `.claude/bishop-memory.conf` (the `BISHOP_HARNESS` value).
+**Typed store helpers and the Markdown renderer.** `internal/store/missions.go`
+and `internal/renderer/renderer.go` are deliberate placeholders: SQL stays
+inline in the handlers, and the service does not write views back to the
+harness tree. Either needs its own design first (see `CONTRIBUTING.md`).
+Status: deferred.
+
+## Before starting work
+
+1. Read the harness's `.claude/bishop-memory.conf` for mode, URL and
+   `BISHOP_MEMORY_HOME`.
+2. Confirm the service answers: `curl -s <url>/healthz`.
+3. In both repositories, `git log main..HEAD --oneline` shows work not yet on
+   `main`.
+4. See whether the derived copy is in step:
+   `$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness <name> --dry-run`.

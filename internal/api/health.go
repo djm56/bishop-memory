@@ -28,7 +28,7 @@ var expectedSchemaObjects = []string{
 	"directives",
 	"documents",
 	"documents_fts",
-	// Findings triage (see docs/FINDINGS-TRIAGE.md).
+	// Findings triage (see the wiki page Developer-Triage-Agents).
 	"harnesses",
 	"finding_categories",
 	"triage_runs",

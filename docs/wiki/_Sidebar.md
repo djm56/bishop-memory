@@ -2,6 +2,7 @@
 
 **End users**
 - [User Guide](User-Guide)
+- [Server Install](Server-Install)
 - [MCP Tool Reference](MCP-Tool-Reference)
 - [Review Page Guide](Review-Page-Guide)
 - [Mission HUD Guide](Mission-HUD-Guide)

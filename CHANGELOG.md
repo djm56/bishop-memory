@@ -9,6 +9,21 @@ here ahead of an actual release.
 
 ## [Unreleased]
 
+### Added
+
+- **Network deployment** (docs/plans/NETWORK-DEPLOYMENT-PLAN.md, wiki Server-Install):
+  - **API keys.** Keys are named and stored hashed (`memoryd keys add|list|revoke`) and are required on every `/v1` route once one exists. Off loopback they are always required: memoryd refuses to start on a non-loopback address without a key unless `BISHOP_ALLOW_NO_AUTH=1`. The access log names the key behind each request.
+  - **Built-in HTTPS** via `TLS_CERT_FILE` and `TLS_KEY_FILE`.
+  - **Standalone binary.** The schema is embedded in memoryd, so the binary runs from any directory.
+  - **Document push by content:** `POST /v1/documents/push`, `GET /v1/documents/hashes` and `POST /v1/documents/delete`, plus `scripts/push-memory.py`. The reconciler pushes changed files instead of asking for a path sync, and falls back to the old path sync against an older memoryd.
+  - **Clients send the key:** mcpd, the reconciler, the triage scripts, `triage-run.sh` and both pages. They read `~/.config/bishop-memory/client.env`; the pages ask for the key on a 401.
+  - **Install and operations:** `scripts/install.sh server|client` (systemd on Linux, launchd on macOS, with a settings file and the first key), `make dist` release archives for linux and darwin on amd64 and arm64, and `memoryd backup <file>`.
+- **docs/ folder** now holds only plans and the roadmap (`docs/README.md`, `docs/ROADMAP.md`, `docs/plans/`). The user and developer documentation lives in the wiki. Includes a PostgreSQL backend plan (docs/plans/POSTGRES-PLAN.md).
+
+### Changed
+
+- `scripts/clean-scratch.py` works through the API and runs on the machine that holds the harness checkouts. Its `--url` option replaces `--db`.
+
 ### Breaking Changes
 
 - **Complete vocabulary refactor: harness vocabulary replaces legacy task/event model.** The 10-table schema, 18 HTTP routes, and 15 MCP tools adopted unified harness terminology. **Every database would need rebuilding — no migration script exists because there is no legacy data; the service is new and this was chosen as a clean break.** All changes are breaking:

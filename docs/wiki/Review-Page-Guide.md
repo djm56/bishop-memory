@@ -1,6 +1,6 @@
 # Review Page Guide
 
-The review page at `http://127.0.0.1:8787/triage` is where findings get decided and directives get ratified. It is one embedded HTML page served by `memoryd`; nothing to install, reachable through the same SSH tunnel as the API. Open it with `make triage-review`.
+The review page at `http://127.0.0.1:8787/triage` is where findings get decided and directives get ratified. It is one embedded HTML page served by `memoryd`; nothing to install, reachable wherever the API is. On a service that requires an API key the page asks for one on its first call, keeps it in the browser's local storage, and offers **Forget key** in the header ([Server Install](Server-Install#10-the-browser)). Open it with `make triage-review`.
 
 ## Triage and Missions
 
@@ -21,7 +21,7 @@ The control at the right of the header switches between **Auto**, **Light** and 
 |---|---|
 | ![Pending tab in the dark theme](images/pending-dark.png) | ![Pending tab at 390 pixels wide](images/phone-light.png) |
 
-Below 860 pixels wide the layout stacks: the header wraps and the category list sits above the findings instead of beside them. The page stays usable on a phone over the SSH tunnel.
+Below 860 pixels wide the layout stacks: the header wraps and the category list sits above the findings instead of beside them. The page stays usable on a phone that can reach the service.
 
 ## The four tabs
 

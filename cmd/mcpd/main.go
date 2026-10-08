@@ -22,6 +22,11 @@
 //
 //   - BISHOP_MEMORY_URL: base URL of the bishop-memory HTTP API
 //     (default http://127.0.0.1:8787).
+//   - BISHOP_MEMORY_API_KEY: API key sent as "Authorization: Bearer <key>"
+//     on every request, when set.
+//   - Any of these not set in the environment is read from the client
+//     settings file, ~/.config/bishop-memory/client.env (or
+//     BISHOP_MEMORY_CLIENT_ENV), when it exists.
 //   - BISHOP_HARNESS: harness / agent-family prefix used in the composed
 //     Agent identity (default "claude-code").
 //   - MCPD_PROFILE: which tool set to register — "harness" (default; the
@@ -31,7 +36,7 @@
 // The 15 MCP tools are real HTTP proxies with typed input schemas
 // (matching the bishop-memory wire shapes) and agent-identity composition
 // for the two write tools that capture it (flight_recorder_append,
-// mission_step_record). See docs/migration-plan.md for the plan.
+// mission_step_record). See docs/ROADMAP.md for the plan.
 package main
 
 import (
@@ -91,6 +96,7 @@ type client struct {
 }
 
 func main() {
+	loadClientEnv()
 	baseURL := envOrDefault("BISHOP_MEMORY_URL", defaultMemoryURL)
 	harness := envOrDefault("BISHOP_HARNESS", defaultHarness)
 
@@ -104,8 +110,8 @@ func main() {
 	}
 
 	c := &client{
-		httpClient:     &http.Client{Timeout: defaultHTTPTimeout},
-		syncHTTPClient: &http.Client{Timeout: defaultSyncHTTPTimeout},
+		httpClient:     &http.Client{Timeout: defaultHTTPTimeout, Transport: transport()},
+		syncHTTPClient: &http.Client{Timeout: defaultSyncHTTPTimeout, Transport: transport()},
 		baseURL:        baseURL,
 		harness:        harness,
 	}
@@ -383,7 +389,7 @@ func registerTools(s *server.MCPServer, c *client) {
 				mcp.Description("Optional status filter: one of proposed|approved|applied|rejected|retired|superseded. Omit to list all findings regardless of status."),
 			),
 			mcp.WithString("category",
-				mcp.Description("Optional triage category slug (see docs/FINDINGS-TRIAGE.md), or 'uncategorised' for findings with no classification. Omit for all categories."),
+				mcp.Description("Optional triage category slug (the triage_categories tool or GET /v1/finding-categories lists them), or 'uncategorised' for findings with no classification. Omit for all categories."),
 			),
 			mcp.WithString("harness",
 				mcp.Description("Optional owning-harness filter. Omit for every harness."),

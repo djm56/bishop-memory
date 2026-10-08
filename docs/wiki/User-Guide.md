@@ -8,12 +8,12 @@ Three processes and one file:
 
 | Piece | What it is | Where it runs |
 |---|---|---|
-| `memoryd` | The HTTP service. Gin router, SQLite with FTS5, loopback-only on port 8787 | A launchd user agent (macOS) or a systemd service (Linux) |
+| `memoryd` | The HTTP service. Gin router, SQLite with FTS5, on `127.0.0.1:8787` by default | A launchd user agent (macOS) or a systemd service (Linux), on this machine or a server |
 | `mcpd` | The MCP adapter. A stdio server that proxies the HTTP API as typed tools | Started by Claude Code from the harness's `.mcp.json`, one per session |
 | Triage agents | Two headless agents (Claude Code, or OpenCode) that classify and pre-decide findings | Nightly launchd jobs, or `make triage-*` by hand |
 | `data/memory.db` | The database. Missions, steps, audit journal, findings, patterns, service records, directives, documents, and the triage tables | Beside the checkout |
 
-The service has **no authentication**. It binds `127.0.0.1` and stays safe because only local processes can reach it. Reach it from another machine over an SSH tunnel: `ssh -L 8787:127.0.0.1:8787 user@server`.
+By default the service binds `127.0.0.1` with no API keys, so only local processes can reach it and nothing asks for a key. To run it on a server and reach it from other machines, every client sends an API key and the traffic goes over Tailscale, TLS, a reverse proxy or an SSH tunnel: [Server Install](Server-Install) covers all of it, including the changes each harness needs.
 
 ## 2. Install
 
@@ -37,6 +37,10 @@ sudo scripts/install-daemon-linux.sh
 ```
 
 The Linux installer creates a `bishop-memory` system user and a systemd unit. Without root it builds and prints the commands that still need root.
+
+### On a server
+
+`scripts/install.sh server` installs `memoryd` on Ubuntu, any Linux with systemd, or a Mac, listening on a network address with API keys; `scripts/install.sh client` sets up each machine that talks to it. See [Server Install](Server-Install).
 
 ### Upgrading
 
@@ -97,7 +101,7 @@ make triage-classify
 make triage-install                                                    # nightly launchd jobs
 ```
 
-On OpenCode instead (cheaper models, your own OpenCode config and key): skip the `.env` key and add `TRIAGE_ENGINE=opencode` to `.env`. The defaults are `opencode-go/glm-5.3-flash` for the classifier and `opencode-go/glm-5.2` for the processor; the operator guide, `docs/FINDINGS-TRIAGE.md`, covers choosing models and switching one job at a time.
+On OpenCode instead (cheaper models, your own OpenCode config and key): skip the `.env` key and add `TRIAGE_ENGINE=opencode` to `.env`. The defaults are `opencode-go/glm-5.3-flash` for the classifier and `opencode-go/glm-5.2` for the processor; [Developer: Triage Agents](Developer-Triage-Agents#switching-to-opencode) covers choosing models and switching one job at a time.
 
 [Review Page Guide](Review-Page-Guide) walks through deciding. [Developer: Triage Agents](Developer-Triage-Agents) explains what the agents read and why their recommendations are checkable.
 
@@ -114,7 +118,7 @@ curl -X POST http://127.0.0.1:8787/v1/documents/sync     # every registered harn
 make mission-links APPLY=1                                # once, to link older findings and steps
 ```
 
-After that each mission update re-imports its own three files. [Mission HUD Guide](Mission-HUD-Guide) covers the page, the backfill and `make scratch-clean` for old workspace scratch.
+After that each mission update re-imports its own three files. With the service on another machine, the sync above cannot see the harness files; the reconciler pushes them instead (see [Server Install](Server-Install#9-first-upload-of-each-memory-tree)). [Mission HUD Guide](Mission-HUD-Guide) covers the page, the backfill and `make scratch-clean` for old workspace scratch.
 
 ## 7. Keeping Markdown and the service in step
 

@@ -2,7 +2,7 @@
 //
 // validationError and internalError are the single funnel every handler
 // in this package uses to shape a non-2xx JSON body, per
-// docs/api-contract.md's "Standard error format". Recovery (see
+// the wiki page Developer-HTTP-API's "Standard error format". Recovery (see
 // internal/middleware/recovery.go) also routes panics through
 // internalError so a handler crash produces the exact same body shape
 // as every other internal fault, rather than an empty 500.
@@ -24,7 +24,7 @@ import (
 // while (b) preserving every hand-authored, already-safe diagnostic
 // message this package's handlers construct themselves (CONV-048 — a
 // prior fix here collapsed all three cases below into one generic
-// string, discarding case 3 entirely; see docs/api-contract.md's
+// string, discarding case 3 entirely; see the wiki page Developer-HTTP-API's
 // "Standard error format" and CONVENTIONS.md CONV-048 for the incident
 // this restores):
 //

@@ -79,6 +79,7 @@ DRY_RUN=0
 MEMORY_ROOT=""
 LOG_DIR=""
 EXEC_DIR=""
+ENV_FILE="$HOME/Library/Application Support/bishop-memory/memoryd.env"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -106,6 +107,14 @@ while [[ $# -gt 0 ]]; do
       MEMORY_ROOT="${1#*=}"
       shift
       ;;
+    --env-file)
+      ENV_FILE="${2:-}"
+      shift 2
+      ;;
+    --env-file=*)
+      ENV_FILE="${1#*=}"
+      shift
+      ;;
     --dry-run)
       DRY_RUN=1
       shift
@@ -119,7 +128,9 @@ prints the rendered plist + the launchctl commands without touching the
 system. --memory-root sets MEMORY_ROOT in the plist (default:
 <bishop-root>/testdata/memory). --log-dir sets where memoryd's stdout and
 stderr go (default: ~/Library/Logs/bishop-memory; keep it off external
-volumes).
+volumes). --env-file names memoryd's settings file (HTTP_HOST, PORT, TLS,
+API keys; default: ~/Library/Application Support/bishop-memory/memoryd.env);
+scripts/install.sh server writes it.
 EOF
       exit 0
       ;;
@@ -220,10 +231,12 @@ SANITISED_ROOT="${BISHOP_ROOT//__BISHOP_ROOT__/__BMR_PLACEHOLDER__}"
 SANITISED_MEMORY_ROOT="${MEMORY_ROOT//__BISHOP_ROOT__/__BMR_PLACEHOLDER__}"
 SANITISED_LOG_DIR="${LOG_DIR//__BISHOP_ROOT__/__BMR_PLACEHOLDER__}"
 SANITISED_EXEC="${EXEC_DIR//__BISHOP_ROOT__/__BMR_PLACEHOLDER__}/memoryd"
+SANITISED_ENV_FILE="${ENV_FILE//__BISHOP_ROOT__/__BMR_PLACEHOLDER__}"
 sed "s|__BISHOP_ROOT__|$SANITISED_ROOT|g" "$PLIST_TEMPLATE" \
   | sed "s|__MEMORY_ROOT__|$SANITISED_MEMORY_ROOT|g" \
   | sed "s|__LOG_DIR__|$SANITISED_LOG_DIR|g" \
   | sed "s|__MEMORYD_BIN__|$SANITISED_EXEC|g" \
+  | sed "s|__ENV_FILE__|$SANITISED_ENV_FILE|g" \
   | sed "s|__BMR_PLACEHOLDER__|__BISHOP_ROOT__|g" \
   > "$RENDERED_PLIST"
 
@@ -241,14 +254,22 @@ fi
 
 # --- Build memoryd -------------------------------------------------------
 
-echo "[install-daemon] building memoryd -> $BISHOP_ROOT/bin/memoryd"
 mkdir -p "$BISHOP_ROOT/bin"
-# `go build` needs a go.mod in the working directory. cd into the module
-# root before invoking, even with an absolute source path.
-(
-  cd "$BISHOP_ROOT"
-  go build -o "$BISHOP_ROOT/bin/memoryd" "$BISHOP_ROOT/cmd/memoryd"
-)
+if command -v go >/dev/null 2>&1 && [[ -f "$BISHOP_ROOT/go.mod" ]]; then
+  echo "[install-daemon] building memoryd -> $BISHOP_ROOT/bin/memoryd"
+  # `go build` needs a go.mod in the working directory. cd into the module
+  # root before invoking, even with an absolute source path.
+  (
+    cd "$BISHOP_ROOT"
+    go build -o "$BISHOP_ROOT/bin/memoryd" "$BISHOP_ROOT/cmd/memoryd"
+  )
+elif [[ -x "$BISHOP_ROOT/bin/memoryd" ]]; then
+  # A release archive (make dist) ships bin/memoryd already built.
+  echo "[install-daemon] no go toolchain — using the shipped $BISHOP_ROOT/bin/memoryd"
+else
+  echo "install-daemon.sh: no 'go' toolchain and no bin/memoryd; install Go or use a release archive" >&2
+  exit 1
+fi
 
 # --- Stage the binary onto the internal disk -----------------------------
 #

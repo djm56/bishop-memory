@@ -55,7 +55,7 @@ Search bishop-memory imported documents (FTS5) by query string. Returns ranked h
 }
 ```
 
-Multi-word is implicit AND; wrap phrases in double quotes; a single trailing `*` on a plain word is a prefix match (`verif*`). Any word containing punctuation — a hyphenated mission id, `step-sync`, `FLIGHT-RECORDER` — is matched as a literal phrase automatically, so it never needs quoting. An unterminated `"` returns a 400, and no error ever echoes your query. An empty index returns an empty list, not an error. Full rules: `docs/api-contract.md`, *Query handling*.
+Multi-word is implicit AND; wrap phrases in double quotes; a single trailing `*` on a plain word is a prefix match (`verif*`). Any word containing punctuation — a hyphenated mission id, `step-sync`, `FLIGHT-RECORDER` — is matched as a literal phrase automatically, so it never needs quoting. An unterminated `"` returns a 400, and no error ever echoes your query. An empty index returns an empty list, not an error. Full rules: `[Developer: HTTP API](Developer-HTTP-API#search-query-handling)`, *Query handling*.
 
 
 ### `mission_list`
@@ -396,7 +396,7 @@ List findings from the improvement ledger, newest-first. Optional status filter 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
 | `status` | string | no | Optional status filter: one of proposed\|approved\|applied\|rejected\|retired\|superseded. Omit to list all findings regardless of status. |
-| `category` | string | no | Optional triage category slug (see docs/FINDINGS-TRIAGE.md), or 'uncategorised' for findings with no classification. Omit for all categories. |
+| `category` | string | no | Optional triage category slug (the triage_categories tool or GET /v1/finding-categories lists them), or 'uncategorised' for findings with no classification. Omit for all categories. |
 | `harness` | string | no | Optional owning-harness filter. Omit for every harness. |
 | `ids` | string | no | Optional comma-separated list of finding ids. |
 | `limit` | integer | no | Optional page size; omit for everything. |

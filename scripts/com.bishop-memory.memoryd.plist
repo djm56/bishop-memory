@@ -29,12 +29,12 @@
 
     <key>EnvironmentVariables</key>
     <dict>
-        <key>PORT</key>
-        <string>8787</string>
         <key>DB_PATH</key>
         <string>data/memory.db</string>
         <key>APP_ENV</key>
         <string>production</string>
+        <key>MEMORYD_ENV_FILE</key>
+        <string>__ENV_FILE__</string>
         <key>MEMORY_ROOT</key>
         <string>__MEMORY_ROOT__</string>
     </dict>

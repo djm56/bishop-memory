@@ -39,7 +39,7 @@ The triage profile uses two generic proxies so each tool is a few lines:
 2. Register it with a description that says what comes back and what is validated server-side. Descriptions are what the model reads; write them for the model.
 3. Use a generic proxy where the route is a plain GET or JSON POST; write a handler only when the tool composes identity, guards a path parameter, or needs a special client.
 4. Add the tool's method and path to `mcpdPaths` in `cmd/mcpd/main_test.go`. `TestMCPDRoutePathsMatchServerRoutes` instantiates the real router and asserts exactly one registered route matches, so a typo in a path segment fails the suite.
-5. Document it in `README.md`'s tool table, `docs/INSTALL.md`, and the wiki's [MCP Tool Reference](MCP-Tool-Reference) (run `scripts/gen-mcp-reference.py`, adding an example to its `EXAMPLES` table).
+5. Document it in `README.md`'s tool table and the wiki's [MCP Tool Reference](MCP-Tool-Reference) (run `scripts/gen-mcp-reference.py`, adding an example to its `EXAMPLES` table).
 
 ## Testing a profile by hand
 
@@ -56,4 +56,4 @@ for l in sys.stdin:
 
 ## Why the profile is the access-control model
 
-There is no authentication on the HTTP API. What an agent can do is exactly the set of tools its `mcpd` registers. So the operator routes — the finding decision, the directive-proposal decision, the directive upsert, the harness backfill — are never registered in either profile, and the triage agents cannot touch missions, the journal or the ledger. Any change that registers one of those routes as a tool changes the security model and belongs in a design discussion, not a quick patch.
+The HTTP API's API keys (see [Developer: HTTP API](Developer-HTTP-API#authentication)) decide which machines may call the service at all, and every key has full access, so they do not separate an agent from the operator. `mcpd` sends the key itself: it reads `BISHOP_MEMORY_API_KEY` (from its environment, or from `~/.config/bishop-memory/client.env` for any variable the environment does not set) and adds `Authorization: Bearer` to every request, so no key appears in a harness's `.mcp.json`. What an agent can do is exactly the set of tools its `mcpd` registers. So the operator routes — the finding decision, the directive-proposal decision, the directive upsert, the harness backfill — are never registered in either profile, and the triage agents cannot touch missions, the journal or the ledger. Any change that registers one of those routes as a tool changes the security model and belongs in a design discussion, not a quick patch.
