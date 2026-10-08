@@ -1,9 +1,11 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -12,6 +14,7 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
+	"bishop-memory/internal/importer"
 	"bishop-memory/internal/model"
 )
 
@@ -323,6 +326,8 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		syncMissionDocuments(c, db, missionID)
+
 		c.JSON(http.StatusOK, gin.H{
 			"id":      missionID,
 			"updated": true,
@@ -501,13 +506,14 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 		// step is now required and non-empty (trimmed), so a plain = comparison
 		// is safe — step can never be NULL, so the NULL-safe IS comparison
 		// is no longer needed.
-		var stepExists int
+		// The prior status also drives stampStepTiming below.
+		var priorStatus sql.NullString
 		err = tx.QueryRowContext(
 			c.Request.Context(),
-			`SELECT 1 FROM mission_steps WHERE mission_id = ? AND step = ?`,
+			`SELECT status FROM mission_steps WHERE mission_id = ? AND step = ?`,
 			missionID,
 			request.Step,
-		).Scan(&stepExists)
+		).Scan(&priorStatus)
 		isUpdate := err == nil
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			internalError(c, err)
@@ -564,6 +570,13 @@ func createMissionStepHandler(db *sql.DB) gin.HandlerFunc {
 			request.Step,
 		).Scan(&resultingAgent, &resultingStatus)
 		if err != nil {
+			internalError(c, err)
+			return
+		}
+
+		if err := stampStepTiming(c.Request.Context(), tx, missionID, request.Step,
+			priorStatus.String, resultingStatus.String,
+			request.StartedAt != nil, request.EndedAt != nil); err != nil {
 			internalError(c, err)
 			return
 		}
@@ -719,5 +732,61 @@ func listMissionStepsHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"steps": steps})
+	}
+}
+
+// stampStepTiming fills a step's started_at and ended_at from the server clock
+// when the caller did not send them (sentStart, sentEnd), which neither the
+// harness hook nor the reconciler does:
+//
+//   - started_at, the first time the step is stored as in-progress;
+//   - ended_at, each time the step moves into done or failed from another
+//     status, so a step re-opened for a fix round ends when its last round
+//     does.
+//
+// It only stamps steps of a mission that is not complete. A completed
+// mission's steps arrive from a replayed PROGRESS.md, and the replay time is
+// not when the work happened.
+func stampStepTiming(ctx context.Context, tx *sql.Tx, missionID, step, prior, current string, sentStart, sentEnd bool) error {
+	finished := func(status string) bool { return status == "done" || status == "failed" }
+
+	var column string
+	switch {
+	case current == "in-progress" && !sentStart:
+		column = "started_at"
+	case finished(current) && !finished(prior) && !sentEnd:
+		column = "ended_at"
+	default:
+		return nil
+	}
+
+	// started_at keeps its first value; ended_at moves with each finish.
+	set := column + " = CURRENT_TIMESTAMP"
+	if column == "started_at" {
+		set = "started_at = COALESCE(started_at, CURRENT_TIMESTAMP)"
+	}
+	_, err := tx.ExecContext(ctx,
+		`UPDATE mission_steps SET `+set+`
+		  WHERE mission_id = ? AND step = ?
+		    AND EXISTS (SELECT 1 FROM missions WHERE id = ? AND status <> 'complete')`,
+		missionID, step, missionID)
+	return err
+}
+
+// syncMissionDocuments re-imports the mission's BRIEF, PROGRESS and DEBRIEF
+// files from its harness's memory root, so the documents table follows a
+// mission as it runs. It runs after the update has committed and only logs a
+// failure: a missing harness, root or file never fails the update.
+func syncMissionDocuments(c *gin.Context, db *sql.DB, missionID string) {
+	var harness, root sql.NullString
+	err := db.QueryRowContext(c.Request.Context(),
+		`SELECT m.harness, h.memory_root
+		   FROM missions m LEFT JOIN harnesses h ON h.name = m.harness
+		  WHERE m.id = ?`, missionID).Scan(&harness, &root)
+	if err != nil || !root.Valid || root.String == "" {
+		return
+	}
+	if err := importer.SyncMission(db, root.String, harness.String, missionID); err != nil {
+		log.Printf("request_id=%v mission=%s document sync error=%v", requestID(c), missionID, err)
 	}
 }

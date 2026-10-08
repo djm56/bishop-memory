@@ -29,11 +29,16 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	// The operator's review page. A single embedded HTML file that talks to
 	// the /v1 triage routes with fetch; loopback-only like everything else.
 	router.GET("/triage", ui.TriagePageHandler())
+	router.GET("/missions", ui.MissionsPageHandler())
+	router.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/missions") })
 	router.GET("/favicon.svg", ui.FaviconSVGHandler())
 	router.GET("/favicon.ico", ui.FaviconICOHandler())
 
 	v1 := router.Group("/v1")
 	{
+		v1.GET("/hud/missions", hudMissionsHandler(db))
+		v1.GET("/hud/missions/:missionID", hudMissionHandler(db))
+
 		missions := v1.Group("/missions")
 		{
 			missions.GET("", listMissionsHandler(db))

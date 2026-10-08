@@ -37,6 +37,9 @@ coverage.out
 *.db
 *.db-wal
 *.db-shm
+# Database backups, including any named <db>.bak-<timestamp>.
+*.db.bak*
+*.bak-*.db
 *.sqlite-wal
 *.sqlite-shm
 

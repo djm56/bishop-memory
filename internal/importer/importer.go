@@ -127,30 +127,17 @@ const MaxJSONLLineBytes = 16 * 1024 * 1024
 // directory. Relative paths are accepted (the handler defaults to
 // "testdata/memory" when MEMORY_ROOT is unset).
 func Sync(db *sql.DB, root string) error {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return fmt.Errorf("resolve memory root %q: %w", root, err)
-	}
+	return SyncHarness(db, root, "")
+}
 
-	rootInfo, err := os.Stat(absRoot)
+// SyncHarness is Sync with every imported document tagged with the harness
+// whose memory root this is. An empty harness leaves documents.harness as it
+// was (NULL for a new row).
+func SyncHarness(db *sql.DB, root, harness string) error {
+	resolvedRoot, cleanRoot, err := resolveRoot(root)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("memory root %q does not exist", absRoot)
-		}
-		return fmt.Errorf("stat memory root %q: %w", absRoot, err)
+		return err
 	}
-	if !rootInfo.IsDir() {
-		return fmt.Errorf("memory root %q is not a directory", absRoot)
-	}
-
-	// Resolve root via EvalSymlinks so the prefix check below is stable
-	// even when root itself is a symlink. (WalkDir does NOT follow
-	// symlinks during traversal; we still evaluate them per-entry.)
-	resolvedRoot, err := filepath.EvalSymlinks(absRoot)
-	if err != nil {
-		return fmt.Errorf("resolve memory root symlinks %q: %w", absRoot, err)
-	}
-	cleanRoot := filepath.Clean(resolvedRoot) + string(filepath.Separator)
 
 	// Walk the RESOLVED root (not absRoot). Walking the unresolved path
 	// when root is a symlink would make filepath.Rel(absRoot, cleanPath)
@@ -162,75 +149,149 @@ func Sync(db *sql.DB, root string) error {
 		if err != nil {
 			return err
 		}
-
-		cleanPath := filepath.Clean(path)
-
-		// (a) Path safety: every visited path must be a lexical child
-		// of resolved root. The trailing-separator trick prevents the
-		// "/foo/memory" vs "/foo/memory-other" false-positive.
-		if !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanRoot) {
-			return fmt.Errorf("path escapes memory root: %s", path)
-		}
-
-		// (b) Symlink escape check. WalkDir reports symlinks as
-		// ModeSymlink DirEntry types; we resolve the target and verify
-		// it lands inside root. Error rather than skip so a misconfigured
-		// tree fails loudly instead of silently dropping content.
-		if d.Type()&os.ModeSymlink != 0 {
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("resolve symlink %s: %w", path, err)
-			}
-			absResolved, err := filepath.Abs(resolved)
-			if err != nil {
-				return fmt.Errorf("abs symlink %s: %w", path, err)
-			}
-			if !strings.HasPrefix(filepath.Clean(absResolved)+string(filepath.Separator), cleanRoot) {
-				return fmt.Errorf("symlink %s escapes memory root (resolves to %s)", path, absResolved)
-			}
-		}
-
-		// Skip directories — WalkDir recurses automatically.
-		if d.IsDir() {
-			return nil
-		}
-
-		// Skip hidden files (.gitkeep, .DS_Store, ...).
-		base := filepath.Base(cleanPath)
-		if strings.HasPrefix(base, ".") {
-			return nil
-		}
-
-		// relPath is computed from the RESOLVED root (same as WalkDir's
-		// starting directory above) so a symlinked root produces a
-		// well-formed relpath matching the memory tree structure (e.g.,
-		// "state/...", "missions/<id>/PROGRESS.md") instead of one prefixed
-		// with the symlink's leaf name.
-		relPath, err := filepath.Rel(resolvedRoot, cleanPath)
-		if err != nil {
-			return fmt.Errorf("relative path %s: %w", path, err)
-		}
-		// Normalise to forward-slash so the kind mapping (and JSONL
-		// source_path) is consistent across platforms.
-		relPath = filepath.ToSlash(relPath)
-
-		switch strings.ToLower(filepath.Ext(cleanPath)) {
-		case ".md":
-			return importMarkdown(db, cleanPath, relPath)
-		case ".jsonl":
-			return importJSONL(db, cleanPath, relPath)
-		default:
-			return nil // unknown extension: skip silently
-		}
+		return visit(db, resolvedRoot, cleanRoot, harness, path, d)
 	})
 
 	return walkErr
 }
 
+// missionFiles are the per-mission documents SyncMission re-imports.
+var missionFiles = []string{"BRIEF.md", "PROGRESS.md", "DEBRIEF.md"}
+
+// SyncMission imports only missions/<missionID>/BRIEF.md, PROGRESS.md and
+// DEBRIEF.md under root — the cheap, targeted re-import run after a mission
+// update. Files that do not exist yet are skipped. missionID must be a single
+// path segment.
+func SyncMission(db *sql.DB, root, harness, missionID string) error {
+	if missionID == "" || missionID != filepath.Base(missionID) || strings.HasPrefix(missionID, ".") {
+		return fmt.Errorf("invalid mission id %q", missionID)
+	}
+	resolvedRoot, cleanRoot, err := resolveRoot(root)
+	if err != nil {
+		return err
+	}
+	for _, name := range missionFiles {
+		path := filepath.Join(resolvedRoot, "missions", missionID, name)
+		info, err := os.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", path, err)
+		}
+		if err := visit(db, resolvedRoot, cleanRoot, harness, path, fs.FileInfoToDirEntry(info)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resolveRoot makes root absolute, checks it is a directory and resolves its
+// symlinks. cleanRoot is the resolved root with a trailing separator, the
+// prefix every visited path must carry.
+func resolveRoot(root string) (resolvedRoot, cleanRoot string, err error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve memory root %q: %w", root, err)
+	}
+
+	rootInfo, err := os.Stat(absRoot)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", "", fmt.Errorf("memory root %q does not exist", absRoot)
+		}
+		return "", "", fmt.Errorf("stat memory root %q: %w", absRoot, err)
+	}
+	if !rootInfo.IsDir() {
+		return "", "", fmt.Errorf("memory root %q is not a directory", absRoot)
+	}
+
+	// Resolve root via EvalSymlinks so the prefix check below is stable
+	// even when root itself is a symlink. (WalkDir does NOT follow
+	// symlinks during traversal; we still evaluate them per-entry.)
+	resolvedRoot, err = filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve memory root symlinks %q: %w", absRoot, err)
+	}
+	cleanRoot = filepath.Clean(resolvedRoot) + string(filepath.Separator)
+	return resolvedRoot, cleanRoot, nil
+}
+
+// visit applies the path-safety checks to one walked entry and imports it if
+// it is a Markdown or JSONL file.
+func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEntry) error {
+	cleanPath := filepath.Clean(path)
+
+	// (a) Path safety: every visited path must be a lexical child
+	// of resolved root. The trailing-separator trick prevents the
+	// "/foo/memory" vs "/foo/memory-other" false-positive.
+	if !strings.HasPrefix(cleanPath+string(filepath.Separator), cleanRoot) {
+		return fmt.Errorf("path escapes memory root: %s", path)
+	}
+
+	// (b) Symlink escape check. WalkDir reports symlinks as
+	// ModeSymlink DirEntry types; we resolve the target and verify
+	// it lands inside root. Error rather than skip so a misconfigured
+	// tree fails loudly instead of silently dropping content.
+	if d.Type()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("resolve symlink %s: %w", path, err)
+		}
+		absResolved, err := filepath.Abs(resolved)
+		if err != nil {
+			return fmt.Errorf("abs symlink %s: %w", path, err)
+		}
+		if !strings.HasPrefix(filepath.Clean(absResolved)+string(filepath.Separator), cleanRoot) {
+			return fmt.Errorf("symlink %s escapes memory root (resolves to %s)", path, absResolved)
+		}
+	}
+
+	// Skip directories — WalkDir recurses automatically — except hidden
+	// ones (.git, .claude, .opencode). A memory tree has none, so meeting one
+	// means the root is a repository rather than its memory directory, and
+	// importing it would file the whole repository under kinds like
+	// ".claude".
+	if d.IsDir() {
+		if path != resolvedRoot && strings.HasPrefix(d.Name(), ".") {
+			return fs.SkipDir
+		}
+		return nil
+	}
+
+	// Skip hidden files (.gitkeep, .DS_Store, ...).
+	base := filepath.Base(cleanPath)
+	if strings.HasPrefix(base, ".") {
+		return nil
+	}
+
+	// relPath is computed from the RESOLVED root (same as WalkDir's
+	// starting directory above) so a symlinked root produces a
+	// well-formed relpath matching the memory tree structure (e.g.,
+	// "state/...", "missions/<id>/PROGRESS.md") instead of one prefixed
+	// with the symlink's leaf name.
+	relPath, err := filepath.Rel(resolvedRoot, cleanPath)
+	if err != nil {
+		return fmt.Errorf("relative path %s: %w", path, err)
+	}
+	// Normalise to forward-slash so the kind mapping (and JSONL
+	// source_path) is consistent across platforms.
+	relPath = filepath.ToSlash(relPath)
+
+	switch strings.ToLower(filepath.Ext(cleanPath)) {
+	case ".md":
+		return importMarkdown(db, cleanPath, relPath, harness)
+	case ".jsonl":
+		return importJSONL(db, cleanPath, relPath, harness)
+	default:
+		return nil // unknown extension: skip silently
+	}
+}
+
 // importMarkdown reads one Markdown file, classifies it by its path,
 // and upserts it as a single document. CURRENT-MISSION.md gets a
 // structured-field prefix prepended to its body (see package docblock).
-func importMarkdown(db *sql.DB, absPath, relPath string) error {
+func importMarkdown(db *sql.DB, absPath, relPath, harness string) error {
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", absPath, err)
@@ -254,7 +315,18 @@ func importMarkdown(db *sql.DB, absPath, relPath string) error {
 	// Use absPath for source_path so multiple roots with the same relative
 	// path do not collide on the UNIQUE constraint and silently overwrite.
 	// The kind mapping and title extraction continue to use relPath.
-	return upsertDocument(db, absPath, title, kind, body, sha)
+	return upsertDocument(db, absPath, title, kind, body, sha, missionIDFromPath(relPath), harness)
+}
+
+// missionIDFromPath returns <id> for missions/<id>/BRIEF.md, PROGRESS.md or
+// DEBRIEF.md — the same paths kindFromPath files as mission metadata — and ""
+// for anything else.
+func missionIDFromPath(relPath string) string {
+	switch kindFromPath(relPath) {
+	case "brief", "progress", "debrief":
+		return strings.Split(filepath.ToSlash(relPath), "/")[1]
+	}
+	return ""
 }
 
 // importJSONL reads one JSONL file line by line and upserts each
@@ -267,7 +339,7 @@ func importMarkdown(db *sql.DB, absPath, relPath string) error {
 // JSON parsing is best-effort: a line that fails json.Unmarshal is
 // still imported (raw line as body, filename as title) so unexpected
 // event shapes do not silently drop content.
-func importJSONL(db *sql.DB, absPath, relPath string) error {
+func importJSONL(db *sql.DB, absPath, relPath, harness string) error {
 	f, err := os.Open(absPath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", absPath, err)
@@ -333,7 +405,7 @@ func importJSONL(db *sql.DB, absPath, relPath string) error {
 		}
 
 		sourcePath := fmt.Sprintf("%s:%d", absPath, lineNo)
-		if uerr := upsertDocument(db, sourcePath, title, "flight-recorder", body, sha); uerr != nil {
+		if uerr := upsertDocument(db, sourcePath, title, "flight-recorder", body, sha, "", harness); uerr != nil {
 			return fmt.Errorf("upsert %s line %d: %w", relPath, lineNo, uerr)
 		}
 	}
@@ -360,7 +432,11 @@ func importJSONL(db *sql.DB, absPath, relPath string) error {
 //
 // Any SQL error rolls the whole transaction back so the two tables
 // stay consistent.
-func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha string) error {
+//
+// missionID and harness are written on every path, including the unchanged
+// one, so a re-sync fills them on rows imported before the columns existed.
+// An empty harness keeps the stored value.
+func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha, missionID, harness string) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return fmt.Errorf("begin tx for %s: %w", sourcePath, err)
@@ -382,11 +458,11 @@ func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha string) error
 		// INSERT path: new source_path.
 		result, ierr := tx.Exec(
 			`INSERT INTO documents
-			        (source_path, title, kind, body, sha256,
+			        (source_path, title, kind, body, sha256, mission_id, harness,
 			         imported_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?,
+			 VALUES (?, ?, ?, ?, ?, ?, ?,
 			         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-			sourcePath, title, kind, body, sha,
+			sourcePath, title, kind, body, sha, nullIfEmpty(missionID), nullIfEmpty(harness),
 		)
 		if ierr != nil {
 			return fmt.Errorf("insert documents %s: %w", sourcePath, ierr)
@@ -408,7 +484,21 @@ func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha string) error
 	default:
 		// Existing row: skip if unchanged, otherwise update both tables.
 		if existingSHA == sha {
-			// No-op — commit (no-op) so the deferred Rollback releases cleanly.
+			// Content unchanged: leave the FTS row alone, but keep the
+			// kind and the mission and harness tags current. The kind can
+			// be stale when the file was first imported from a root at the
+			// wrong level.
+			if _, uerr := tx.Exec(
+				`UPDATE documents
+				    SET kind = ?, mission_id = ?, harness = COALESCE(?, harness)
+				  WHERE id = ?
+				    AND (kind IS NOT ? OR mission_id IS NOT ?
+				         OR (? IS NOT NULL AND harness IS NOT ?))`,
+				kind, nullIfEmpty(missionID), nullIfEmpty(harness), existingID,
+				kind, nullIfEmpty(missionID), nullIfEmpty(harness), nullIfEmpty(harness),
+			); uerr != nil {
+				return fmt.Errorf("tag documents %s: %w", sourcePath, uerr)
+			}
 			if cerr := tx.Commit(); cerr != nil {
 				return fmt.Errorf("commit no-op %s: %w", sourcePath, cerr)
 			}
@@ -418,9 +508,10 @@ func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha string) error
 		if _, uerr := tx.Exec(
 			`UPDATE documents
 			    SET title = ?, kind = ?, body = ?, sha256 = ?,
+			        mission_id = ?, harness = COALESCE(?, harness),
 			        updated_at = CURRENT_TIMESTAMP
 			  WHERE id = ?`,
-			title, kind, body, sha, existingID,
+			title, kind, body, sha, nullIfEmpty(missionID), nullIfEmpty(harness), existingID,
 		); uerr != nil {
 			return fmt.Errorf("update documents %s: %w", sourcePath, uerr)
 		}
@@ -445,6 +536,14 @@ func upsertDocument(db *sql.DB, sourcePath, title, kind, body, sha string) error
 		return fmt.Errorf("commit %s: %w", sourcePath, cerr)
 	}
 	return nil
+}
+
+// nullIfEmpty maps "" to SQL NULL.
+func nullIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // sha256Hex returns the lowercase hex-encoded SHA-256 of data.

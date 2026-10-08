@@ -51,6 +51,20 @@ var additiveColumns = []columnMigration{
 	// findings.decision_note carries the operator's one-line reason on a
 	// reject, retire or supersede. Written only by the decision route.
 	{table: "findings", column: "decision_note", definition: "TEXT"},
+	// documents.mission_id ties a missions/<id>/BRIEF, PROGRESS or DEBRIEF
+	// document to its mission; NULL for every other document. Set by the
+	// importer from the path.
+	{table: "documents", column: "mission_id", definition: "TEXT"},
+	// documents.harness records which harness's memory root a document was
+	// imported from. NULL for a sync of a root no harness is registered on.
+	{table: "documents", column: "harness", definition: "TEXT"},
+	// crew.description is the agent definition's full description line;
+	// crew.role keeps its first sentence. crew.source_path is the agent
+	// definition file the row was last imported from. Both are filled by the
+	// importer from a harness's agents/ directory; crew.name stays the unique
+	// key, so an agent defined in several harnesses is one row.
+	{table: "crew", column: "description", definition: "TEXT"},
+	{table: "crew", column: "source_path", definition: "TEXT"},
 }
 
 // additiveIndexes are indexes over additive columns. They cannot live in
@@ -59,6 +73,7 @@ var additiveColumns = []columnMigration{
 // CREATE INDEX IF NOT EXISTS, so repeated boots are no-ops.
 var additiveIndexes = []string{
 	"CREATE INDEX IF NOT EXISTS idx_findings_harness ON findings(harness)",
+	"CREATE INDEX IF NOT EXISTS idx_documents_mission_id ON documents(mission_id)",
 }
 
 // EnsureColumns applies every additive column that the database does not

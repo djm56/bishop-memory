@@ -126,6 +126,22 @@ func appendFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// A step-sync row is the harness's one-line account of a finished
+		// step: keep it as that step's summary. A step the mission does not
+		// have is left alone.
+		if request.Event == "step-sync" && strings.TrimSpace(request.MissionID) != "" && strings.TrimSpace(request.Step) != "" {
+			if _, err := tx.ExecContext(
+				c.Request.Context(),
+				`UPDATE mission_steps SET summary = ? WHERE mission_id = ? AND step = ?`,
+				request.Note,
+				strings.TrimSpace(request.MissionID),
+				strings.TrimSpace(request.Step),
+			); err != nil {
+				internalError(c, err)
+				return
+			}
+		}
+
 		if err := tx.Commit(); err != nil {
 			internalError(c, err)
 			return
@@ -224,13 +240,19 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 }
 
 // syncDocumentsHandler handles POST /v1/documents/sync. It triggers an
-// import of the agent's memory tree into the documents + FTS5 tables by
-// invoking importer.Sync.
+// import of agent memory trees into the documents + FTS5 tables by invoking
+// importer.SyncHarness.
 //
-// The import root is resolved in order: the request body Root, the
-// MEMORY_ROOT env var, or the "testdata/memory" default. On success,
-// the handler returns HTTP 200 with {"root":...,"synced":true}. On
-// import failure, it returns HTTP 502 with an error message.
+// What gets synced, in order of precedence:
+//   - body root: that root, tagged with the harness registered on it (if any);
+//   - body harness: that harness's registered memory root (404 if unknown);
+//   - neither: every registered harness memory root, each tagged with its
+//     harness; with no harness registered, the MEMORY_ROOT env var, then the
+//     "testdata/memory" default.
+//
+// On success it returns HTTP 200 with {"synced":true,"root":...} for a single
+// root, or {"synced":true,"roots":[...]} for the all-harnesses sync. On import
+// failure it returns HTTP 502 with an error message.
 func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var request model.SyncRequest
@@ -238,47 +260,104 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 		_ = c.ShouldBindJSON(&request)
 
 		root := strings.TrimSpace(request.Root)
-		if root == "" {
-			root = strings.TrimSpace(os.Getenv("MEMORY_ROOT"))
-		}
-		if root == "" {
-			root = "testdata/memory"
+		harness := strings.TrimSpace(request.Harness)
+
+		var targets []harnessRoot
+		switch {
+		case root != "":
+			// Refuse "/" before touching the database (the loop below
+			// checks every root again).
+			if isFilesystemRoot(root) {
+				validationError(c, errors.New("root must not be the filesystem root"))
+				return
+			}
+			name, err := harnessForRoot(c.Request.Context(), db, root)
+			if err != nil {
+				internalError(c, err)
+				return
+			}
+			targets = []harnessRoot{{Name: name, Root: root}}
+		case harness != "":
+			found, err := harnessMemoryRoot(c.Request.Context(), db, harness)
+			if err != nil {
+				internalError(c, err)
+				return
+			}
+			if found == "" {
+				c.JSON(http.StatusNotFound, gin.H{"error": "harness not found"})
+				return
+			}
+			targets = []harnessRoot{{Name: harness, Root: found}}
+		default:
+			all, err := registeredHarnessRoots(c.Request.Context(), db)
+			if err != nil {
+				internalError(c, err)
+				return
+			}
+			targets = all
+			if len(targets) == 0 {
+				root = strings.TrimSpace(os.Getenv("MEMORY_ROOT"))
+				if root == "" {
+					root = "testdata/memory"
+				}
+				targets = []harnessRoot{{Root: root}}
+				// A single fallback root answers in the single-root shape.
+				request.Root = root
+			}
 		}
 
-		// Step 4 review fix (minimal, sanctioned scope — see README.md
-		// "Root `'/'` edge case"): reject a root that is (or resolves
-		// via Abs+Clean to) the filesystem root, so a caller cannot
-		// point this service at "/" and have importer.Sync walk the
-		// entire filesystem. This is deliberately NOT a full allow-list
-		// of permitted roots — that is a larger, separately-tracked
-		// design decision (see docs/api-contract.md "Root safety") —
-		// it only refuses the one unbounded case named in the roadmap.
-		if isFilesystemRoot(root) {
-			validationError(c, errors.New("root must not be the filesystem root"))
-			return
+		roots := make([]string, 0, len(targets))
+		for _, target := range targets {
+			// Step 4 review fix (minimal, sanctioned scope — see README.md
+			// "Root `'/'` edge case"): reject a root that is (or resolves
+			// via Abs+Clean to) the filesystem root, so a caller cannot
+			// point this service at "/" and have importer.Sync walk the
+			// entire filesystem. This is deliberately NOT a full allow-list
+			// of permitted roots — that is a larger, separately-tracked
+			// design decision (see docs/api-contract.md "Root safety") —
+			// it only refuses the one unbounded case named in the roadmap.
+			if isFilesystemRoot(target.Root) {
+				validationError(c, errors.New("root must not be the filesystem root"))
+				return
+			}
+
+			if err := importer.SyncHarness(db, target.Root, target.Name); err != nil {
+				// CONV-033 (task-20260821-02 step 7a class sweep): importer.Sync's
+				// own error text (see internal/importer/importer.go) wraps the
+				// caller-supplied root and paths derived from walking it —
+				// e.g. `fmt.Errorf("memory root %q does not exist", absRoot)` —
+				// which is a direct, UNBOUNDED echo of request-derived input
+				// (the entire root string, not a single bounded token like the
+				// FTS5 case) if passed through verbatim. Log the real error
+				// server-side for operator diagnosis; respond with a static,
+				// authored message only.
+				log.Printf("request_id=%v error=%v", requestID(c), err)
+				c.JSON(http.StatusBadGateway, gin.H{
+					"error":   "import failed",
+					"details": "memory tree import failed; see server logs for details",
+				})
+				return
+			}
+			// A registered harness keeps its agent definitions beside its
+			// memory root; they fill the crew table.
+			if target.Name != "" {
+				if err := importer.SyncAgents(db, importer.AgentsDirFor(target.Root)); err != nil {
+					log.Printf("request_id=%v harness=%s crew sync error=%v", requestID(c), target.Name, err)
+				}
+			}
+			roots = append(roots, target.Root)
 		}
 
-		if err := importer.Sync(db, root); err != nil {
-			// CONV-033 (task-20260821-02 step 7a class sweep): importer.Sync's
-			// own error text (see internal/importer/importer.go) wraps the
-			// caller-supplied root and paths derived from walking it —
-			// e.g. `fmt.Errorf("memory root %q does not exist", absRoot)` —
-			// which is a direct, UNBOUNDED echo of request-derived input
-			// (the entire root string, not a single bounded token like the
-			// FTS5 case) if passed through verbatim. Log the real error
-			// server-side for operator diagnosis; respond with a static,
-			// authored message only.
-			log.Printf("request_id=%v error=%v", requestID(c), err)
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error":   "import failed",
-				"details": "memory tree import failed; see server logs for details",
+		if request.Root != "" || harness != "" {
+			c.JSON(http.StatusOK, gin.H{
+				"synced": true,
+				"root":   roots[0],
 			})
 			return
 		}
-
 		c.JSON(http.StatusOK, gin.H{
 			"synced": true,
-			"root":   root,
+			"roots":  roots,
 		})
 	}
 }

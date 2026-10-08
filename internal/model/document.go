@@ -73,4 +73,8 @@ type SyncRequest struct {
 	// Bounded only by the underlying filesystem; no length check here
 	// because the importer validates path safety at walk time.
 	Root string `json:"root,omitempty" binding:"omitempty"`
+
+	// Harness, when Root is empty, syncs that registered harness's memory
+	// root. With neither set, every registered harness is synced.
+	Harness string `json:"harness,omitempty"`
 }

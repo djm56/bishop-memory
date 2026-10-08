@@ -40,6 +40,9 @@
   .seg button:hover { color:var(--fg) }
   .seg button.on { background:var(--panel); color:var(--fg); box-shadow:var(--shadow) }
   .seg.sm button { padding:5px 9px; font-size:12px }
+  .seg a { color:var(--muted); font:500 13px/1 var(--sans); padding:7px 12px; border-radius:7px; text-decoration:none }
+  .seg a:hover { color:var(--fg) }
+  .seg a.on { background:var(--panel); color:var(--fg); box-shadow:var(--shadow) }
   .spacer { flex:1 }
   .stats { color:var(--muted); font-size:13px; font-variant-numeric:tabular-nums; white-space:nowrap }
   .stats b { color:var(--fg); font-weight:600 }
@@ -58,7 +61,7 @@
   .count.zero { background:none; color:var(--faint); font-weight:500 }
   .keys { margin-top:auto; padding:20px 10px 4px; color:var(--faint); font-size:12px; display:flex; flex-wrap:wrap; gap:6px 14px }
   kbd { display:inline-block; min-width:18px; text-align:center; font-size:11px; line-height:16px; padding:0 4px; border:1px solid var(--line2); border-bottom-width:2px; border-radius:4px; color:var(--muted); background:var(--panel) }
-  #view { padding:28px 36px 96px; max-width:1100px; width:100% }
+  #view { padding:28px 36px 96px; width:100% }
   .cat-block { margin-bottom:44px }
   .cat-title { display:flex; align-items:baseline; gap:12px; margin:0 0 22px }
   .cat-title h2 { font-size:22px; font-weight:600; letter-spacing:-.015em; margin:0 }
@@ -143,6 +146,7 @@
 <body>
 <header class="top">
   <div class="brand"><span class="mark"></span><h1>Findings Triage</h1></div>
+  <nav class="seg" aria-label="Pages"><a href="/triage" class="on">Triage</a><a href="/missions">Missions</a></nav>
   <nav class="seg tabs" id="tabs">
     <button data-tab="pending" class="on">Pending</button>
     <button data-tab="browse">Browse</button>
@@ -165,7 +169,11 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
-  const state = { tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0 };
+  const state = { tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0, ids:null };
+  // /triage?finding=12 (or ?finding=12,13) opens Browse on just those findings;
+  // the mission HUD links here.
+  const linked = new URLSearchParams(location.search).get('finding');
+  if (linked && /^\d+(,\d+)*$/.test(linked)) Object.assign(state, { tab:'browse', browseStatus:'', ids:linked });
   const approverInput = $('#approver');
   try { approverInput.value = localStorage.getItem('triage.approver') || ''; } catch (e) {}
   approverInput.addEventListener('change', () => { try { localStorage.setItem('triage.approver', approverInput.value); } catch (e) {} });
@@ -213,6 +221,7 @@
       `<span class="id">#${f.id}</span>`,
       f.finding_date ? `<span>${esc(f.finding_date)}</span>` : '',
       `<span>${esc(f.harness || '?')}</span>`,
+      f.mission_id ? `<a href="/missions#${encodeURIComponent(f.mission_id)}" title="Open this finding's mission">${esc(f.mission_id)}</a>` : '',
       t ? `<span class="tag">${esc(t.category)}${t.secondary_category ? ' / ' + esc(t.secondary_category) : ''}</span>` : '<span class="tag">uncategorised</span>',
       t?.directive_candidate ? '<span class="tag dc">directive candidate</span>' : '',
       t?.confidence != null ? `<span>conf ${Number(t.confidence).toFixed(2)}</span>` : ''
@@ -299,12 +308,13 @@
 
   async function renderBrowse() {
     const view = $('#view');
-    const q = new URLSearchParams(); if (state.category) q.set('category', state.category); if (state.browseStatus) q.set('status', state.browseStatus); q.set('limit', '200');
+    const q = new URLSearchParams(); if (state.category) q.set('category', state.category); if (state.browseStatus) q.set('status', state.browseStatus); if (state.ids) q.set('ids', state.ids); q.set('limit', '200');
     const d = await api('GET', '/v1/findings?' + q.toString());
     const statuses = ['proposed','approved','applied','rejected','retired','superseded',''];
-    view.innerHTML = `<div class="filter"><div class="seg sm">${statuses.map(s => `<button data-st="${s}" class="${s===state.browseStatus?'on':''}">${s||'all'}</button>`).join('')}</div><span>${d.findings.length} shown</span></div>` +
+    view.innerHTML = `<div class="filter"><div class="seg sm">${statuses.map(s => `<button data-st="${s}" class="${s===state.browseStatus?'on':''}">${s||'all'}</button>`).join('')}</div><span>${d.findings.length} shown</span>${state.ids ? `<span>Only #${esc(state.ids.split(',').join(', #'))} · <a href="/triage" data-clear>show all</a></span>` : ''}</div>` +
       (d.findings.length ? `<div class="list">${d.findings.map(f => findingCard(f)).join('')}</div>` : '<div class="empty">No findings match.</div>');
     view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; renderBrowse(); });
+    view.querySelector('[data-clear]')?.addEventListener('click', e => { e.preventDefault(); state.ids = null; history.replaceState(null, '', '/triage'); renderBrowse(); });
     wireCards(view); focusCard(false);
   }
 
@@ -395,6 +405,7 @@
     document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('on')); b.classList.add('on');
     state.tab = b.dataset.tab; state.focus = 0; window.scrollTo(0, 0); render();
   });
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
   refresh().catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });
 })();
 </script>

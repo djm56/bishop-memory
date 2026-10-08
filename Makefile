@@ -2,7 +2,8 @@ APP=memoryd
 DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
-        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish screenshots
+        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
+        mission-links scratch-clean
 
 run:
 	go run ./cmd/memoryd
@@ -80,6 +81,19 @@ triage-seed:
 # the first time, before any harness has reconciled against this build.
 triage-backfill:
 	scripts/triage-backfill-harness.py --url $(TRIAGE_URL) $(foreach r,$(REGISTER),--register $(r))
+
+# One-off mission backfill (docs/MISSION-HUD-PLAN.md §2.4): links findings and
+# documents to missions, fills step timing, drops orphan documents. Dry run
+# unless APPLY=1; RENAME="old=new ..." merges stray harness names. Sync
+# documents first (POST /v1/documents/sync) so debriefs carry their mission.
+mission-links:
+	scripts/backfill-mission-links.py --db $(DB) $(foreach r,$(RENAME),--rename-harness $(r)) $(if $(APPLY),--apply) --verbose
+
+# Clear harness workspace scratch older than DAYS (default 30) into the Trash
+# and drop it from search. Dry run unless APPLY=1; HARNESS=<name> limits it.
+DAYS ?= 30
+scratch-clean:
+	scripts/clean-scratch.py --db $(DB) --days $(DAYS) $(if $(HARNESS),--harness $(HARNESS)) $(if $(APPLY),--apply)
 
 # Run the classifier now (Haiku, or the opencode default). Exits 0 with
 # nothing to do when every finding is classified. RECLASSIFY=<slug>

@@ -10,6 +10,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -76,6 +77,7 @@ const latestRecommendationJoin = `
 //	pending=1                      has a pending recommendation
 //	no_pending=1                   has no pending recommendation
 //	directive_candidate=1          classifier flagged it
+//	mission_id=<id>                the mission it came from
 //	ids=1,2,3                      explicit id list
 //	order=asc|desc                 default desc (newest first)
 //	limit=<n>&offset=<n>           default: everything (the reconciler relies on that)
@@ -105,6 +107,10 @@ func listFindingsHandler(db *sql.DB) gin.HandlerFunc {
 		if harness := strings.TrimSpace(c.Query("harness")); harness != "" {
 			where = append(where, "f.harness = ?")
 			args = append(args, harness)
+		}
+		if missionID := strings.TrimSpace(c.Query("mission_id")); missionID != "" {
+			where = append(where, "f.mission_id = ?")
+			args = append(args, missionID)
 		}
 		if c.Query("unclassified") == "1" {
 			where = append(where, "t.finding_id IS NULL")
@@ -234,6 +240,13 @@ func createFindingHandler(db *sql.DB) gin.HandlerFunc {
 		// Note: mission_id has NO foreign key constraint in the schema.
 		// A finding outlives mission-folder cleanup, so we store what we are given
 		// without verifying it exists.
+		if request.MissionID == "" && request.Harness != "" {
+			request.MissionID, err = openMissionFor(c.Request.Context(), tx, request.Harness, request.FindingDate)
+			if err != nil {
+				internalError(c, err)
+				return
+			}
+		}
 
 		result, err := tx.ExecContext(
 			c.Request.Context(),
@@ -557,4 +570,25 @@ func nullInt64Ptr(v sql.NullInt64) *int64 {
 	}
 	n := v.Int64
 	return &n
+}
+
+// openMissionFor returns the harness's open mission (in-progress or blocked,
+// most recently updated) for a finding that arrives without a mission_id, or
+// "" when there is none. A finding dated before that mission opened is not
+// from it — the reconciler replaying an older FINDINGS.md backlog — and also
+// gets "".
+func openMissionFor(ctx context.Context, tx *sql.Tx, harness, findingDate string) (string, error) {
+	var id string
+	err := tx.QueryRowContext(ctx,
+		`SELECT id FROM missions
+		  WHERE harness = ? AND status IN ('in-progress', 'blocked')
+		    AND (? = '' OR ? >= date(opened_at))
+		  ORDER BY updated_at DESC, id DESC
+		  LIMIT 1`,
+		harness, findingDate, findingDate,
+	).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
 }

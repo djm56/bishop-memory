@@ -35,6 +35,9 @@ func newTriageTestRouter(t *testing.T) (*gin.Engine, *sql.DB) {
 	if err := store.EnsureColumns(db); err != nil {
 		t.Fatalf("ensure columns: %v", err)
 	}
+	if err := store.EnsureMissionStepsIndex(db); err != nil {
+		t.Fatalf("ensure mission steps index: %v", err)
+	}
 	return NewRouter(config.Config{AppEnv: "test"}, db), db
 }
 

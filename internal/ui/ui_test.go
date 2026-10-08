@@ -53,10 +53,29 @@ func TestIconsAreServedWithTheirTypes(t *testing.T) {
 // TestPageLinksBothIcons guards the <head> links: without them a browser
 // falls back to requesting /favicon.ico alone and ignores the SVG.
 func TestPageLinksBothIcons(t *testing.T) {
-	page := string(serve(t, TriagePageHandler()).Body.Bytes())
-	for _, want := range []string{`href="/favicon.svg"`, `href="/favicon.ico"`} {
-		if !strings.Contains(page, want) {
-			t.Fatalf("triage page does not link %s", want)
+	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler()} {
+		page := string(serve(t, h).Body.Bytes())
+		for _, want := range []string{`href="/favicon.svg"`, `href="/favicon.ico"`} {
+			if !strings.Contains(page, want) {
+				t.Fatalf("%s page does not link %s", name, want)
+			}
+		}
+	}
+}
+
+// TestPagesLinkEachOther checks both pages carry the page switch, so the
+// operator can move between triage and the mission HUD.
+func TestPagesLinkEachOther(t *testing.T) {
+	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler()} {
+		rec := serve(t, h)
+		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("%s page: status %d, type %q", name, rec.Code, rec.Header().Get("Content-Type"))
+		}
+		page := rec.Body.String()
+		for _, want := range []string{`href="/triage"`, `href="/missions"`} {
+			if !strings.Contains(page, want) {
+				t.Fatalf("%s page has no link %s", name, want)
+			}
 		}
 	}
 }

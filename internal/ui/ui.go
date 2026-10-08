@@ -1,4 +1,5 @@
-// Package ui serves the operator's findings-triage review page and its icon.
+// Package ui serves the operator's pages — the findings-triage review page at
+// /triage and the mission HUD at /missions — and their icon.
 //
 // The page is one embedded HTML file with inline CSS and JavaScript. It holds
 // no state of its own: everything it shows comes from the /v1 triage routes,
@@ -22,6 +23,9 @@ import (
 //go:embed triage.html
 var triagePage []byte
 
+//go:embed missions.html
+var missionsPage []byte
+
 //go:embed favicon.svg
 var faviconSVG []byte
 
@@ -36,6 +40,13 @@ const iconCacheControl = "public, max-age=86400"
 func TriagePageHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", triagePage)
+	}
+}
+
+// MissionsPageHandler serves GET /missions.
+func MissionsPageHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", missionsPage)
 	}
 }
 

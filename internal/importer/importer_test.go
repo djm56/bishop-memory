@@ -64,6 +64,9 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err := store.ApplySchema(db, schemaPath); err != nil {
 		t.Fatalf("apply schema %s: %v", schemaPath, err)
 	}
+	if err := store.EnsureColumns(db); err != nil {
+		t.Fatalf("ensure columns: %v", err)
+	}
 	return db
 }
 
