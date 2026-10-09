@@ -90,7 +90,11 @@ health:
 # http://127.0.0.1:8787). Override per invocation: make triage-classify
 # BISHOP_MEMORY_URL=http://127.0.0.1:8788
 
-TRIAGE_URL ?= $(if $(BISHOP_MEMORY_URL),$(BISHOP_MEMORY_URL),http://127.0.0.1:8787)
+# The service URL for the triage and client targets: BISHOP_MEMORY_URL, else
+# the one in ~/.config/bishop-memory/client.env (scripts/install.sh client),
+# else this machine.
+CLIENT_ENV_URL := $(shell sed -n 's/^BISHOP_MEMORY_URL=//p' $${BISHOP_MEMORY_CLIENT_ENV:-$$HOME/.config/bishop-memory/client.env} 2>/dev/null | tail -n 1)
+TRIAGE_URL ?= $(or $(BISHOP_MEMORY_URL),$(CLIENT_ENV_URL),http://127.0.0.1:8787)
 
 # Load db/finding-categories.json (idempotent).
 triage-seed:
