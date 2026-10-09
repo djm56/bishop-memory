@@ -93,11 +93,6 @@ open, idea only.
 ratified findings for the area it is about to brief. Status: open, harness
 side.
 
-**Retire the old triage machinery in the Bishop harness.** Still on disk under
-`/Volumes/DATA/Bishop`: `.claude/skills/improvement-triage/`,
-`.claude/scripts/run-triage.sh`, and the unloaded `net.airfleet.bishop.triage`
-plist in `~/Library/LaunchAgents`. Status: open, outside this repository.
-
 ## Reconciler
 
 **An unrecognised step status is dropped silently.** `parse_steps` in

@@ -240,7 +240,7 @@ What needs a key: every `/v1` route. `/healthz` (which only says ok or not), the
 On every machine that runs a harness, the triage agents, or both, with a checkout or an unpacked archive:
 
 ```bash
-scripts/install.sh client --url http://kirsch-server.tailnet-name.ts.net:8787
+scripts/install.sh client --url http://bishop-server.tailnet-name.ts.net:8787
 # API key for http://…:8787 (empty if the server has none):   ← paste it; it is not echoed
 ```
 
@@ -249,7 +249,7 @@ It:
 1. Prompts for the key (or takes `--key`, which leaves it in your shell history; prefer the prompt). With `--ca <file>` (the CA that signed a home-made server certificate, for mkcert `"$(mkcert -CAROOT)/rootCA.pem"`), copies it to `~/.config/bishop-memory/ca.pem`.
 2. Writes `~/.config/bishop-memory/client.env`, mode 600:
    ```
-   BISHOP_MEMORY_URL=http://kirsch-server.tailnet-name.ts.net:8787
+   BISHOP_MEMORY_URL=http://bishop-server.tailnet-name.ts.net:8787
    BISHOP_MEMORY_API_KEY=bm_…
    BISHOP_MEMORY_CA_FILE=/Users/you/.config/bishop-memory/ca.pem      # only with --ca
    ```
@@ -267,7 +267,7 @@ These edits are made in each **harness repository**, not in bishop-memory; this 
 
 ```
 BISHOP_MEMORY_MODE=central
-BISHOP_MEMORY_URL=http://kirsch-server.tailnet-name.ts.net:8787
+BISHOP_MEMORY_URL=http://bishop-server.tailnet-name.ts.net:8787
 BISHOP_MEMORY_HOME=/path/to/bishop-memory          # this machine's checkout or unpacked archive
 BISHOP_HARNESS=kirsch
 ```
@@ -282,7 +282,7 @@ Then re-run `.claude/connect-bishop-memory.sh` (or `.opencode/connect-bishop-mem
   "command": "/path/to/bishop-memory/bin/mcpd",
   "env": {
     "BISHOP_HARNESS": "kirsch",
-    "BISHOP_MEMORY_URL": "http://kirsch-server.tailnet-name.ts.net:8787"
+    "BISHOP_MEMORY_URL": "http://bishop-server.tailnet-name.ts.net:8787"
   }
 }
 ```
@@ -293,7 +293,7 @@ Then re-run `.claude/connect-bishop-memory.sh` (or `.opencode/connect-bishop-mem
   "command": ["/path/to/bishop-memory/bin/mcpd"],
   "environment": {
     "BISHOP_HARNESS": "kirschopencode",
-    "BISHOP_MEMORY_URL": "http://kirsch-server.tailnet-name.ts.net:8787"
+    "BISHOP_MEMORY_URL": "http://bishop-server.tailnet-name.ts.net:8787"
   },
   "enabled": true
 }
@@ -353,8 +353,8 @@ The triage agents run **on the workstation that holds the harness checkouts**, a
 On that machine:
 
 ```bash
-scripts/install.sh client --url http://kirsch-server.tailnet-name.ts.net:8787      # the triage key
-scripts/install-triage-schedule.sh --url http://kirsch-server.tailnet-name.ts.net:8787
+scripts/install.sh client --url http://bishop-server.tailnet-name.ts.net:8787      # the triage key
+scripts/install-triage-schedule.sh --url http://bishop-server.tailnet-name.ts.net:8787
 ```
 
 Re-run the schedule installer with `--url`: the launchd jobs set `BISHOP_MEMORY_URL` explicitly, and an explicit value wins over `client.env`. The key still comes from `client.env`. Running triage on the server instead would need a copy of every harness checkout there; that is a recorded decision, not built.

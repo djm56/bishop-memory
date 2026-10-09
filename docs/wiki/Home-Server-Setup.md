@@ -19,7 +19,7 @@ Replace these with yours everywhere they appear.
 |---|---|---|
 | `SERVER_IP` | The server's address on your network | `192.168.1.50` |
 | `MAC_IP` | Your Mac's address on your network | `192.168.1.20` |
-| `server` | How you `ssh` to the server | `djm56@192.168.1.50` |
+| `server` | How you `ssh` to the server | `you@192.168.1.50` |
 
 Both addresses must stay the same. Give each a **DHCP reservation** in your router (or a static address). If the Mac's address changes later, see [Changing the Mac's address](#changing-the-macs-address).
 
@@ -142,7 +142,7 @@ Open `https://SERVER_IP:8787/missions` in the browser. It asks for the key once;
 
 ## 6. Point each harness at the server
 
-Do this in every harness on the Mac: kirsch (`.claude` and `.opencode`), bishop-opencode-lite, bishop-harness-opencode, and any others. These files belong to each harness repository.
+Do this in every harness on the Mac, including both halves of a harness that has a Claude Code (`.claude`) and an OpenCode (`.opencode`) side. These files belong to each harness repository.
 
 **`bishop-memory.conf`** (`.claude/bishop-memory.conf`, and `.opencode/bishop-memory.conf` for an OpenCode twin):
 
@@ -182,8 +182,8 @@ The reconcile that the hook starts needs no change: it reads `client.env` itself
 **First upload.** Push each harness's memory tree once, so its briefs, debriefs and crew are on the server straight away:
 
 ```sh
-scripts/push-memory.py --root /Volumes/DATA/Github/kirsch/.claude/memory --harness kirsch
-scripts/push-memory.py --root /Volumes/DATA/Github/kirsch/.opencode/memory --harness kirschopencode
+scripts/push-memory.py --root /path/to/my-harness/.claude/memory --harness my-harness
+scripts/push-memory.py --root /path/to/my-harness/.opencode/memory --harness my-harness-opencode
 ```
 
 Repeat for each harness, with its memory root and its `BISHOP_HARNESS` name.
