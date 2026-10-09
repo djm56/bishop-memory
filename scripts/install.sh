@@ -5,7 +5,7 @@
 #                             [--tls-cert FILE --tls-key FILE]
 #                             [--allow-from CIDR[,CIDR…]] [--dry-run]
 #                             [-- extra flags for the platform installer]
-#   scripts/install.sh client --url URL [--key KEY] [--dry-run]
+#   scripts/install.sh client --url URL [--key KEY] [--ca FILE] [--dry-run]
 #
 # server: installs memoryd as a service — systemd on Linux (run with sudo),
 # launchd on macOS (run as yourself) — through scripts/install-daemon-linux.sh
@@ -31,6 +31,10 @@
 # push-memory.py, clean-scratch.py and triage-run.sh read; builds bin/mcpd
 # when Go is available; and checks the key against the server. --key is
 # read from the terminal when not given, so it does not land in shell history.
+# --ca names the CA certificate that signed a home-made server certificate
+# (mkcert: "$(mkcert -CAROOT)/rootCA.pem"); it is copied to
+# ~/.config/bishop-memory/ca.pem and named as BISHOP_MEMORY_CA_FILE, which only
+# bishop-memory's own clients use.
 #
 # The plan behind this: docs/plans/NETWORK-DEPLOYMENT-PLAN.md. The guide:
 # the wiki page Server-Install.
@@ -46,7 +50,7 @@ say() { echo "[install] $*"; }
 die() { echo "install.sh: $*" >&2; exit 1; }
 is_loopback() { [[ "$1" == "127.0.0.1" || "$1" == "localhost" || "$1" == "::1" || "$1" =~ ^127\. ]]; }
 
-HOST="" PORT="" FIRST_KEY="" TLS_CERT="" TLS_KEY="" URL="" KEY="" DRY_RUN=0 ALLOW_FROM=""
+HOST="" PORT="" FIRST_KEY="" TLS_CERT="" TLS_KEY="" URL="" KEY="" DRY_RUN=0 ALLOW_FROM="" CA=""
 EXTRA=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --allow-from) ALLOW_FROM="${ALLOW_FROM:+$ALLOW_FROM,}${2:-}"; shift 2 ;;
     --url) URL="${2:-}"; shift 2 ;;
     --key) KEY="${2:-}"; shift 2 ;;
+    --ca) CA="${2:-}"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
     --) shift; EXTRA=("$@"); break ;;
     -h|--help) usage 0 ;;
@@ -236,15 +241,21 @@ client() {
   if [[ -z "$KEY" && -t 0 ]]; then
     read -r -s -p "API key for $URL (empty if the server has none): " KEY; echo
   fi
-  local dir="$HOME/.config/bishop-memory" file
+  local dir="$HOME/.config/bishop-memory" file ca_dest=""
   file="$dir/client.env"
+  if [[ -n "$CA" ]]; then
+    [[ -r "$CA" ]] || die "cannot read --ca $CA"
+    ca_dest="$dir/ca.pem"
+  fi
 
   say "writing $file"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "  would write BISHOP_MEMORY_URL=$URL and BISHOP_MEMORY_API_KEY=<hidden>"
+    echo "  would write BISHOP_MEMORY_URL=$URL and BISHOP_MEMORY_API_KEY=<hidden>${ca_dest:+ and BISHOP_MEMORY_CA_FILE=$ca_dest}"
   else
     mkdir -p "$dir"
-    (umask 077; printf 'BISHOP_MEMORY_URL=%s\nBISHOP_MEMORY_API_KEY=%s\n' "$URL" "$KEY" > "$file")
+    [[ -n "$ca_dest" ]] && install -m 0644 "$CA" "$ca_dest"
+    (umask 077; printf 'BISHOP_MEMORY_URL=%s\nBISHOP_MEMORY_API_KEY=%s\n' "$URL" "$KEY" > "$file"
+     [[ -z "$ca_dest" ]] || printf 'BISHOP_MEMORY_CA_FILE=%s\n' "$ca_dest" >> "$file")
   fi
 
   if command -v go >/dev/null 2>&1 && [[ -f "$BISHOP_ROOT/go.mod" ]]; then
@@ -258,11 +269,14 @@ client() {
   local hdr code
   hdr="$(mktemp)"; chmod 600 "$hdr"
   [[ -n "$KEY" ]] && printf 'Authorization: Bearer %s\n' "$KEY" > "$hdr"
-  code="$(curl -sS -o /dev/null -w '%{http_code}' -H "@$hdr" --max-time 5 "$URL/v1/harnesses" || true)"
+  local tls=()
+  [[ -n "$ca_dest" ]] && tls=(--cacert "$ca_dest")
+  code="$(curl -sS -o /dev/null -w '%{http_code}' ${tls[@]+"${tls[@]}"} -H "@$hdr" --max-time 5 "$URL/v1/harnesses" || true)"
   rm -f "$hdr"
   case "$code" in
     200) if [[ -n "$KEY" ]]; then say "connected to $URL with the key"; else say "connected to $URL (the server needs no key)"; fi ;;
     401) die "the server refused the key (401); check it, or create one on the server with memoryd keys add" ;;
+    000) die "could not reach $URL/v1/harnesses: no connection, or the certificate is not trusted (with a home-made certificate, pass --ca)" ;;
     *) die "could not reach $URL/v1/harnesses (HTTP ${code:-none})" ;;
   esac
   cat <<EOF
