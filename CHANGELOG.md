@@ -58,6 +58,14 @@ here ahead of an actual release.
 
 ### Fixed
 
+- **The reconciler skipped findings and never linked them to missions.**
+  `scripts/reconcile-memory.py` read only `**Suggestion**:`, so entries
+  written `**Suggestion:**` were dropped without a word; it now reads
+  both. A `**Mission**: mission-…` line in a finding is sent as its
+  `mission_id`, so the mission HUD shows it. A finding an agent sent
+  through `finding_append` without a date is matched on target and
+  suggestion, instead of being created a second time.
+
 - **`validationError`'s CONV-033 fix had over-corrected and collapsed
   every hand-authored error message into one generic string.** An
   earlier fix in this same task closed a real defect — a JSON
