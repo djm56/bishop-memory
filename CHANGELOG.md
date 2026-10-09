@@ -22,6 +22,7 @@ here ahead of an actual release.
 
 ### Changed
 
+- **The triage page and the mission HUD have a new look**: a green terminal style in IBM Plex Mono and VT323, with the same light, dark and auto themes, and the wiki screenshots regenerated to match. The pages' behaviour is unchanged, except that the HUD now scrolls its mission list, not the whole page, to show the selected mission.
 - `scripts/clean-scratch.py` works through the API and runs on the machine that holds the harness checkouts. Its `--url` option replaces `--db`.
 
 ### Breaking Changes
