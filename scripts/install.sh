@@ -23,8 +23,9 @@
 #            is not loopback, e.g. 100.64.0.0/10 (Tailscale) or
 #            192.168.1.0/24. Default: any address (narrow it here or with a
 #            firewall). The unit otherwise admits loopback traffic only.
-#   Re-running keeps the settings already written for any flag left out, and
-#   skips --first-key when that key exists.
+#   Re-running keeps the settings already written for any flag left out
+#   (address, port, TLS, --allow-from), and skips --first-key when that key
+#   exists.
 #
 # client: writes ~/.config/bishop-memory/client.env (mode 600) with
 # BISHOP_MEMORY_URL and BISHOP_MEMORY_API_KEY, which mcpd, the reconciler,
@@ -185,7 +186,17 @@ server_linux() {
   if is_loopback "$HOST"; then
     if [[ -f "$dropin" ]]; then say "removing $dropin (loopback only)"; run rm -f "$dropin"; fi
   else
+    # No --allow-from keeps what an earlier run admitted.
+    if [[ -z "$ALLOW_FROM" && -r "$dropin" ]]; then
+      ALLOW_FROM="$(sed -n 's/^IPAddressAllow=//p' "$dropin" | tr ' ' ',')"
+      [[ "$ALLOW_FROM" == "any" ]] && ALLOW_FROM=""
+    fi
     local allow="${ALLOW_FROM:-any}"
+    # The server reaching itself on its own address (the health check below,
+    # a curl on the box) arrives from that address, not loopback: admit it.
+    if [[ -n "$ALLOW_FROM" && "$HOST" != "0.0.0.0" && "$HOST" != "::" && ",$allow," != *",$HOST,"* ]]; then
+      allow="$allow,$HOST"
+    fi
     say "writing $dropin (clients from: ${allow//,/ })"
     if [[ "$DRY_RUN" -eq 1 ]]; then
       echo "  would write IPAddressAllow=${allow//,/ } and After=network-online.target tailscaled.service"

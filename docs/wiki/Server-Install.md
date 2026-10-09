@@ -22,12 +22,15 @@ The server never reads the harness files. The machines that hold the harness che
 
 ## 1. Choose how clients reach the server
 
+> **One server on your own network, used by you?** Follow [Home Server Setup](Home-Server-Setup) instead: it walks through exactly that (built-in TLS with an mkcert CA, a firewall letting only your Mac in, systemd under `/opt`) step by step. This page is the full reference.
+
 An API key sent over plain HTTP can be read by anything on the network path: another device on the Wi-Fi, a compromised router, anyone on a shared LAN. Whoever reads it has full read and write access to every mission and finding. So pick a transport that encrypts, in this order of preference.
 
 | Option | What you do | Client URL |
 |---|---|---|
-| **Tailscale** (or plain WireGuard), recommended | Install Tailscale on the server and every client. Bind `memoryd` to the server's tailnet address (`tailscale ip -4`). Nothing is exposed to the LAN or the internet, and it works from anywhere | `http://<server>.<tailnet>.ts.net:8787` or `http://100.x.y.z:8787` |
-| **Built-in TLS** | Give the installer a certificate and key (`--tls-cert`, `--tls-key`). Use your own CA, [mkcert](https://github.com/FiloSottile/mkcert), or Let's Encrypt with a DNS challenge for a LAN name. Every client must trust the issuer | `https://<name on the certificate>:8787` |
+| **Built-in TLS with your own CA**, recommended on your own network | Make a certificate for the server's address with [mkcert](https://github.com/FiloSottile/mkcert) and give it to the installer (`--tls-cert`, `--tls-key`). Clients trust your CA through `BISHOP_MEMORY_CA_FILE` (`install.sh client --ca`), so nothing else on them changes; browsers trust it after `mkcert -install`. Pair it with a firewall. See [Home Server Setup](Home-Server-Setup) | `https://<server address>:8787` |
+| **Tailscale** (or plain WireGuard), recommended when you need access from outside your network | Install Tailscale on the server and every client. Bind `memoryd` to the server's tailnet address (`tailscale ip -4`). Nothing is exposed to the LAN or the internet, and it works from anywhere | `http://<server>.<tailnet>.ts.net:8787` or `http://100.x.y.z:8787` |
+| **Built-in TLS with a public certificate** | Let's Encrypt with a DNS challenge for a LAN name; clients trust it already | `https://<name on the certificate>:8787` |
 | **A reverse proxy** (Caddy, nginx) | Leave `memoryd` on `127.0.0.1` and let the proxy terminate TLS. Good when the server already runs one | `https://<proxy name>` |
 | **An SSH tunnel** per client | `ssh -N -L 8787:127.0.0.1:8787 user@server` on each client. No change to `memoryd` at all; awkward for more than one machine, and the tunnel has to be up whenever a harness runs | `http://127.0.0.1:8787` |
 
@@ -243,17 +246,18 @@ scripts/install.sh client --url http://kirsch-server.tailnet-name.ts.net:8787
 
 It:
 
-1. Prompts for the key (or takes `--key`, which leaves it in your shell history; prefer the prompt).
+1. Prompts for the key (or takes `--key`, which leaves it in your shell history; prefer the prompt). With `--ca <file>` (the CA that signed a home-made server certificate, for mkcert `"$(mkcert -CAROOT)/rootCA.pem"`), copies it to `~/.config/bishop-memory/ca.pem`.
 2. Writes `~/.config/bishop-memory/client.env`, mode 600:
    ```
    BISHOP_MEMORY_URL=http://kirsch-server.tailnet-name.ts.net:8787
    BISHOP_MEMORY_API_KEY=bm_…
+   BISHOP_MEMORY_CA_FILE=/Users/you/.config/bishop-memory/ca.pem      # only with --ca
    ```
 3. Builds `bin/mcpd` when Go and the source are present; otherwise uses the shipped `bin/mcpd` from the archive.
 4. Checks the key with an authenticated `GET /v1/harnesses`: 200 is success, 401 means the server refused the key, anything else that the server could not be reached.
 5. Prints the harness-side settings to change next.
 
-`mcpd`, the reconciler, `push-memory.py`, `clean-scratch.py`, every triage script and `triage-run.sh` read `client.env`. A variable already set in the environment always wins over the file, so an explicit `BISHOP_MEMORY_URL` in a harness's `.mcp.json` or a launchd plist takes precedence. `BISHOP_MEMORY_CLIENT_ENV` points them at a different file.
+`mcpd`, the reconciler, `push-memory.py`, `clean-scratch.py`, every triage script and `triage-run.sh` read `client.env`. With `BISHOP_MEMORY_CA_FILE` set they trust that CA for the server's certificate (only these clients; nothing else on the machine changes what it trusts). A variable already set in the environment always wins over the file, so an explicit `BISHOP_MEMORY_URL` in a harness's `.mcp.json` or a launchd plist takes precedence. `BISHOP_MEMORY_CLIENT_ENV` points them at a different file.
 
 ## 8. Changes inside each harness
 
@@ -304,7 +308,7 @@ if [ -z "${BISHOP_MEMORY_API_KEY:-}" ] && [ -r "$CLIENT_ENV" ]; then
 fi
 ```
 
-and add the header to every `curl` that calls the service:
+(and the same for `BISHOP_MEMORY_CA_FILE` when the server uses a home-made certificate; [Home Server Setup](Home-Server-Setup#6-point-each-harness-at-the-server) shows both), then add the header (and `${BISHOP_MEMORY_CA_FILE:+--cacert "$BISHOP_MEMORY_CA_FILE"}`) to every `curl` that calls the service:
 
 ```sh
 HTTP_CODE="$(curl --silent --show-error --max-time 2 \

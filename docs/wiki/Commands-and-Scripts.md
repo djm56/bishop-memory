@@ -35,14 +35,14 @@ All `triage-*` targets and `scratch-clean` accept `BISHOP_MEMORY_URL=http://127.
 
 ```
 scripts/install.sh server [--host ADDR] [--port N] [--first-key NAME] [--tls-cert FILE --tls-key FILE] [--allow-from CIDR,…] [--dry-run] [-- installer flags]
-scripts/install.sh client --url URL [--key KEY] [--dry-run]
+scripts/install.sh client --url URL [--key KEY] [--ca FILE] [--dry-run]
 ```
 
 The entry point for a server and its clients; the walkthrough is [Server Install](Server-Install).
 
 `server` detects the OS. On Linux (run with `sudo`) it runs `install-daemon-linux.sh`, creates the first key as the `bishop-memory` user with `--first-key`, copies TLS files to `/etc/bishop-memory/tls/`, writes a systemd drop-in admitting clients when `--host` is not loopback (`--allow-from` narrows it; default any address), writes `/etc/bishop-memory/memoryd.env` (`HTTP_HOST`, `PORT`, `APP_ENV=production`, TLS paths), restarts the service and waits up to 20 seconds for `/healthz`. On macOS (run as yourself) it writes `~/Library/Application Support/bishop-memory/memoryd.env`, creates the first key in `<checkout>/data/api-keys`, then runs `install-daemon.sh --env-file` on that file. Any other OS is refused; run `memoryd` by hand. On Linux it refuses to run from under `/home` or `/root` (the unit has `ProtectHome=true`). `--host` defaults to `127.0.0.1`; a non-loopback host with no key existing stops the install. Re-running keeps the settings an earlier run wrote for every flag left out, and skips `--first-key` when that key exists. Flags after `--` go to the platform installer.
 
-`client` writes `~/.config/bishop-memory/client.env` (mode 600) with `BISHOP_MEMORY_URL` and `BISHOP_MEMORY_API_KEY`, prompting for the key without echo when `--key` is not given; builds `bin/mcpd` when Go and the source are present; and checks the key with `GET /v1/harnesses`. It exits non-zero on a 401 or when the server cannot be reached, and prints the harness-side settings to change.
+`client` writes `~/.config/bishop-memory/client.env` (mode 600) with `BISHOP_MEMORY_URL` and `BISHOP_MEMORY_API_KEY`, plus `BISHOP_MEMORY_CA_FILE` with `--ca` (the CA of a home-made server certificate, copied to `~/.config/bishop-memory/ca.pem`), prompting for the key without echo when `--key` is not given; builds `bin/mcpd` when Go and the source are present; and checks the key with `GET /v1/harnesses`. It exits non-zero on a 401 or when the server cannot be reached, and prints the harness-side settings to change.
 
 ### `memoryd keys` and `memoryd backup`
 

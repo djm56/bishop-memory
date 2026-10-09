@@ -10,7 +10,7 @@ A memory service for the Bishop agent harness. One Go binary, one SQLite databas
 
 | Audience | Start here |
 |---|---|
-| **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [Server Install](docs/wiki/Server-Install.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
+| **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [Home Server Setup](docs/wiki/Home-Server-Setup.md) · [Server Install](docs/wiki/Server-Install.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
 | **Developers** — change the service | [Overview](docs/wiki/Developer-Overview.md) · [HTTP API](docs/wiki/Developer-HTTP-API.md) · [Database](docs/wiki/Developer-Database.md) · [MCP Adapter](docs/wiki/Developer-MCP-Adapter.md) · [Scripts and Reconciler](docs/wiki/Developer-Scripts-and-Reconciler.md) · [Triage Agents](docs/wiki/Developer-Triage-Agents.md) · [Testing and CI](docs/wiki/Developer-Testing-and-CI.md) · [Harness Integration](docs/wiki/Developer-Harness-Integration.md) |
 | **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
 
@@ -32,12 +32,31 @@ sudo scripts/install-daemon-linux.sh                                            
 # Build the MCP adapter every harness .mcp.json points at
 make build-mcpd
 
-# Or run it on a server that other machines reach with API keys
-sudo scripts/install.sh server --host <tailnet or LAN address> --first-key <name>   # Linux; on macOS without sudo
-scripts/install.sh client --url http://<server>:8787                                # on each client; prompts for its key
+# Or run it on a server that other machines reach with API keys (next section)
 ```
 
 Re-running the installer after `git pull` is the upgrade path: it rebuilds, restages and restarts, and the database schema upgrades itself at boot.
+
+## Install on your own server
+
+To run bishop-memory on an Ubuntu (or other systemd Linux) server on your own network, follow **[Home Server Setup](docs/wiki/Home-Server-Setup.md)** step by step. It installs memoryd under `/opt/bishop-memory` as a systemd service, serves HTTPS with a certificate from your own mkcert CA, requires an API key, lets only your Mac in, moves your existing database over, and points the Mac's harnesses, triage and browser at it. In outline:
+
+```bash
+# Mac: a certificate for the server, signed by your own CA
+mkcert -install && mkcert -cert-file bishop-server.pem -key-file bishop-server-key.pem SERVER_IP
+scp bishop-server*.pem server:/tmp/
+
+# Server: install as a systemd service under /opt
+sudo git clone https://github.com/djm56/bishop-memory.git /opt/bishop-memory && cd /opt/bishop-memory
+sudo scripts/install.sh server --host SERVER_IP --first-key mac --allow-from MAC_IP/32 \
+  --tls-cert /tmp/bishop-server.pem --tls-key /tmp/bishop-server-key.pem
+sudo ufw allow OpenSSH && sudo ufw allow from MAC_IP to any port 8787 proto tcp && sudo ufw enable
+
+# Mac: connect (prompts for the key the server printed)
+scripts/install.sh client --url https://SERVER_IP:8787 --ca "$(mkcert -CAROOT)/rootCA.pem"
+```
+
+The guide also covers moving the Mac's database, the edits inside each harness, the triage schedule, nightly backups, updating and going back. Other layouts (Tailscale, a reverse proxy, a Mac as the server, several clients) are in [Server Install](docs/wiki/Server-Install.md).
 
 ## Connect a harness
 
@@ -145,10 +164,10 @@ Environment variables, with optional `.env` in the working directory (gitignored
 - **Loopback, no keys: open.** The default single-machine install binds `127.0.0.1` and asks for nothing, exactly as before.
 - **API keys.** `memoryd keys add <name>` creates a named key and prints it once; the keys file holds only SHA-256 hashes and is re-read on change, so adding or revoking needs no restart. Once any key exists, every `/v1` route needs one (`Authorization: Bearer <key>` or `X-API-Key`); `/healthz`, the two pages and their icons stay open because they hold no data. The access log names the key behind each request.
 - **Required off loopback.** On any other address memoryd refuses to start without a key (unless `BISHOP_ALLOW_NO_AUTH=1`), and revoking the last key refuses every request rather than opening the service.
-- **Transport.** A key over plain HTTP can be read on the wire. Use Tailscale or WireGuard (recommended), built-in TLS (`TLS_CERT_FILE`, `TLS_KEY_FILE`), a reverse proxy such as Caddy in front of a loopback-bound memoryd (create a key first: on loopback with none it is open), or an SSH tunnel. memoryd warns at start when it serves plain HTTP on a network address.
+- **Transport.** A key over plain HTTP can be read on the wire. On your own network, use built-in TLS with a certificate from your own mkcert CA, which clients trust through `BISHOP_MEMORY_CA_FILE` in `client.env` ([Home Server Setup](docs/wiki/Home-Server-Setup.md)). Alternatives: Tailscale or WireGuard, built-in TLS (`TLS_CERT_FILE`, `TLS_KEY_FILE`), a reverse proxy such as Caddy in front of a loopback-bound memoryd (create a key first: on loopback with none it is open), or an SSH tunnel. memoryd warns at start when it serves plain HTTP on a network address.
 - **Every key has full access.** There are no roles and no rate limiting. What agents can do is still limited by the `mcpd` tool lists (see [MCP tools](#mcp-tools)). `POST /v1/documents/sync` reads any server path a caller names (except `/`), so a key can also pull Markdown and JSONL from any directory the service user can read into search.
 
-Set-up, client configuration, harness changes, backups and moving an existing database: [Server Install](docs/wiki/Server-Install.md).
+Step by step for one server on your own network: [Home Server Setup](docs/wiki/Home-Server-Setup.md). Every option: [Server Install](docs/wiki/Server-Install.md).
 
 ## Development
 
