@@ -73,6 +73,15 @@ done
 [[ -z "$PORT" || "$PORT" =~ ^[0-9]+$ ]] || die "--port must be a number"
 if [[ -n "$TLS_CERT$TLS_KEY" && ( -z "$TLS_CERT" || -z "$TLS_KEY" ) ]]; then die "give both --tls-cert and --tls-key"; fi
 for f in "$TLS_CERT" "$TLS_KEY"; do [[ -z "$f" || -r "$f" ]] || die "cannot read $f"; done
+# --allow-from entries go straight into systemd's IPAddressAllow, which
+# silently ignores anything it cannot parse; refuse those here instead.
+if [[ -n "$ALLOW_FROM" ]]; then
+  IFS=',' read -r -a _allow <<<"$ALLOW_FROM"
+  for a in "${_allow[@]}"; do
+    [[ "$a" == "any" || "$a" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ || "$a" =~ ^[0-9A-Fa-f:]+(/[0-9]{1,3})?$ ]] ||
+      die "--allow-from: '$a' is not an IP address or network (for example 192.168.0.10/32); replace the placeholder with your Mac's address"
+  done
+fi
 
 run() { if [[ "$DRY_RUN" -eq 1 ]]; then echo "  would run: $*"; else "$@"; fi; }
 

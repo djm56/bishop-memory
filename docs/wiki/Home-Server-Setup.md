@@ -64,6 +64,8 @@ sudo scripts/install.sh server \
   --tls-key /tmp/bishop-server-key.pem
 ```
 
+Every `SERVER_IP` and `MAC_IP` above must be your real addresses, for example `--host 192.168.0.28 --allow-from 192.168.0.10/32`. The installer refuses an `--allow-from` that is not an IP address.
+
 The installer:
 
 1. Builds memoryd and installs it as the `bishop-memory` systemd service. At first it listens on `127.0.0.1` only.
