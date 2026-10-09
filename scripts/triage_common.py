@@ -36,7 +36,7 @@ def api(method, url, payload=None, timeout=30):
     req = urllib.request.Request(url, data=data, method=method,
                                  headers={"Content-Type": "application/json", "Accept": "application/json",
                                           **reconcile.api_headers()})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with urllib.request.urlopen(req, timeout=timeout, context=reconcile.ssl_context()) as resp:
         body = resp.read()
         return resp.status, (json.loads(body) if body else {})
 

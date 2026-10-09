@@ -86,6 +86,16 @@ def load_client_env():
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+def ssl_context():
+    """TLS settings for talking to bishop-memory: trust BISHOP_MEMORY_CA_FILE
+    (the CA that signed a home-made server certificate) when it is set, else
+    the system's CAs. Only these clients use it, so nothing else on the
+    machine changes what it trusts."""
+    import ssl
+    ca = os.environ.get("BISHOP_MEMORY_CA_FILE", "").strip()
+    return ssl.create_default_context(cafile=os.path.expanduser(ca)) if ca else None
+
+
 def api_headers():
     """The Authorization header for BISHOP_MEMORY_API_KEY, or nothing."""
     key = os.environ.get("BISHOP_MEMORY_API_KEY", "").strip()
@@ -156,7 +166,7 @@ class Client:
             data = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=ssl_context()) as resp:
             body = resp.read().decode("utf-8")
             return resp.status, json.loads(body) if body.strip() else {}
 

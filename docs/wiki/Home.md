@@ -11,6 +11,7 @@ Read these in order if you run a harness against bishop-memory or review its fin
 | Page | What it covers |
 |---|---|
 | [User Guide](User-Guide) | Installing the service, connecting a harness, what the crew can do, the daily workflow |
+| [Home Server Setup](Home-Server-Setup) | Step by step: bishop-memory on an Ubuntu server on your own network, as a systemd service under `/opt`, with HTTPS from your own CA, an API key and a firewall that lets only your Mac in |
 | [Server Install](Server-Install) | Running `memoryd` on a server and reaching it across the network: transport, API keys, client set-up, harness changes, moving the database, backups |
 | [MCP Tool Reference](MCP-Tool-Reference) | Every MCP tool in both profiles: arguments, examples, what comes back, what can go wrong |
 | [Review Page Guide](Review-Page-Guide) | Deciding findings and ratifying directives at `/triage`, and getting decisions back into Markdown |

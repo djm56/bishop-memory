@@ -25,6 +25,8 @@
 #
 # Environment (all optional):
 #   BISHOP_MEMORY_URL         default http://127.0.0.1:8787
+#   BISHOP_MEMORY_CA_FILE     CA to trust for an https URL with a home-made
+#                             certificate (also read from client.env)
 #   BISHOP_MEMORY_API_KEY     sent to the service when set (also read from
 #                             ~/.config/bishop-memory/client.env)
 #   TRIAGE_ENGINE             claude (default) or opencode, for both kinds
@@ -112,13 +114,13 @@ if [[ -n "${BISHOP_MEMORY_API_KEY:-}" ]]; then
   printf 'Authorization: Bearer %s\n' "$BISHOP_MEMORY_API_KEY" > "$AUTH_HEADER_FILE"
   trap 'rm -f "$AUTH_HEADER_FILE"' EXIT
 fi
-# api_curl: curl with the API key header when there is one.
+# api_curl: curl with the API key header when there is one, trusting
+# BISHOP_MEMORY_CA_FILE (a home-made server certificate's CA) when set.
+CURL_OPTS=()
+[[ -n "$AUTH_HEADER_FILE" ]] && CURL_OPTS+=(-H "@$AUTH_HEADER_FILE")
+[[ -n "${BISHOP_MEMORY_CA_FILE:-}" ]] && CURL_OPTS+=(--cacert "${BISHOP_MEMORY_CA_FILE/#\~/$HOME}")
 api_curl() {
-  if [[ -n "$AUTH_HEADER_FILE" ]]; then
-    curl -H "@$AUTH_HEADER_FILE" "$@"
-  else
-    curl "$@"
-  fi
+  curl ${CURL_OPTS[@]+"${CURL_OPTS[@]}"} "$@"
 }
 
 ITEMS="${TRIAGE_ITEMS_PER_RUN:-30}"
@@ -185,7 +187,7 @@ log() { printf '%s %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*" | tee -a "$L
 
 # --- Preconditions ----------------------------------------------------------
 
-if ! curl -fsS --max-time 5 "$URL/healthz" >/dev/null 2>&1; then
+if ! api_curl -fsS --max-time 5 "$URL/healthz" >/dev/null 2>&1; then
   log "[$KIND] bishop-memory at $URL is not answering; nothing run"
   exit 2
 fi

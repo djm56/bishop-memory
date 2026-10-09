@@ -84,8 +84,20 @@ One scope (full access) per key. Read-only keys are phase 3.
 
 ### 3.3 Transport
 
-An API key over plain HTTP can be read by anyone on the path. Choose one,
-in this order of recommendation:
+An API key over plain HTTP can be read by anyone on the path.
+
+**Operator's setup (decided 2026-10-09):** one Ubuntu server on the
+operator's own network, used by the operator alone, no Tailscale. Built:
+built-in TLS with a certificate from the operator's own mkcert CA; clients
+trust it through `BISHOP_MEMORY_CA_FILE` in `client.env`
+(`install.sh client --ca`), which only bishop-memory's clients read, so
+nothing else on the Mac changes what it trusts; `--allow-from MAC_IP/32` on
+the systemd address filter (the server's own address is added
+automatically) plus ufw admitting only the Mac; memoryd under
+`/opt/bishop-memory` as a systemd service. Step by step: wiki
+[Home Server Setup](../wiki/Home-Server-Setup.md).
+
+The general options, for other layouts:
 
 1. **A private network: Tailscale (or plain WireGuard).** Encrypted end to
    end, nothing exposed to the LAN or internet, works from anywhere. Bind

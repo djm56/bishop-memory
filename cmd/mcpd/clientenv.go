@@ -2,6 +2,9 @@ package main
 
 import (
 	"bufio"
+	"crypto/tls"
+	"crypto/x509"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -64,11 +67,34 @@ func (t apiKeyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r)
 }
 
-// transport is http.DefaultTransport, wrapped to send BISHOP_MEMORY_API_KEY
-// when one is set.
+// transport is http.DefaultTransport, trusting BISHOP_MEMORY_CA_FILE in
+// addition to the system CAs when it is set (a home-made server
+// certificate), and wrapped to send BISHOP_MEMORY_API_KEY when one is set.
 func transport() http.RoundTripper {
-	if key := strings.TrimSpace(os.Getenv("BISHOP_MEMORY_API_KEY")); key != "" {
-		return apiKeyTransport{key: key, base: http.DefaultTransport}
+	var base http.RoundTripper = http.DefaultTransport
+	if ca := strings.TrimSpace(os.Getenv("BISHOP_MEMORY_CA_FILE")); ca != "" {
+		if strings.HasPrefix(ca, "~/") {
+			if home, err := os.UserHomeDir(); err == nil {
+				ca = filepath.Join(home, ca[2:])
+			}
+		}
+		pem, err := os.ReadFile(ca)
+		if err != nil {
+			log.Fatalf("mcpd: read BISHOP_MEMORY_CA_FILE: %v", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			log.Fatalf("mcpd: BISHOP_MEMORY_CA_FILE %s holds no PEM certificate", ca)
+		}
+		t := http.DefaultTransport.(*http.Transport).Clone()
+		t.TLSClientConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+		base = t
 	}
-	return http.DefaultTransport
+	if key := strings.TrimSpace(os.Getenv("BISHOP_MEMORY_API_KEY")); key != "" {
+		return apiKeyTransport{key: key, base: base}
+	}
+	return base
 }
