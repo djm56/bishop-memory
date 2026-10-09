@@ -16,5 +16,5 @@
 //
 // Phase 3 also adds stale-document pruning, fail-fast to logged-skip
 // transition, and the BeginTx context propagation documented in
-// docs/migration-plan.md.
+// docs/ROADMAP.md.
 package renderer

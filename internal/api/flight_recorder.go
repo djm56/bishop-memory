@@ -314,7 +314,7 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			// point this service at "/" and have importer.Sync walk the
 			// entire filesystem. This is deliberately NOT a full allow-list
 			// of permitted roots — that is a larger, separately-tracked
-			// design decision (see docs/api-contract.md "Root safety") —
+			// design decision (see the wiki page Developer-HTTP-API "Root safety") —
 			// it only refuses the one unbounded case named in the roadmap.
 			if isFilesystemRoot(target.Root) {
 				validationError(c, errors.New("root must not be the filesystem root"))

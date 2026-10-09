@@ -3,24 +3,37 @@
 
 A harness keeps scratch notes, backups and calibration logs under
 <memory root>/workspace/. They stay searchable in bishop-memory until they are
-cleared. This moves every workspace file older than --days (by modification
-time) into the macOS Trash, under bishop-scratch-<timestamp>/<harness>/, and
-deletes its documents and search rows. workspace/README.md and hidden files
+cleared. Run this on the machine that holds the harness checkouts: it moves
+every workspace file older than --days (by modification time) into the Trash
+(~/.Trash on macOS, ~/.local/share/Trash/files elsewhere), under
+bishop-scratch-<timestamp>/<harness>/, and deletes their documents through the
+API (POST /v1/documents/delete), so it works against a remote memoryd too.
+Harnesses and their roots come from GET /v1/harnesses; only roots that exist
+on this machine are cleaned. workspace/README.md and hidden files
 (.gitkeep and the like) are always kept.
 
 Dry run by default: lists what would go. --apply moves and deletes.
 
+URL and API key come from --url / BISHOP_MEMORY_URL and BISHOP_MEMORY_API_KEY,
+or ~/.config/bishop-memory/client.env.
+
 Usage:
-  scripts/clean-scratch.py [--days 30] [--harness kirsch] [--db data/memory.db] [--apply]
+  scripts/clean-scratch.py [--days 30] [--harness kirsch] [--url URL] [--apply]
 """
 
 import argparse
 import datetime as dt
+import importlib.util
 import os
 import shutil
-import sqlite3
 import sys
 import time
+import urllib.parse
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+_spec = importlib.util.spec_from_file_location("reconcile_memory", os.path.join(HERE, "reconcile-memory.py"))
+reconcile = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(reconcile)
 
 KEEP = {"README.md"}
 
@@ -59,22 +72,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--days", type=int, default=30, help="clear files older than this many days (default 30)")
     parser.add_argument("--harness", help="only this harness (default: every registered harness)")
-    parser.add_argument("--db", default="data/memory.db")
+    parser.add_argument("--url", default=os.environ.get("BISHOP_MEMORY_URL", "http://127.0.0.1:8787"))
     parser.add_argument("--apply", action="store_true", help="move and delete (default: dry run)")
     args = parser.parse_args()
     if args.days < 1:
         parser.error("--days must be at least 1")
 
-    db = sqlite3.connect(args.db, timeout=30)
-    db.execute("PRAGMA busy_timeout = 30000")
-    rows = db.execute("SELECT name, memory_root FROM harnesses ORDER BY last_seen_at DESC").fetchall()
+    client = reconcile.Client(args.url)
+    _, body = client.get("/v1/harnesses")
+    rows = sorted(((h["name"], h["memory_root"]) for h in body["harnesses"]),
+                  key=lambda r: r[0])
     if args.harness:
         rows = [r for r in rows if r[0] == args.harness]
         if not rows:
             sys.exit(f"no registered harness named {args.harness!r}")
 
     cutoff = time.time() - args.days * 86400
-    trash = os.path.expanduser(f"~/.Trash/bishop-scratch-{dt.datetime.now():%Y%m%d-%H%M%S}")
+    trash_root = "~/.Trash" if sys.platform == "darwin" else "~/.local/share/Trash/files"
+    trash = os.path.expanduser(f"{trash_root}/bishop-scratch-{dt.datetime.now():%Y%m%d-%H%M%S}")
     seen = set()
     total_files = total_bytes = total_docs = 0
 
@@ -88,12 +103,9 @@ def main():
 
         files = sorted(scratch_files(workspace, cutoff))
         size = sum(s for _, s in files)
-        docs = 0
-        for path, _ in files:
-            docs += db.execute(
-                "SELECT COUNT(*) FROM documents WHERE source_path = ? OR source_path LIKE ? || ':%'",
-                (path, path),
-            ).fetchone()[0]
+        _, hashes = client.get("/v1/documents/hashes?harness=" + urllib.parse.quote(name))
+        indexed = set(p.split(":")[0] for p in hashes["hashes"])
+        docs = sum(1 for path, _ in files if path in indexed)
         print(f"  {name}: {len(files)} files, {human(size)}, {docs} search documents  ({workspace})")
         for path, _ in files[:5]:
             print(f"      {os.path.relpath(path, workspace)}")
@@ -105,12 +117,11 @@ def main():
                 dest = os.path.join(trash, name, os.path.relpath(path, workspace))
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 shutil.move(path, dest)
-                ids = [r[0] for r in db.execute(
-                    "SELECT id FROM documents WHERE source_path = ? OR source_path LIKE ? || ':%'", (path, path))]
-                for doc_id in ids:
-                    db.execute("DELETE FROM documents_fts WHERE rowid = ?", (doc_id,))
-                    db.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-            db.commit()
+            paths = [p for p, _ in files]
+            for i in range(0, len(paths), 1000):
+                if not client.write("POST", "/v1/documents/delete", {"paths": paths[i:i + 1000]}, "delete documents"):
+                    sys.exit(f"clean-scratch: the files are in {trash}, but deleting their documents failed; "
+                             f"run scripts/push-memory.py --root {root} --harness {name} --prune to finish")
             prune_empty_dirs(workspace)
 
         total_files += len(files)

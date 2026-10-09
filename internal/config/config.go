@@ -7,6 +7,7 @@ package config
 import (
 	"net"
 	"os"
+	"path/filepath"
 
 	"github.com/joho/godotenv"
 )
@@ -18,18 +19,13 @@ import (
 // constructor and is the documented entry point.
 type Config struct {
 	// HTTPHost is the interface bishop-memory's HTTP listener binds
-	// to. Defaults to loopback-only ("127.0.0.1") because this service
-	// has NO authentication of any kind: every endpoint is
-	// open read/write to any caller that can reach it, and
-	// POST /v1/documents/sync accepts a caller-supplied filesystem
-	// root. README.md and docs/api-contract.md both describe
-	// bishop-memory as a locally-bound service reached over an SSH
-	// tunnel or by a co-located process — loopback-only is what makes
-	// that description true rather than aspirational. Overriding this
-	// (HTTP_HOST=0.0.0.0, a LAN address, ...) is a deliberate,
-	// operator-chosen exposure; cmd/memoryd/main.go logs a startup
-	// warning naming exactly what becomes reachable when it is not
-	// loopback (see IsLoopbackHost).
+	// to. Defaults to loopback-only ("127.0.0.1"): with no API key
+	// configured, /v1 is open to any caller that can reach it, which is
+	// only safe on loopback. Binding anything else (a Tailscale or LAN
+	// address, 0.0.0.0) requires an API key — cmd/memoryd refuses to
+	// start without one unless AllowNoAuth is set, and the router then
+	// refuses every /v1 request without a valid key
+	// (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3; see IsLoopbackHost).
 	HTTPHost string
 
 	// HTTPAddr is the gin-form listen address (e.g., "127.0.0.1:8787").
@@ -42,6 +38,21 @@ type Config struct {
 
 	// DatabasePath is the SQLite file path. Passed to store.Open.
 	DatabasePath string
+
+	// APIKeysFile is the API keys file (internal/auth). Defaults to
+	// "api-keys" beside the database file.
+	APIKeysFile string
+
+	// APIKey is one extra key from BISHOP_API_KEY, named "env".
+	APIKey string
+
+	// AllowNoAuth (BISHOP_ALLOW_NO_AUTH=1) lets memoryd start on a
+	// non-loopback address with no API key configured. Off by default.
+	AllowNoAuth bool
+
+	// TLSCertFile and TLSKeyFile, both set, make memoryd serve HTTPS.
+	TLSCertFile string
+	TLSKeyFile  string
 
 	// LogLevel is the verbosity for structured logging. The service
 	// does not yet filter on this — it is plumbed through so Phase 3
@@ -65,20 +76,31 @@ type Config struct {
 //	DB_PATH      -> "data/memory.db" (matches Makefile `DB` variable)
 //	APP_ENV      -> "development"
 //	LOG_LEVEL    -> "info"
+//	BISHOP_API_KEYS_FILE -> "<dir of DB_PATH>/api-keys"
+//	BISHOP_API_KEY, BISHOP_ALLOW_NO_AUTH, TLS_CERT_FILE, TLS_KEY_FILE -> unset
 func MustLoad() Config {
 	// godotenv.Load returns nil when .env is absent (CI / production
 	// deployments where env vars are injected directly) and a non-nil
 	// error only when .env exists but cannot be parsed. We treat both
 	// as non-fatal at this phase and fall back to env vars / defaults.
-	_ = godotenv.Load(".env")
+	// MEMORYD_ENV_FILE names the settings file (the server installer writes
+	// one on macOS); without it, .env in the working directory as before.
+	// Variables already in the environment win over the file.
+	_ = godotenv.Load(envOrDefault("MEMORYD_ENV_FILE", ".env"))
 
 	host := envOrDefault("HTTP_HOST", "127.0.0.1")
+	dbPath := envOrDefault("DB_PATH", "data/memory.db")
 
 	return Config{
 		HTTPHost:     host,
-		HTTPAddr:     host + ":" + envOrDefault("PORT", "8787"),
+		HTTPAddr:     net.JoinHostPort(host, envOrDefault("PORT", "8787")),
 		AppEnv:       envOrDefault("APP_ENV", "development"),
-		DatabasePath: envOrDefault("DB_PATH", "data/memory.db"),
+		DatabasePath: dbPath,
+		APIKeysFile:  envOrDefault("BISHOP_API_KEYS_FILE", filepath.Join(filepath.Dir(dbPath), "api-keys")),
+		APIKey:       os.Getenv("BISHOP_API_KEY"),
+		AllowNoAuth:  os.Getenv("BISHOP_ALLOW_NO_AUTH") == "1",
+		TLSCertFile:  os.Getenv("TLS_CERT_FILE"),
+		TLSKeyFile:   os.Getenv("TLS_KEY_FILE"),
 		LogLevel:     envOrDefault("LOG_LEVEL", "info"),
 	}
 }

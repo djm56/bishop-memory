@@ -28,8 +28,13 @@ func ApplySchema(db *sql.DB, path string) error {
 	if err != nil {
 		return fmt.Errorf("read schema %s: %w", path, err)
 	}
+	return ApplySchemaSQL(db, string(sqlBytes))
+}
 
-	statements := splitSQLStatements(string(sqlBytes))
+// ApplySchemaSQL is ApplySchema over schema text already in hand — memoryd
+// passes the copy embedded in the binary (package bishop-memory/db).
+func ApplySchemaSQL(db *sql.DB, schema string) error {
+	statements := splitSQLStatements(schema)
 
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {

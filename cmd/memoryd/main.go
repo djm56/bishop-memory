@@ -12,11 +12,14 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	dbschema "bishop-memory/db"
 	"bishop-memory/internal/api"
+	"bishop-memory/internal/auth"
 	"bishop-memory/internal/config"
 	"bishop-memory/internal/store"
 )
@@ -28,25 +31,41 @@ const shutdownTimeout = 10 * time.Second
 func main() {
 	cfg := config.MustLoad()
 
-	// Job 2 (task-20260821-02 step 6): the default bind is
-	// loopback-only (see config.Config.HTTPHost's docblock). An
-	// operator can still override HTTP_HOST to bind elsewhere, but
-	// that is a deliberate exposure decision this service cannot make
-	// safe on its own — there is no authentication anywhere in this
-	// codebase, so warn loudly, at the moment the choice takes effect,
-	// naming exactly what becomes reachable.
+	// memoryd keys … and memoryd backup … are operator commands that run
+	// and exit; with no arguments memoryd serves.
+	if len(os.Args) > 1 {
+		os.Exit(runCommand(cfg, os.Args[1:]))
+	}
+
+	keys, err := auth.NewStore(cfg.APIKeysFile, cfg.APIKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Authentication is off only while no key exists. That is the
+	// single-machine default, and safe only on loopback: on any other
+	// address memoryd refuses to start without a key unless the operator
+	// opts out explicitly (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3.2).
+	tls := cfg.TLSCertFile != "" || cfg.TLSKeyFile != ""
+	if tls && (cfg.TLSCertFile == "" || cfg.TLSKeyFile == "") {
+		log.Fatal("bishop-memory: set both TLS_CERT_FILE and TLS_KEY_FILE, or neither")
+	}
 	if !config.IsLoopbackHost(cfg.HTTPHost) {
-		log.Printf(
-			"bishop-memory: WARNING — HTTP_HOST=%q is not loopback-only; "+
-				"binding %s exposes this service to anything that can reach "+
-				"it. bishop-memory has NO authentication: every task and "+
-				"event is readable and writable by any caller, and "+
-				"POST /v1/documents/sync will walk any filesystem root a "+
-				"caller supplies. Loopback (127.0.0.1) plus an SSH tunnel "+
-				"is the supported deployment model — override only if you "+
-				"understand and accept this exposure.",
-			cfg.HTTPHost, cfg.HTTPAddr,
-		)
+		switch {
+		case keys.Empty() && !cfg.AllowNoAuth:
+			log.Fatalf("bishop-memory: HTTP_HOST=%q is not loopback and no API key is configured. "+
+				"Create one with `memoryd keys add <name>` (keys file %s), or set "+
+				"BISHOP_ALLOW_NO_AUTH=1 to run open on the network.", cfg.HTTPHost, keys.Path())
+		case keys.Empty():
+			log.Printf("bishop-memory: WARNING — BISHOP_ALLOW_NO_AUTH=1: %s is open to anything that can reach it, with no API key.", cfg.HTTPAddr)
+		case !tls:
+			log.Printf("bishop-memory: WARNING — serving plain HTTP on %s. API keys cross the network in clear "+
+				"unless the network itself is encrypted (Tailscale, WireGuard, an SSH tunnel). "+
+				"Set TLS_CERT_FILE and TLS_KEY_FILE to serve HTTPS.", cfg.HTTPAddr)
+		}
+	}
+	if keys.Empty() {
+		log.Printf("bishop-memory: no API keys configured; /v1 is open (loopback only)")
 	}
 
 	db, err := store.Open(cfg.DatabasePath)
@@ -64,7 +83,7 @@ func main() {
 	// launchctl/systemctl on every normal stop). We close db
 	// explicitly on the schema-failure path below, and via the
 	// graceful-shutdown path once request serving is wired up.
-	if err := store.ApplySchema(db, "db/schema.sql"); err != nil {
+	if err := store.ApplySchemaSQL(db, dbschema.Schema); err != nil {
 		_ = db.Close()
 		log.Fatal(err)
 	}
@@ -87,7 +106,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	router := api.NewRouter(cfg, db)
+	router := api.NewRouterWithKeys(cfg, db, keys)
 
 	srv := &http.Server{
 		Addr:    cfg.HTTPAddr,
@@ -105,11 +124,20 @@ func main() {
 
 	serveErr := make(chan error, 1)
 	go func() {
+		scheme := "http"
+		if tls {
+			scheme = "https"
+		}
 		log.Printf(
-			"bishop-memory listening on http://%s in %s mode",
+			"bishop-memory listening on %s://%s in %s mode",
+			scheme,
 			cfg.HTTPAddr,
 			cfg.AppEnv,
 		)
+		if tls {
+			serveErr <- srv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+			return
+		}
 		serveErr <- srv.ListenAndServe()
 	}()
 

@@ -34,7 +34,8 @@ def api(method, url, payload=None, timeout=30):
     """One JSON request. Returns (status, body-dict). Raises urllib errors."""
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method,
-                                 headers={"Content-Type": "application/json", "Accept": "application/json"})
+                                 headers={"Content-Type": "application/json", "Accept": "application/json",
+                                          **reconcile.api_headers()})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = resp.read()
         return resp.status, (json.loads(body) if body else {})

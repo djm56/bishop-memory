@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-off backfill for the mission HUD (docs/MISSION-HUD-PLAN.md §2.4).
+"""One-off backfill for the mission HUD (docs/plans/MISSION-HUD-PLAN.md §2.4).
 
 Fills the mission links the database has never recorded:
 

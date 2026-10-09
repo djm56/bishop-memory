@@ -37,7 +37,7 @@ The skill is the contract. The parts worth knowing when you change something:
 
 ## Tuning
 
-**The taxonomy.** Edit descriptions and examples in `db/finding-categories.json`; they are what the classifier reads. Then `make triage-seed` and `make triage-classify RECLASSIFY=<slug>` for each affected category. Watch the distribution on the Runs tab or with `SELECT category, COUNT(*) FROM finding_triage GROUP BY 1`. After the first full run `class-closure` received nothing (those findings went to `brief-writing` and `mission-planning`), which is the kind of signal that says a description needs sharpening or the category should merge.
+**The taxonomy.** Edit descriptions and examples in `db/finding-categories.json`; they are what the classifier reads. Then `make triage-seed` and `make triage-classify RECLASSIFY=<slug>` for each affected category. `scripts/triage-seed-categories.py --deactivate-missing` retires slugs removed from the file: a deactivated category keeps its classifications but is skipped by the rotation and refused for new ones. A single misfiled finding can be moved with `PUT /v1/triage/classifications`. Watch the distribution on the Runs tab or with `SELECT category, COUNT(*) FROM finding_triage GROUP BY 1`. After the first full run `class-closure` received nothing (those findings went to `brief-writing` and `mission-planning`), which is the kind of signal that says a description needs sharpening or the category should merge.
 
 **Caps, models and engines.** Environment in `.env`, the plist or the shell: `TRIAGE_ENGINE` (or `TRIAGE_CLASSIFY_ENGINE` / `TRIAGE_PROCESS_ENGINE`), `TRIAGE_ITEMS_PER_RUN`, `TRIAGE_CATEGORIES_PER_RUN`, `TRIAGE_CLASSIFY_MODEL`, `TRIAGE_PROCESS_MODEL`, `TRIAGE_MAX_TURNS`, `TRIAGE_MAX_BUDGET_USD` (claude only), `TRIAGE_TIMEOUT_MIN`. A model id must fit its engine: an alias or Claude id for claude, `provider/model` for opencode.
 
@@ -51,7 +51,48 @@ The scheduled job has no terminal and no Claude login. On the claude engine the 
 
 Every run is wrapped in a `TRIAGE_TIMEOUT_MIN` alarm (45 minutes by default; `perl -e 'alarm …; exec …'`, since macOS has no `timeout`). launchd never starts a job that is still running, so without it one hung run would block every later night.
 
-Linux: a systemd user timer that runs the same two commands; the guide in `docs/FINDINGS-TRIAGE.md` has the unit text.
+The evening slots are deliberate: the machine is awake and any external volume holding a harness checkout is mounted, and launchd runs a missed slot on wake. `scripts/install-triage-schedule.sh --classify-at HH:MM --process-at HH:MM` moves them.
+
+Linux has no launchd; schedule the same two commands with a systemd user timer:
+
+```ini
+# ~/.config/systemd/user/bishop-triage-classify.service
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/bishop-memory
+Environment=BISHOP_MEMORY_URL=http://127.0.0.1:8787
+ExecStart=/path/to/bishop-memory/scripts/triage-run.sh classify
+
+# ~/.config/systemd/user/bishop-triage-classify.timer
+[Timer]
+OnCalendar=*-*-* 21:00:00
+Persistent=true
+[Install]
+WantedBy=timers.target
+```
+
+Duplicate both for `process` at 21:20, then `systemctl --user enable --now bishop-triage-classify.timer bishop-triage-process.timer`.
+
+## Switching to OpenCode
+
+The agents, the doctrine and everything they write stay the same; only the CLI and the model change. Use it when a cheaper plan, such as OpenCode Go, covers the models you want.
+
+Add to `<checkout>/.env`:
+
+```bash
+TRIAGE_ENGINE=opencode                              # both jobs
+TRIAGE_CLASSIFY_MODEL=opencode-go/glm-5.3-flash     # optional; these are the defaults
+TRIAGE_PROCESS_MODEL=opencode-go/glm-5.2
+```
+
+- Credentials come from your own OpenCode config: `~/.config/opencode/opencode.json` for providers and keys, `~/.local/share/opencode/auth.json` for logins. A launchd job runs as you and reads them too; bishop-memory never sees the key. The per-run config layered on top also turns off sharing, snapshots, LSP servers, formatters and auto-update, pins `small_model` to the run's model so no side call reaches another provider, and `--pure` keeps your OpenCode plugins out.
+- Models are `provider/model` ids as `opencode models` lists them. To move one job at a time set `TRIAGE_CLASSIFY_ENGINE` or `TRIAGE_PROCESS_ENGINE` instead; for a single run, `make triage-process ENGINE=opencode MODEL=opencode-go/kimi-k3`.
+- The launchd jobs read `.env` at every run, so they need no reinstall, unless `opencode` lives outside `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin` (its own installer uses `~/.opencode/bin`): then re-run `make triage-install` to put it on the jobs' PATH.
+- Check with `scripts/triage-run.sh process --dry-run`, then `launchctl start com.bishop-memory.triage-process`: `triage.log` shows `engine=opencode`, the Runs tab shows the model, and the event stream is kept as `triage-<kind>-<timestamp>.jsonl`.
+- There is no spend cap on this engine (`TRIAGE_MAX_BUDGET_USD` is Claude Code only); usage counts against your OpenCode plan, and the logged `cost_usd` is OpenCode's list-price estimate, not a charge. The step cap and `TRIAGE_TIMEOUT_MIN` still stop a runaway run.
+- Recommendation quality depends on the model. Before relying on one nightly, compare its accepted and declined counts on the Runs tab with earlier runs.
+
+To go back, remove the `TRIAGE_*ENGINE` lines or set them to `claude`.
 
 ## Changing an agent
 

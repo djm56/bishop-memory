@@ -70,7 +70,7 @@
 //     '"' at a genuine token boundary — is rejected before any query
 //     ever reaches the database, with the same static "invalid search
 //     query syntax" 400 this package has always documented for that
-//     case (docs/api-contract.md's "q present but malformed FTS5
+//     case (the wiki page Developer-HTTP-API's "q present but malformed FTS5
 //     query syntax (e.g. an unbalanced quote)" example), rather than
 //     reaching the driver and surfacing as the `unterminated string`
 //     500 above.
@@ -128,7 +128,7 @@
 // returned (CONV-033). The real driver error is still logged
 // server-side for operator diagnosability. "q" missing and "q"
 // present-but-unusable remain two distinguishable outcomes with two
-// distinct `details` strings (CONV-048); see docs/api-contract.md.
+// distinct `details` strings (CONV-048); see the wiki page Developer-HTTP-API.
 //
 // Join contract: documents_fts is a standalone FTS5 table. The
 // importer inserts into documents_fts with rowid = documents.id, so
@@ -183,7 +183,7 @@ type searchHit struct {
 // above for why and what that rewrite does and does not preserve. The
 // response's "q" field always echoes the caller's trimmed, ORIGINAL
 // input, never the rewritten form, so the documented response shape
-// (docs/api-contract.md) is unaffected by the rewrite.
+// (the wiki page Developer-HTTP-API) is unaffected by the rewrite.
 func searchMemoryHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		q := strings.TrimSpace(c.Query("q"))
@@ -498,7 +498,7 @@ func escapeFTS5Bareword(token string) string {
 // misreading that '"' as a fresh phrase-open — splitting one
 // whitespace-delimited word like `abc"def"ghi` into three
 // implicit-AND tokens instead of the one literal phrase
-// docs/api-contract.md documents, and (for an odd embedded-quote
+// the wiki page Developer-HTTP-API documents, and (for an odd embedded-quote
 // count) sometimes rejecting the query outright as unbalanced. Since
 // a '"' with no whitespace on either side was never something the
 // caller could have intended as a phrase boundary, treating it as

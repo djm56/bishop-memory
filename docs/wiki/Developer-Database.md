@@ -19,7 +19,7 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 
 | Table | Key | Notes |
 |---|---|---|
-| `missions` | `id` text (`mission-YYYYMMDD-NN`) | `status` CHECK not-started/in-progress/blocked/complete; `outcome` done/failed or NULL; `harness` additive; `closed_at` stamped on complete |
+| `missions` | `id` text (`mission-YYYYMMDD-NN`) | `status` CHECK not-started/in-progress/blocked/complete; `outcome` done/failed or NULL, set independently of `status` because the harness closes the status at one point and records the outcome later; `harness` additive; `closed_at` stamped on complete |
 | `mission_steps` | autoincrement; unique `(mission_id, step)` | `step` is text so `3a` works; `status` CHECK pending/in-progress/done/failed; FK cascade; `started_at`/`ended_at` stamped by the steps route, `summary` copied from `step-sync` journal rows |
 | `flight_recorder` | autoincrement | append-only by convention; `occurred_at` (caller time) separate from `created_at`; `agent` free text; FK to missions, nullable |
 | `crew` | `name` unique | one row per agent, filled by document sync from each harness's `agents/*.md` (`importer.SyncAgents`); `name` lower-cased without `@`, so an agent defined in several harnesses is one row carrying the definition synced last; `role` is the description's first sentence; `description`, `source_path` additive |
@@ -57,6 +57,22 @@ Four additive columns and one index, in `additiveColumns` and `additiveIndexes`,
 
 Document kinds are no longer polluted by hidden directories: the walker skips `.claude`, `.opencode`, `.git` and every other directory whose name starts with `.`, so a sync pointed at a repository instead of its memory root cannot file the repository under kinds like `.claude`. Rows imported that way before the change are removed by `scripts/backfill-mission-links.py` (orphan documents), which also fills `findings.mission_id` and the step columns for older rows.
 
+## Documents and their kinds
+
+`POST /v1/documents/sync` walks a memory root (`internal/importer`), imports every Markdown file whole and every JSONL file line by line (one document per line, kind `flight-recorder`, `source_path` `<file>:<line>`), and writes `documents` and `documents_fts` in one transaction. Each file's SHA-256 is stored; on a re-sync an unchanged hash is skipped and a changed one is updated in place with its FTS row deleted and re-inserted, so a sync is incremental and safe to repeat. `POST /v1/documents/push` imports files a client sends by content through the same function (`importer.ImportMarkdown`), with the client's absolute path as `source_path`, so a pushed file and a synced one land in the same row. Nothing deletes a document just because its file has gone; the deleters are `POST /v1/documents/delete` (used by `scripts/clean-scratch.py` and `scripts/push-memory.py --prune`) and the orphan pass of `scripts/backfill-mission-links.py`. `CURRENT-MISSION.md` gets its structured fields (mission id, status, owner, next action, last updated, blockers) copied into a block at the top of the body, so they are searchable as one block; the file itself follows unchanged.
+
+`kindFromPath` in `importer.go` sets `kind` from the path relative to the root:
+
+| Path | Kind |
+|---|---|
+| `state/CURRENT-MISSION.md`, `state/FLIGHT-RECORDER.md`, `state/MISSION-ARCHIVE.md` | `state` |
+| `missions/<id>/BRIEF.md`, `PROGRESS.md`, `DEBRIEF.md` | `brief`, `progress`, `debrief` (exactly one directory under `missions/`) |
+| `findings/FINDINGS.md`, `findings/PATTERNS.md` | `findings`, `patterns` |
+| `findings/service-records/<name>.md` | `service-record` (exactly that depth) |
+| `reference/DIRECTIVES.md` | `directives` |
+| any other `<dir>/…` | the top-level directory name: `graph`, `reference`, `workspace`, `missions` for a deeper or bare mission file |
+| a file at the root | `document` |
+
 ## Why triage state is not in `findings`
 
 `findings.status` is a CHECK constraint. SQLite cannot widen a CHECK without rebuilding the table, and the harness doctrine makes status human-only. So model-written state lives in its own tables and the operator's decision route is the single writer of status. Adding a "pre-approved" value to the ledger would have broken both the migration story and the doctrine.
@@ -67,7 +83,7 @@ Document kinds are no longer polluted by hidden directories: the walker skips `.
 2. Add an entry to `additiveColumns` in `migrate.go`: table, column, definition. The definition must be valid for a populated table: nullable with no default, or a constant default. Never remove an entry once shipped.
 3. If it needs an index, add the `CREATE INDEX IF NOT EXISTS` to `additiveIndexes`, **not** to `schema.sql`: `ApplySchema` runs first and would fail on a database that does not have the column yet. This exact failure is what `TestUpgradeFromPreTriageDatabase` guards.
 4. Thread it through the model struct, the SELECT lists and the scanner.
-5. Add it to `docs/api-contract.md` and `docs/MEMORY-SETUP.md`.
+5. Add it to the tables above, and to [Developer: HTTP API](Developer-HTTP-API) if a route without a tool returns it. A route with a tool is documented by re-running `scripts/gen-mcp-reference.py`.
 
 ## Adding a table
 

@@ -63,6 +63,37 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+
+# --------------------------------------------------------------------------
+# Client settings
+# --------------------------------------------------------------------------
+
+def load_client_env():
+    """Fill BISHOP_MEMORY_URL, BISHOP_MEMORY_API_KEY and friends from the
+    client settings file (~/.config/bishop-memory/client.env, or
+    BISHOP_MEMORY_CLIENT_ENV) when the environment does not set them."""
+    path = os.environ.get("BISHOP_MEMORY_CLIENT_ENV") or os.path.expanduser("~/.config/bishop-memory/client.env")
+    try:
+        with open(path, encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.removeprefix("export ").split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def api_headers():
+    """The Authorization header for BISHOP_MEMORY_API_KEY, or nothing."""
+    key = os.environ.get("BISHOP_MEMORY_API_KEY", "").strip()
+    return {"Authorization": "Bearer " + key} if key else {}
+
+
+load_client_env()
+
 # The harness writes an em dash as the "no value" placeholder in table cells
 # and entry headings. Treat it as empty rather than as literal content.
 EM_DASH = "—"
@@ -120,7 +151,7 @@ class Client:
     def _request(self, method, path, payload=None):
         url = self.base + path
         data = None
-        headers = {}
+        headers = api_headers()
         if payload is not None:
             data = json.dumps(payload).encode("utf-8")
             headers["Content-Type"] = "application/json"
@@ -153,6 +184,99 @@ class Client:
             return False
         self.sent += 1
         return True
+
+
+# --------------------------------------------------------------------------
+# Document push (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §4)
+# --------------------------------------------------------------------------
+
+# One push request stays under the server's 8 MiB and 500-item limits.
+PUSH_MAX_FILES = 200
+PUSH_MAX_BYTES = 6 << 20
+
+
+def memory_files(root):
+    """Yield (abs_path, rel_path) for every Markdown file the server's importer
+    would import under root: hidden directories and files are skipped."""
+    root = os.path.realpath(root)
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        for name in sorted(filenames):
+            if name.startswith(".") or not name.lower().endswith(".md"):
+                continue
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            yield path, os.path.relpath(path, root).replace(os.sep, "/")
+
+
+def agent_files(root):
+    """Yield the agent definitions beside a memory root (<root>/../agents/*.md)."""
+    agents = os.path.join(os.path.dirname(os.path.realpath(root)), "agents")
+    if not os.path.isdir(agents):
+        return
+    for name in sorted(os.listdir(agents)):
+        path = os.path.join(agents, name)
+        if name.lower().endswith(".md") and not name.startswith(".") and os.path.isfile(path):
+            yield path
+
+
+def push_memory(client, root, harness, prune=False):
+    """Push the memory tree under root to the service by content, sending only
+    files whose SHA-256 differs from the server's copy, plus every agent
+    definition. With prune, documents of this harness under root whose files
+    are gone are deleted. Returns (pushed, unchanged, deleted), or None when
+    the service has no push route (an older memoryd)."""
+    import hashlib
+    try:
+        _, body = client._request("GET", "/v1/documents/hashes?harness=" + urllib.parse.quote(harness))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    remote = body.get("hashes", {})
+
+    batch, size, pushed, unchanged, seen = [], 0, 0, 0, set()
+
+    def flush(agents=()):
+        nonlocal batch, size, pushed
+        if not batch and not agents:
+            return
+        payload = {"harness": harness, "files": batch, "agents": list(agents)}
+        if not client.write("POST", "/v1/documents/push", payload, f"push {len(batch)} files"):
+            raise RuntimeError("document push failed")
+        pushed += len(batch)
+        batch, size = [], 0
+
+    for path, rel in memory_files(root):
+        seen.add(path)
+        with open(path, "rb") as f:
+            raw = f.read()
+        if remote.get(path) == hashlib.sha256(raw).hexdigest():
+            unchanged += 1
+            continue
+        if len(raw) > (1 << 20):
+            print(f"  !! skipping {rel}: larger than 1 MiB", file=sys.stderr)
+            continue
+        if len(batch) >= PUSH_MAX_FILES or size + len(raw) > PUSH_MAX_BYTES:
+            flush()
+        batch.append({"path": path, "rel_path": rel, "content": raw.decode("utf-8", "replace")})
+        size += len(raw)
+    agents = []
+    for path in agent_files(root):
+        with open(path, "rb") as f:
+            agents.append({"path": path, "content": f.read().decode("utf-8", "replace")})
+    flush(agents)
+
+    deleted = 0
+    if prune:
+        prefix = os.path.realpath(root) + os.sep
+        gone = [p for p in remote if p.startswith(prefix) and p.split(":")[0] not in seen]
+        for i in range(0, len(gone), 1000):
+            chunk = gone[i:i + 1000]
+            if client.write("POST", "/v1/documents/delete", {"paths": chunk}, f"delete {len(chunk)} documents"):
+                deleted += len(chunk)
+    return pushed, unchanged, deleted
 
 
 # --------------------------------------------------------------------------
@@ -1049,11 +1173,26 @@ def main():
         print(f"[harness] {args.harness} -> {root}")
         print()
 
-    # --- Sync documents first (if not disabled) ----
+    # --- Documents first (if not disabled) ----
+    # With a harness name the files are pushed by content, which works whether
+    # the service runs here or on another machine. Without one, or against a
+    # memoryd too old to accept pushes, the service is asked to read the tree
+    # itself, which only works when it runs on this machine.
     if not args.no_sync_documents:
-        if not client.write("POST", "/v1/documents/sync", {"root": root}, "trigger index sync"):
-            total_failed_operations += 1
-        print("[documents] sync triggered")
+        result = None
+        if args.harness and not args.dry_run:
+            try:
+                result = push_memory(client, root, args.harness)
+            except (RuntimeError, urllib.error.URLError) as exc:
+                print(f"  !! document push failed: {exc}", file=sys.stderr)
+                total_failed_operations += 1
+                result = False
+        if result:
+            print(f"[documents] pushed {result[0]}, unchanged {result[1]}")
+        elif result is None:
+            if not client.write("POST", "/v1/documents/sync", {"root": root}, "trigger index sync"):
+                total_failed_operations += 1
+            print("[documents] sync triggered")
     print()
 
     # --- Missions ---------

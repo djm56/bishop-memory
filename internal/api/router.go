@@ -6,12 +6,23 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"bishop-memory/internal/auth"
 	"bishop-memory/internal/config"
 	"bishop-memory/internal/middleware"
 	"bishop-memory/internal/ui"
 )
 
+// NewRouter builds the router with authentication off, as for a loopback-only
+// service with no keys. memoryd itself uses NewRouterWithKeys.
 func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
+	return NewRouterWithKeys(cfg, db, nil)
+}
+
+// NewRouterWithKeys builds the router with every /v1 route behind the API
+// keys in keys (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3). /healthz, the two
+// pages and the icons hold no data and stay open; the pages ask for a key when
+// their /v1 calls answer 401.
+func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Engine {
 	if cfg.AppEnv == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -34,7 +45,12 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 	router.GET("/favicon.svg", ui.FaviconSVGHandler())
 	router.GET("/favicon.ico", ui.FaviconICOHandler())
 
-	v1 := router.Group("/v1")
+	// Off the loopback interface a key is always required, even if every key
+	// has been revoked; BISHOP_ALLOW_NO_AUTH=1 is the explicit way out. An
+	// empty HTTPHost is a router built in-process (tests): config.MustLoad
+	// never yields one, since an empty HTTP_HOST falls back to 127.0.0.1.
+	required := cfg.HTTPHost != "" && !config.IsLoopbackHost(cfg.HTTPHost) && !cfg.AllowNoAuth
+	v1 := router.Group("/v1", middleware.APIKey(keys, required))
 	{
 		v1.GET("/hud/missions", hudMissionsHandler(db))
 		v1.GET("/hud/missions/:missionID", hudMissionHandler(db))
@@ -77,7 +93,7 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		// registers it — agents still have no mechanism to write a directive.
 		v1.PUT("/directives/:directiveID", upsertDirectiveHandler(db))
 
-		// Findings triage (docs/FINDINGS-TRIAGE.md). The triage agents reach
+		// Findings triage (the wiki page Developer-Triage-Agents). The triage agents reach
 		// these through mcpd's triage profile; the operator through the review
 		// page at /triage and the scripts.
 		v1.GET("/finding-categories", listFindingCategoriesHandler(db))
@@ -107,6 +123,9 @@ func NewRouter(cfg config.Config, db *sql.DB) *gin.Engine {
 		}
 
 		v1.POST("/documents/sync", syncDocumentsHandler(db))
+		v1.POST("/documents/push", pushDocumentsHandler(db))
+		v1.GET("/documents/hashes", documentHashesHandler(db))
+		v1.POST("/documents/delete", deleteDocumentsHandler(db))
 	}
 
 	router.NoRoute(func(c *gin.Context) {

@@ -1,4 +1,4 @@
-// Package api — the mission HUD's read routes (docs/MISSION-HUD-PLAN.md §4).
+// Package api — the mission HUD's read routes (docs/plans/MISSION-HUD-PLAN.md §4).
 //
 //	GET /v1/hud/missions      the mission board: every mission with counts
 //	GET /v1/hud/missions/:id  everything recorded about one mission

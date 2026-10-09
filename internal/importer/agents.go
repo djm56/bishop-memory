@@ -40,22 +40,36 @@ func SyncAgents(db *sql.DB, dir string) error {
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
-		fields := frontmatter(string(content))
-		name := CrewName(fields["name"])
-		if name == "" {
-			name = CrewName(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())))
+		if err := ImportAgent(db, path, content); err != nil {
+			return err
 		}
-		description := fields["description"]
-		if _, err := db.Exec(
-			`INSERT INTO crew (name, role, description, source_path) VALUES (?, ?, ?, ?)
-			 ON CONFLICT(name) DO UPDATE SET
-			   role = excluded.role,
-			   description = excluded.description,
-			   source_path = excluded.source_path`,
-			name, nullIfEmpty(roleFrom(description, name)), nullIfEmpty(description), path,
-		); err != nil {
-			return fmt.Errorf("upsert crew %s: %w", name, err)
-		}
+	}
+	return nil
+}
+
+// ImportAgent upserts the crew row for one agent definition, given its path
+// (for the name fallback and source_path) and content. SyncAgents uses it for
+// local files, the document push route for files a client sends.
+func ImportAgent(db *sql.DB, path string, content []byte) error {
+	fields := frontmatter(string(content))
+	name := CrewName(fields["name"])
+	if name == "" {
+		base := filepath.Base(path)
+		name = CrewName(strings.TrimSuffix(base, filepath.Ext(base)))
+	}
+	if name == "" {
+		return fmt.Errorf("agent definition %s has no name", path)
+	}
+	description := fields["description"]
+	if _, err := db.Exec(
+		`INSERT INTO crew (name, role, description, source_path) VALUES (?, ?, ?, ?)
+		 ON CONFLICT(name) DO UPDATE SET
+		   role = excluded.role,
+		   description = excluded.description,
+		   source_path = excluded.source_path`,
+		name, nullIfEmpty(roleFrom(description, name)), nullIfEmpty(description), path,
+	); err != nil {
+		return fmt.Errorf("upsert crew %s: %w", name, err)
 	}
 	return nil
 }

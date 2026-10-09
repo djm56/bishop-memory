@@ -15,7 +15,7 @@
 --  10. documents_fts    — FTS5 virtual table indexing documents for /v1/memory/search
 --
 -- Findings triage objects (appended at the end of this file; see
--- docs/FINDINGS-TRIAGE.md): harnesses, finding_categories, triage_runs,
+-- the wiki page Developer-Triage-Agents): harnesses, finding_categories, triage_runs,
 -- finding_triage, finding_groups, finding_recommendations, directive_proposals.
 --
 -- All access goes through modernc.org/sqlite (CGo-free); the service runs
@@ -295,7 +295,7 @@ CREATE INDEX IF NOT EXISTS idx_service_records_agent ON service_records(agent);
 -- the ledger rather than inside it: findings.status stays the human-only
 -- field it always was, and the model-written state (category, grouping,
 -- recommendation, directive draft) sits in its own tables so no CHECK
--- constraint on the ledger has to change. See docs/FINDINGS-TRIAGE.md.
+-- constraint on the ledger has to change. See the wiki page Developer-Triage-Agents.
 -- ---------------------------------------------------------------------------
 
 -- harnesses — where each harness's Markdown memory tree lives. Upserted by

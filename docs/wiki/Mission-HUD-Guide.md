@@ -1,6 +1,6 @@
 # Mission HUD Guide
 
-The mission HUD at `http://127.0.0.1:8787/missions` shows the whole history of a mission in one place: what it set out to do, how each step went, how it ended, and the findings, patterns and directives that came out of it. Like the review page it is one embedded HTML page served by `memoryd`, reachable through the same SSH tunnel as the API. `http://127.0.0.1:8787/` redirects here.
+The mission HUD at `http://127.0.0.1:8787/missions` shows the whole history of a mission in one place: what it set out to do, how each step went, how it ended, and the findings, patterns and directives that came out of it. Like the review page it is one embedded HTML page served by `memoryd`, reachable wherever the API is; on a service that requires an API key it asks for one once ([Server Install](Server-Install#10-the-browser)). `http://127.0.0.1:8787/` redirects here.
 
 The page only reads. Nothing on it changes a mission, a step or a finding; decisions on findings stay on the [review page](Review-Page-Guide).
 
@@ -105,7 +105,7 @@ The reconciler does the same on every run with `--harness`, so a harness that ha
 
 Then, three things keep the documents current:
 
-- **Sync every harness.** `POST /v1/documents/sync` with an empty body imports the memory tree of every registered harness, tags each document with its harness and, for `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md`, its mission. The same call reads each harness's agent definitions (the `agents/` directory beside the memory root, such as `.claude/agents/`) into the crew list. Run it by hand; a reconcile does the same for its own harness, since it syncs `--root` first.
+- **Sync every harness.** `POST /v1/documents/sync` with an empty body imports the memory tree of every registered harness, tags each document with its harness and, for `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md`, its mission. The same call reads each harness's agent definitions (the `agents/` directory beside the memory root, such as `.claude/agents/`) into the crew list. Run it by hand; it reads the server's own disk, so it works only when the service runs on the harness machine. A reconcile with `--harness` does the same for its own harness by pushing the files, which also works against a server on another machine.
 
   ```bash
   curl -X POST http://127.0.0.1:8787/v1/documents/sync                    # every registered harness
@@ -145,7 +145,7 @@ make scratch-clean DAYS=60 HARNESS=kirsch  # another age, one harness
 make scratch-clean APPLY=1                 # move them
 ```
 
-With `APPLY=1` each file older than `DAYS` (by modification time) is moved into the macOS Trash under `bishop-scratch-<timestamp>/<harness>/`, and its search documents are deleted. `workspace/README.md` and hidden files such as `.gitkeep` stay. Nothing runs this on a schedule.
+With `APPLY=1` each file older than `DAYS` (by modification time) is moved into the Trash (`~/.Trash` on macOS, `~/.local/share/Trash/files` elsewhere) under `bishop-scratch-<timestamp>/<harness>/`, and its search documents are deleted through the API. Run it on the machine that holds the harness checkouts. `workspace/README.md` and hidden files such as `.gitkeep` stay. Nothing runs this on a schedule.
 
 ## About these screenshots
 

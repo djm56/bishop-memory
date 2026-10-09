@@ -25,6 +25,8 @@
 #
 # Environment (all optional):
 #   BISHOP_MEMORY_URL         default http://127.0.0.1:8787
+#   BISHOP_MEMORY_API_KEY     sent to the service when set (also read from
+#                             ~/.config/bishop-memory/client.env)
 #   TRIAGE_ENGINE             claude (default) or opencode, for both kinds
 #   TRIAGE_CLASSIFY_ENGINE    engine for classify only; wins over TRIAGE_ENGINE
 #   TRIAGE_PROCESS_ENGINE     engine for process only; wins over TRIAGE_ENGINE
@@ -82,7 +84,43 @@ if [[ -f "$ENV_FILE" && -r "$ENV_FILE" ]]; then
   rm -f "$_pre_env"
 fi
 
+# --- Client settings (server URL and API key) --------------------------------
+# ~/.config/bishop-memory/client.env, written by `scripts/install.sh client`,
+# fills BISHOP_MEMORY_URL and BISHOP_MEMORY_API_KEY when neither the
+# environment nor .env set them. mcpd reads the same file for the agents.
+CLIENT_ENV="${BISHOP_MEMORY_CLIENT_ENV:-$HOME/.config/bishop-memory/client.env}"
+if [[ -f "$CLIENT_ENV" && -r "$CLIENT_ENV" ]]; then
+  _pre_env="$(mktemp -t triage-env-XXXXXX)"
+  export -p > "$_pre_env"
+  set -a
+  # shellcheck disable=SC1090
+  . "$CLIENT_ENV"
+  set +a
+  # shellcheck disable=SC1090
+  . "$_pre_env"
+  rm -f "$_pre_env"
+fi
+
 URL="${BISHOP_MEMORY_URL:-http://127.0.0.1:8787}"
+
+# The API key goes to curl through a private header file, never on its command
+# line, where any local user could read it in the process list.
+AUTH_HEADER_FILE=""
+if [[ -n "${BISHOP_MEMORY_API_KEY:-}" ]]; then
+  AUTH_HEADER_FILE="$(mktemp -t triage-auth-XXXXXX)"
+  chmod 600 "$AUTH_HEADER_FILE"
+  printf 'Authorization: Bearer %s\n' "$BISHOP_MEMORY_API_KEY" > "$AUTH_HEADER_FILE"
+  trap 'rm -f "$AUTH_HEADER_FILE"' EXIT
+fi
+# api_curl: curl with the API key header when there is one.
+api_curl() {
+  if [[ -n "$AUTH_HEADER_FILE" ]]; then
+    curl -H "@$AUTH_HEADER_FILE" "$@"
+  else
+    curl "$@"
+  fi
+}
+
 ITEMS="${TRIAGE_ITEMS_PER_RUN:-30}"
 CATEGORIES_PER_RUN="${TRIAGE_CATEGORIES_PER_RUN:-1}"
 TIMEOUT_MIN="${TRIAGE_TIMEOUT_MIN:-45}"
@@ -177,7 +215,7 @@ json_field() { python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get(
 
 if [[ "$KIND" == "classify" ]]; then
   if [[ -z "$RECLASSIFY" ]]; then
-    WAITING="$(curl -fsS "$URL/v1/findings?unclassified=1&limit=1" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["findings"]))')"
+    WAITING="$(api_curl -fsS "$URL/v1/findings?unclassified=1&limit=1" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["findings"]))')"
     if [[ "$WAITING" == "0" ]]; then
       log "[classify] every finding is classified; nothing to do"
       exit 0
@@ -225,7 +263,7 @@ if [[ "$KIND" == "process" ]]; then
   if [[ -n "${TRIAGE_ADD_DIRS:-}" ]]; then
     dir_list="$(printf '%s' "$TRIAGE_ADD_DIRS" | tr ':' '\n')"
   else
-    dir_list="$(curl -fsS "$URL/v1/harnesses" | python3 -c '
+    dir_list="$(api_curl -fsS "$URL/v1/harnesses" | python3 -c '
 import json, os, sys
 for h in json.load(sys.stdin)["harnesses"]:
     root = h["memory_root"].rstrip("/")
@@ -429,7 +467,7 @@ for ((i = 0; i < CATEGORIES_PER_RUN; i++)); do
     slug="$CATEGORY"
     CATEGORY=""   # an explicit category runs once
   else
-    next="$(curl -sS "$URL/v1/triage/next-category")"
+    next="$(api_curl -sS "$URL/v1/triage/next-category")"
     slug="$(printf '%s' "$next" | json_field category)"
     if [[ -z "$slug" ]]; then
       if [[ $ran -eq 0 ]]; then log "[process] no category has findings waiting; nothing to do"; fi

@@ -10,7 +10,7 @@ import (
 
 // Recovery catches a panic in any downstream handler and turns it into
 // the SAME JSON error shape every other internal fault uses
-// ({"error":"internal server error"}, per docs/api-contract.md), tagged
+// ({"error":"internal server error"}, per the wiki page Developer-HTTP-API), tagged
 // with the request's correlation id in the server log.
 //
 // Step 4 review fix (Review B, CRITICAL C1): the stock gin.Recovery()

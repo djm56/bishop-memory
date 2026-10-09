@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -784,6 +785,11 @@ func syncMissionDocuments(c *gin.Context, db *sql.DB, missionID string) {
 		   FROM missions m LEFT JOIN harnesses h ON h.name = m.harness
 		  WHERE m.id = ?`, missionID).Scan(&harness, &root)
 	if err != nil || !root.Valid || root.String == "" {
+		return
+	}
+	// On a server the memory tree lives on the harness machine, which pushes
+	// its files instead (POST /v1/documents/push); nothing to do here.
+	if info, statErr := os.Stat(root.String); statErr != nil || !info.IsDir() {
 		return
 	}
 	if err := importer.SyncMission(db, root.String, harness.String, missionID); err != nil {

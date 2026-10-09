@@ -1,20 +1,20 @@
 # bishop-memory
 
-A locally bound memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, and a mission HUD that shows each mission's history on one page.
+A memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, and a mission HUD that shows each mission's history on one page.
 
 - **Go + Gin + SQLite (FTS5)**, `modernc.org/sqlite`, so there is no C toolchain and the binary cross-compiles statically.
-- **Loopback-only, no authentication.** Reach it from elsewhere over an SSH tunnel.
+- **Local by default, networked when you need it.** On loopback with no keys it needs no configuration; on a server it requires an API key from every client. See [Server Install](docs/wiki/Server-Install.md).
 - **Markdown is the source of truth.** The service is a derived copy that several harnesses can share; the reconciler keeps it in step.
 
 ## Documentation
 
 | Audience | Start here |
 |---|---|
-| **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
+| **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [Server Install](docs/wiki/Server-Install.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
 | **Developers** — change the service | [Overview](docs/wiki/Developer-Overview.md) · [HTTP API](docs/wiki/Developer-HTTP-API.md) · [Database](docs/wiki/Developer-Database.md) · [MCP Adapter](docs/wiki/Developer-MCP-Adapter.md) · [Scripts and Reconciler](docs/wiki/Developer-Scripts-and-Reconciler.md) · [Triage Agents](docs/wiki/Developer-Triage-Agents.md) · [Testing and CI](docs/wiki/Developer-Testing-and-CI.md) · [Harness Integration](docs/wiki/Developer-Harness-Integration.md) |
-| **Reference** | [API contract](docs/api-contract.md) · [Architecture](docs/architecture.md) · [Install](docs/INSTALL.md) · [Harness integration](docs/HARNESS-INTEGRATION.md) · [Memory setup](docs/MEMORY-SETUP.md) · [Findings triage](docs/FINDINGS-TRIAGE.md) · [Mission HUD plan](docs/MISSION-HUD-PLAN.md) · [Roadmap](docs/ROADMAP.md) · [Changelog](CHANGELOG.md) |
+| **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
 
-The pages under `docs/wiki/` are also published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth.
+The pages under `docs/wiki/` are the documentation, published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth. The rest of `docs/` holds only the roadmap and active design plans.
 
 ## Quick start
 
@@ -31,6 +31,10 @@ sudo scripts/install-daemon-linux.sh                                            
 
 # Build the MCP adapter every harness .mcp.json points at
 make build-mcpd
+
+# Or run it on a server that other machines reach with API keys
+sudo scripts/install.sh server --host <tailnet or LAN address> --first-key <name>   # Linux; on macOS without sudo
+scripts/install.sh client --url http://<server>:8787                                # on each client; prompts for its key
 ```
 
 Re-running the installer after `git pull` is the upgrade path: it rebuilds, restages and restarts, and the database schema upgrades itself at boot.
@@ -43,13 +47,13 @@ The connection is configured from the harness, not from here. In the harness che
 /path/to/bishop-memory/scripts/reconcile-memory.py --root .claude/memory --harness <name>
 ```
 
-Without the conf file a harness runs standalone and never calls the service. Details: [docs/HARNESS-INTEGRATION.md](docs/HARNESS-INTEGRATION.md).
+Without the conf file a harness runs standalone and never calls the service. Details: [Developer: Harness Integration](docs/wiki/Developer-Harness-Integration.md).
 
 ## What it stores
 
-Ten harness-vocabulary tables — `missions`, `mission_steps`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `documents_fts` — plus seven findings-triage tables. Schema: [db/schema.sql](db/schema.sql); walkthrough: [docs/MEMORY-SETUP.md](docs/MEMORY-SETUP.md).
+Ten harness-vocabulary tables — `missions`, `mission_steps`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `documents_fts` — plus seven findings-triage tables. Schema: [db/schema.sql](db/schema.sql); every table explained: [Developer: Database](docs/wiki/Developer-Database.md).
 
-Two rules are enforced by what is registered where rather than by authentication:
+Two rules are enforced by what is registered where, not by the API key (every key has full access):
 
 1. **A finding's status belongs to the operator.** Agents create findings as `proposed`; the one route that changes status is `POST /v1/findings/:id/decision`, which no MCP profile exposes.
 2. **Directives are read-only to agents.** Only the reconciler (mirroring `DIRECTIVES.md`) and the operator's ratification route write them.
@@ -93,7 +97,7 @@ make screenshots                                                     # regenerat
 
 The screenshots are produced from made-up demo data on a throwaway service (`scripts/screenshots/`), never from a real ledger, because they are published.
 
-Guide: [docs/FINDINGS-TRIAGE.md](docs/FINDINGS-TRIAGE.md). Design record: [docs/FINDINGS-TRIAGE-PLAN.md](docs/FINDINGS-TRIAGE-PLAN.md).
+Guides: [Review Page Guide](docs/wiki/Review-Page-Guide.md) and [Developer: Triage Agents](docs/wiki/Developer-Triage-Agents.md). Outstanding work: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Mission HUD
 
@@ -110,7 +114,7 @@ make mission-links                                     # one-off: link existing 
 make scratch-clean                                     # list workspace scratch older than 30 days (APPLY=1 to move to the Trash)
 ```
 
-Guide: [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md). Design record: [docs/MISSION-HUD-PLAN.md](docs/MISSION-HUD-PLAN.md).
+Guide: [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md). Plan, with the deferred phase 2: [docs/plans/MISSION-HUD-PLAN.md](docs/plans/MISSION-HUD-PLAN.md).
 
 ## Configuration
 
@@ -118,21 +122,33 @@ Environment variables, with optional `.env` in the working directory (gitignored
 
 | Variable | Default | Read by | Purpose |
 |---|---|---|---|
-| `HTTP_HOST` | `127.0.0.1` | memoryd | Bind address. Anything else exposes an unauthenticated service and logs a loud warning |
+| `HTTP_HOST` | `127.0.0.1` | memoryd | Bind address. Anything other than loopback requires an API key; with none, memoryd refuses to start |
 | `PORT` | `8787` | memoryd, scripts | Listen port |
 | `DB_PATH` | `data/memory.db` | memoryd | SQLite file; relative to the working directory |
 | `APP_ENV` | `development` | memoryd | Gin mode |
 | `LOG_LEVEL` | `info` | memoryd | Advisory |
+| `BISHOP_API_KEYS_FILE` | `api-keys` beside `DB_PATH` | memoryd | Hashed API keys; manage with `memoryd keys add\|list\|revoke` |
+| `BISHOP_API_KEY` | — | memoryd | One extra key, named `env` |
+| `BISHOP_ALLOW_NO_AUTH` | — | memoryd | `1` lets memoryd run on a network address with no key (not recommended) |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` | — | memoryd | Both set: serve HTTPS |
+| `MEMORYD_ENV_FILE` | `.env` | memoryd | Settings file read at start; the server installer points it at its own |
 | `MEMORY_ROOT` | `testdata/memory` | memoryd | Root for `documents_sync` when the caller omits one and no harness is registered |
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | mcpd, scripts | Service URL |
+| `BISHOP_MEMORY_API_KEY` | — | mcpd, scripts | API key sent as `Authorization: Bearer`. Both this and the URL are also read from `~/.config/bishop-memory/client.env` (written by `scripts/install.sh client`) when the environment does not set them |
 | `BISHOP_HARNESS` | `claude-code` | mcpd | Harness identity composed into actors and stored on findings |
 | `MCPD_PROFILE` | `harness` | mcpd | `harness` or `triage` tool set |
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | — | triage runner | Required for scheduled agent runs on the claude engine; keep it in `.env`, mode 0600 |
-| `TRIAGE_*` | see guide | triage runner | Engine (`claude` or `opencode`), item caps, models, budgets, timeout, log directory |
+| `TRIAGE_*` | see [Commands and Scripts](docs/wiki/Commands-and-Scripts.md#scriptstriage-runsh) | triage runner | Engine (`claude` or `opencode`), item caps, models, budgets, timeout, log directory |
 
 ## Network and security model
 
-The service has **no authentication, no rate limiting**, and `POST /v1/documents/sync` walks any filesystem path a caller supplies (except `/`). It is safe because it binds loopback. The supported remote topology is an SSH tunnel: `ssh -L 8787:127.0.0.1:8787 user@server` gives you encryption, your SSH key as authentication, and isolation, with no change to the service. Do not bind `0.0.0.0` on a host you do not fully control.
+- **Loopback, no keys: open.** The default single-machine install binds `127.0.0.1` and asks for nothing, exactly as before.
+- **API keys.** `memoryd keys add <name>` creates a named key and prints it once; the keys file holds only SHA-256 hashes and is re-read on change, so adding or revoking needs no restart. Once any key exists, every `/v1` route needs one (`Authorization: Bearer <key>` or `X-API-Key`); `/healthz`, the two pages and their icons stay open because they hold no data. The access log names the key behind each request.
+- **Required off loopback.** On any other address memoryd refuses to start without a key (unless `BISHOP_ALLOW_NO_AUTH=1`), and revoking the last key refuses every request rather than opening the service.
+- **Transport.** A key over plain HTTP can be read on the wire. Use Tailscale or WireGuard (recommended), built-in TLS (`TLS_CERT_FILE`, `TLS_KEY_FILE`), a reverse proxy such as Caddy in front of a loopback-bound memoryd (create a key first: on loopback with none it is open), or an SSH tunnel. memoryd warns at start when it serves plain HTTP on a network address.
+- **Every key has full access.** There are no roles and no rate limiting. What agents can do is still limited by the `mcpd` tool lists (see [MCP tools](#mcp-tools)). `POST /v1/documents/sync` reads any server path a caller names (except `/`), so a key can also pull Markdown and JSONL from any directory the service user can read into search.
+
+Set-up, client configuration, harness changes, backups and moving an existing database: [Server Install](docs/wiki/Server-Install.md).
 
 ## Development
 
@@ -154,7 +170,7 @@ db/schema.sql       schema               internal/importer   Markdown → FTS5
 db/finding-categories.json  taxonomy     internal/ui         /triage and /missions pages
 scripts/            installers, reconciler, triage, wiki     .claude/agents, .claude/skills   the triage agents
                                                              .opencode/agents                 their OpenCode twins
-docs/               reference docs       docs/wiki/          user and developer pages (published to the wiki)
+docs/               roadmap and plans    docs/wiki/          user and developer pages (published to the wiki)
 ```
 
 ## License

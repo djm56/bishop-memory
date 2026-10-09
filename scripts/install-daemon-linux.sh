@@ -225,12 +225,15 @@ fi
 
 mkdir -p "$BISHOP_ROOT/bin"
 
-if command -v go >/dev/null 2>&1; then
+if command -v go >/dev/null 2>&1 && [[ -f "$BISHOP_ROOT/go.mod" ]]; then
   echo "[install-daemon-linux] go toolchain found — building memoryd -> $BIN_DEST"
   (
     cd "$BISHOP_ROOT"
     go build -o "$BIN_DEST" ./cmd/memoryd
   )
+elif [[ -x "$BIN_DEST" ]] && "$BIN_DEST" help >/dev/null 2>&1; then
+  # A release archive (make dist) ships bin/memoryd already built.
+  echo "[install-daemon-linux] no go toolchain — using the shipped $BIN_DEST"
 elif [[ -f "$PREBUILT_BIN" ]]; then
   echo "[install-daemon-linux] no go toolchain — using prebuilt $PREBUILT_BIN"
   cp "$PREBUILT_BIN" "$BIN_DEST"

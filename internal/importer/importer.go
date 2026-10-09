@@ -296,7 +296,17 @@ func importMarkdown(db *sql.DB, absPath, relPath, harness string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", absPath, err)
 	}
+	return ImportMarkdown(db, absPath, relPath, harness, content)
+}
 
+// ImportMarkdown imports one Markdown file's content as if the walker had
+// found it at relPath under a memory root: the same kind, title, mission id,
+// structured-field prefixes and upsert. sourcePath is stored as the document's
+// unique key — the file's absolute path on the machine it lives on. The
+// document push route (POST /v1/documents/push) uses it for files a client
+// sends over the network.
+func ImportMarkdown(db *sql.DB, sourcePath, relPath, harness string, content []byte) error {
+	absPath := sourcePath
 	sha := sha256Hex(content)
 	kind := kindFromPath(relPath)
 	title := markdownTitle(string(content), filepath.Base(relPath))

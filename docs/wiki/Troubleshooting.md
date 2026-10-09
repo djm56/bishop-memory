@@ -10,7 +10,15 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 **Boot fails with `no such column`.** A schema change declared an index on an additive column in `db/schema.sql`. Indexes on additive columns belong in `internal/store/migrate.go` (`additiveIndexes`); see [Developer: Database](Developer-Database).
 
-**`HTTP_HOST` warning at startup.** The service is bound to a non-loopback address and has no authentication. Unless that was deliberate, set `HTTP_HOST=127.0.0.1` and use an SSH tunnel.
+**`WARNING — serving plain HTTP on …` at startup.** The service listens on a network address without TLS, so API keys cross the network in clear unless the network itself is encrypted. Fine on Tailscale, WireGuard or an SSH tunnel; on a plain LAN set `TLS_CERT_FILE` and `TLS_KEY_FILE` or put a proxy in front. See [Server Install](Server-Install#1-choose-how-clients-reach-the-server).
+
+**`memoryd` will not start: `HTTP_HOST=… is not loopback and no API key is configured`.** On a network address it refuses to run open. Create a key against the service's keys file (`memoryd keys add <name>` with the service's `DB_PATH`; the message names the file), then start it, or set `HTTP_HOST=127.0.0.1`. [Server Install](Server-Install#6-api-keys) has the commands per OS.
+
+**Every `/v1` call returns 401 `{"error":"unauthorized",…}`.** A key exists on the server and the caller sent none, or one the server does not know. On the client, check `~/.config/bishop-memory/client.env` (`scripts/install.sh client` rewrites it and tests the key). A value already in the environment wins over that file, so an old `BISHOP_MEMORY_API_KEY` or `BISHOP_MEMORY_URL` exported in a shell, a harness's `.mcp.json` or a launchd plist hides the right one. On the server, `memoryd keys list` shows which names exist, and the access log names the key behind each accepted request (`key=<name>`). The pages prompt for a key on a 401; **Forget key** clears a wrong one.
+
+**The harness hook's journal rows stop arriving after a key was added, while `mcpd` tools still work.** `mcpd` and the reconciler read the key from `client.env`; the hook's own `curl` calls must send it themselves. See [Server Install](Server-Install#8-changes-inside-each-harness).
+
+**A client cannot connect to a server install.** Check, in order: the service is running; it listens on the address you expect; on Linux, the unit's `IPAddressAllow` admits the client's network (the shipped unit admits loopback only); the firewall; the client trusts the TLS certificate. [Server Install](Server-Install#troubleshooting) goes through each.
 
 **launchd job dies with exit 78 (EX_CONFIG).** A log path under `/Volumes`. launchd opens the log files before the process starts and the agent context is denied the volume. Re-run `install-daemon.sh --log-dir` with a path on the internal disk.
 
@@ -24,7 +32,7 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 **Two harnesses got the same mission id.** They share a `BISHOP_HARNESS` value, or one is in standalone mode deriving ids locally. Each harness needs its own conf and name; central mode for all of them.
 
-**`memory_search` returns nothing.** Documents were never imported: `sqlite3 data/memory.db 'SELECT COUNT(*) FROM documents'`. Run `documents_sync` with the memory root, or the reconciler. Hyphenated terms such as mission ids are matched as literal phrases automatically; a trailing `*` on a plain word is a prefix match; an unterminated `"` returns 400.
+**`memory_search` returns nothing.** Documents were never imported: `sqlite3 data/memory.db 'SELECT COUNT(*) FROM documents'`. Run `documents_sync` with the memory root, or the reconciler. Against a service on another machine, `documents_sync` cannot see the files; run the reconciler with `--harness`, or `scripts/push-memory.py`. Hyphenated terms such as mission ids are matched as literal phrases automatically; a trailing `*` on a plain word is a prefix match; an unterminated `"` returns 400.
 
 ## Reconciler
 
@@ -43,6 +51,8 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 **The log says `agent stopped after TRIAGE_TIMEOUT_MIN=45 minutes`.** The run was stopped at the limit so the next night is not blocked behind it. Its run row stays `running`. Open the result file to see where it stalled; raise the limit in `.env` only if a large backlog genuinely needs longer.
 
 **An opencode run fails with `Unexpected server error`.** OpenCode's provider refused the model. Check that the id appears in `opencode models` and runs by hand: `opencode run -m opencode-go/glm-5.2 "say ok" </dev/null`. Without `</dev/null`, `opencode run` waits for input on stdin.
+
+**The log line starts `ERROR run closed as failed`.** The agent gave up and said why in the run's notes on the Runs tab. The usual cause is a tool call that failed twice, which the doctrine says to stop on rather than work around.
 
 **A run row stays `running` on the Runs tab.** The agent never reached `triage_run_finish`: it hit the turn or budget cap, or crashed. Open the JSON result in the log directory; `result` and `is_error` say what happened. The next run opens a fresh row; the stale one is harmless.
 
@@ -70,7 +80,7 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 **The step list shows agents but the Crew section is empty.** The harness keeps no `agents/` directory beside its memory root, or no sync has run since the upgrade. The sync reads `<checkout>/.claude/agents/*.md` for a root at `<checkout>/.claude/memory`.
 
-**Search returns old scratch files, or the database keeps growing.** Workspace scratch under `<memory root>/workspace/` is imported like any other file. `make scratch-clean` lists files older than 30 days; `make scratch-clean APPLY=1` moves them to the Trash and drops them from search.
+**Search returns old scratch files, or the database keeps growing.** Workspace scratch under `<memory root>/workspace/` is imported like any other file. `make scratch-clean` lists files older than 30 days; `make scratch-clean APPLY=1` moves them to the Trash and drops them from search. Run it on the machine that holds the harness checkouts; it skips roots that do not exist there.
 
 ## Wiki
 

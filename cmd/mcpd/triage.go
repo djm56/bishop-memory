@@ -1,7 +1,7 @@
 // mcpd — the triage profile.
 //
 // MCPD_PROFILE=triage swaps the harness tool set for the one the findings
-// triage agents need (see docs/FINDINGS-TRIAGE.md). The two profiles never
+// triage agents need (see the wiki page Developer-Triage-Agents). The two profiles never
 // overlap on write tools: a harness session cannot classify or recommend, and a
 // triage session cannot allocate missions, append journal rows or create
 // findings. Both can read patterns, findings and the search index.

@@ -26,6 +26,8 @@
     --bg:#151514; --panel:#1d1d1b; --fg:#ecebe7; --muted:#a6a39c; --faint:#77746e; --line:#2b2a28; --line2:#3a3936; --soft:#252422;
     --accent:#8db0ff; --ok:#6cc893; --bad:#ff8a7f; --warn:#e2b55a; --shadow:0 0 0 1px var(--line); color-scheme:dark;
   } }
+  .signout { border:1px solid var(--line2); background:var(--panel); color:var(--muted); font:500 12px/1 var(--sans); padding:6px 9px; border-radius:7px; cursor:pointer }
+  .signout:hover { color:var(--fg) }
   * { box-sizing:border-box }
   html, body { margin:0 }
   body { font:14px/1.5 var(--sans); background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased }
@@ -156,6 +158,7 @@
   <span class="spacer"></span>
   <span id="stats" class="stats"></span>
   <label class="approver">Approver <input id="approver" placeholder="your name"></label>
+  <button id="signout" class="signout" hidden title="Forget the API key stored in this browser">Forget key</button>
   <div class="seg sm" id="theme" title="Theme">
     <button data-set="system">Auto</button>
     <button data-set="light">Light</button>
@@ -187,8 +190,25 @@
   const human = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
   const catName = slug => (state.categories.find(c => c.slug === slug) || {}).name || slug;
   const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
+  // API key (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3.1): asked for when the
+  // service answers 401, kept in this browser, sent on every /v1 call.
+  const KEY_STORE = 'bishop.apiKey';
+  const getKey = () => { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } };
+  const setKey = k => { try { k ? localStorage.setItem(KEY_STORE, k) : localStorage.removeItem(KEY_STORE); } catch (e) {} paintSignOut(); };
+  const paintSignOut = () => { const b = document.getElementById('signout'); if (b) b.hidden = !getKey(); };
+  document.getElementById('signout').onclick = () => { setKey(''); location.reload(); };
+  paintSignOut();
+  const authed = async (path, opts = {}) => {
+    const send = () => fetch(path, { ...opts, headers: { ...(opts.headers || {}), ...(getKey() ? { Authorization: 'Bearer ' + getKey() } : {}) } });
+    let r = await send();
+    if (r.status === 401) {
+      const k = prompt('This bishop-memory needs an API key.\nPaste the key you were given (memoryd keys add <name>):');
+      if (k && k.trim()) { setKey(k.trim()); r = await send(); }
+    }
+    return r;
+  };
   const api = async (method, path, body) => {
-    const r = await fetch(path, { method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
+    const r = await authed(path, { method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
     const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
     if (!r.ok) throw new Error((json.error || r.status) + (json.details ? ': ' + (typeof json.details === 'string' ? json.details : JSON.stringify(json.details)) : ''));
     return json;

@@ -1,7 +1,9 @@
 # Mission HUD — Plan
 
-Status: phases 1 and 3 built on branch `feat/mission-hud`; phase 2 deferred
-(decision D3). The live database still needs the sync and backfill in §2.4.
+Status: phases 1 and 3 shipped (merged to `main`); phase 2 deferred
+(decision D3) and tracked in `../ROADMAP.md`. The live database still needs
+the sync and backfill in §2.4. How the shipped pages work is in the wiki:
+`../wiki/Mission-HUD-Guide.md`.
 Date: 2026-10-08.
 
 The goal is a mission head-up display next to the triage review page. It shows
