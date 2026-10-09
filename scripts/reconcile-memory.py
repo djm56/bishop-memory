@@ -107,6 +107,7 @@ load_client_env()
 # The harness writes an em dash as the "no value" placeholder in table cells
 # and entry headings. Treat it as empty rather than as literal content.
 EM_DASH = "—"
+MISSION_ID = re.compile(r"mission-\d{8}-\d{2}")
 PLACEHOLDERS = {"", "-", EM_DASH, "none", "None", "n/a", "N/A"}
 
 
@@ -377,13 +378,14 @@ def entry_heading(entry):
 
 def entry_field(entry, name):
     """
-    Pull `**Name**: value` out of an entry.
+    Pull `**Name**: value` (or `**Name:** value`) out of an entry.
 
-    Values run until the next `**Field**:` or the end of the entry, so
-    multi-line prose is captured whole.
+    Values run until the next field or the end of the entry, so multi-line
+    prose is captured whole. Both colon placements occur in harness ledgers;
+    accepting only one silently drops every entry written the other way.
     """
     match = re.search(
-        r"\*\*" + re.escape(name) + r"\*\*:\s*(.*?)(?=\n\*\*[A-Z][A-Za-z ]*\*\*:|\Z)",
+        r"\*\*" + re.escape(name) + r"(?:\*\*:|:\*\*)\s*(.*?)(?=\n\*\*[A-Z][A-Za-z ]*(?:\*\*:|:\*\*)|\Z)",
         entry,
         re.S,
     )
@@ -554,11 +556,15 @@ def parse_findings(root):
         suggestion = entry_field(entry, "Suggestion")
         if not suggestion:
             continue  # `suggestion` is the one required field.
+        # `**Mission**: mission-20261009-03` links the finding to its mission
+        # for the HUD. Older entries have no such field and stay unlinked.
+        mission = MISSION_ID.search(entry_field(entry, "Mission"))
         out.append({
             "finding_date": truncate(date, 64),
             "target": truncate(target, 256),
             "suggestion": truncate(suggestion, 2000),
             "rationale": truncate(entry_field(entry, "Rationale"), 2000),
+            "mission_id": mission.group(0) if mission else "",
             # Human decision fields. Not part of the create payload (the API
             # refuses them); read by reconcile_findings to mirror a status the
             # operator set by hand in the file.
@@ -958,11 +964,16 @@ def reconcile_findings(client, root, harness=""):
 
     # Fetch existing findings (keyed by natural key)
     existing = {}
+    # A finding an agent sent through finding_append without a date has the
+    # same target and suggestion as its Markdown entry but no finding_date, so
+    # it is matched on those two as well; otherwise it is created twice.
+    undated = {}
     try:
         _, body = client.get("/v1/findings")
         for f in body.get("findings", []):
             key = (f.get("finding_date", ""), f.get("target", ""), f.get("suggestion", ""))
             existing[key] = f
+            undated.setdefault(key[1:], f)
     except Exception as exc:
         print(f"  !! GET /v1/findings: could not fetch existing (network error, service down, or timeout)", file=sys.stderr)
         print(f"     {exc}", file=sys.stderr)
@@ -978,7 +989,7 @@ def reconcile_findings(client, root, harness=""):
         payload = {k: v for k, v in finding.items() if not k.startswith("_")}
         if harness:
             payload["harness"] = harness
-        row = existing.get(key)
+        row = existing.get(key) or undated.get(key[1:])
         if row is None:
             if not client.write("POST", "/v1/findings", prune(payload),
                                 f"{finding['finding_date']} {finding['target']}"):
