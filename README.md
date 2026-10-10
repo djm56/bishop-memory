@@ -1,6 +1,6 @@
 # bishop-memory
 
-A memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, and a mission HUD that shows each mission's history on one page.
+A memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, a mission HUD that shows each mission's history on one page, and a nightly A–F grade on every finished mission rolled up into harness performance.
 
 - **Go + Gin + SQLite (FTS5)**, `modernc.org/sqlite`, so there is no C toolchain and the binary cross-compiles statically.
 - **Local by default, networked when you need it.** On loopback with no keys it needs no configuration; on a server it requires an API key from every client. See [Server Install](docs/wiki/Server-Install.md).
@@ -70,7 +70,7 @@ Without the conf file a harness runs standalone and never calls the service. Det
 
 ## What it stores
 
-Ten harness-vocabulary tables — `missions`, `mission_steps`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `documents_fts` — plus seven findings-triage tables. Schema: [db/schema.sql](db/schema.sql); every table explained: [Developer: Database](docs/wiki/Developer-Database.md).
+Ten harness-vocabulary tables — `missions`, `mission_steps`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `documents_fts` — plus seven findings-triage tables and `mission_grades`. Schema: [db/schema.sql](db/schema.sql); every table explained: [Developer: Database](docs/wiki/Developer-Database.md).
 
 Two rules are enforced by what is registered where, not by the API key (every key has full access):
 
@@ -89,7 +89,7 @@ Two rules are enforced by what is registered where, not by the API key (every ke
 
 `flight_recorder_append` and `mission_step_record` record the actor as `<BISHOP_HARNESS>:<agent>`; `finding_append` records the harness. `finding_list` filters by status, triage category, harness and ids.
 
-**Triage profile** (`MCPD_PROFILE=triage`, 13 tools) — what the two scheduled findings-triage agents use: `triage_categories`, `triage_next_unclassified`, `triage_classify`, `triage_category_findings`, `triage_recent_decisions`, `triage_group_create`, `triage_recommend`, `directive_propose`, `triage_run_start`, `triage_run_finish`, plus the read-only `finding_list`, `pattern_list`, `memory_search`. The two profiles share no write tool.
+**Triage profile** (`MCPD_PROFILE=triage`, 15 tools) — what the three scheduled agents use: `triage_categories`, `triage_next_unclassified`, `triage_classify`, `triage_category_findings`, `triage_recent_decisions`, `triage_group_create`, `triage_recommend`, `directive_propose`, `triage_run_start`, `triage_run_finish`, the mission grader's `grade_claim` and `grade_write`, plus the read-only `finding_list`, `pattern_list`, `memory_search`. The two profiles share no write tool.
 
 Every tool, with arguments, examples and errors: [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md).
 
@@ -110,13 +110,23 @@ make triage-classify                                                 # classify 
 make triage-process                                                  # recommend on the next category
 make triage-review                                                   # open the review page
 make triage-export                                                   # write decisions to FINDINGS.md / DIRECTIVES.md
-make triage-install                                                  # nightly launchd jobs (21:00 / 21:20)
+make triage-grade                                                    # grade up to 10 finished missions
+make triage-install                                                  # nightly launchd jobs (21:00 / 21:20 / 21:40)
 make screenshots                                                     # regenerate the screenshots in the docs
 ```
 
 The screenshots are produced from made-up demo data on a throwaway service (`scripts/screenshots/`), never from a real ledger, because they are published.
 
 Guides: [Review Page Guide](docs/wiki/Review-Page-Guide.md) and [Developer: Triage Agents](docs/wiki/Developer-Triage-Agents.md). Outstanding work: [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Mission grading
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/wiki/images/performance-dark.png">
+  <img alt="The harness performance page: tiles for the average grade, graded, waiting and set-aside missions, then one card per harness with its average letter, an A to F distribution bar and its latest grades." src="docs/wiki/images/performance-light.png">
+</picture>
+
+Every finished mission gets a grade from A to F, a short summary of why and suggestions for the next mission, from a third nightly agent (21:40) that works from the database alone. The service hands it a compact packet per mission — the brief's criteria, the debrief's judgement sections, the steps, findings and agent notes, and counts it makes itself — and the agent makes one pass over at most ten missions. A verdict is final; a mission is never graded in a loop. Grades show on the mission HUD and roll up per harness at `http://127.0.0.1:8787/performance`. Guide: [Mission Grading](docs/wiki/Mission-Grading.md).
 
 ## Mission HUD
 
@@ -125,7 +135,7 @@ Guides: [Review Page Guide](docs/wiki/Review-Page-Guide.md) and [Developer: Tria
   <img alt="The mission HUD: the mission list with search and filters on the left, and on the right a completed mission with its status, tiles for steps, duration, findings and criteria, and its brief." src="docs/wiki/images/missions-light.png">
 </picture>
 
-`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A Triage / Missions switch links the two pages, and each finding links across to the other.
+`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A Triage / Missions / Performance switch links the pages, and each finding links across to the other.
 
 ```bash
 curl -X POST http://127.0.0.1:8787/v1/documents/sync   # import every registered harness's memory tree and agents

@@ -781,7 +781,7 @@ Open a triage run row. Call once at the start; pass the returned id as run_id on
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `kind` | string | yes | classify or process. Required. |
+| `kind` | string | yes | classify, process or grade. Required. |
 | `category` | string | no | For a process run: the category being processed. |
 | `model` | string | no | The model id doing the work, e.g. claude-haiku-4-5-20251001. |
 
@@ -1013,6 +1013,32 @@ Draft a DIRECTIVES.md entry for the operator to ratify. Fields mirror the DIRECT
 ```
 
 Creates a proposal only; a human ratifies it on the review page. Refused when the rendered entry would exceed 1,510 characters.
+
+
+### `grade_claim`
+
+**Route:** ``
+
+Claim up to 10 finished missions that have no grade and return a grading packet for each: the mission row, signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. Returns {"missions":[...]}; an empty list means nothing is waiting. Call it once per run.
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `run_id` | integer | no | Run id from triage_run_start. |
+| `limit` | integer | no | How many missions to claim, 1-10 (default 10). |
+| `mission_ids` | array | no | Optional: claim exactly these missions (the runner passes them when the operator named some). |
+
+
+### `grade_write`
+
+**Route:** ``
+
+Write the verdicts for missions you claimed. Each item: {mission_id, grade: A|B|C|D|E|F, summary, suggestions} or {mission_id, insufficient: true, summary} when the packet does not hold enough to grade. A verdict is final; an unclaimed mission or one that already has a verdict is skipped and reported.
+
+| Argument | Type | Required | Meaning |
+|---|---|---|---|
+| `graded_by` | string | yes | Model id doing the grading. Required. |
+| `run_id` | integer | no | Run id from triage_run_start. |
+| `items` | array | yes | Array of verdict items, 1-10. Required. |
 
 
 ## Errors you will see

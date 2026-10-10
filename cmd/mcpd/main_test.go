@@ -154,6 +154,8 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 		{"triage_group_create", "POST", []string{"v1", "finding-groups"}, "v1/finding-groups"},
 		{"triage_recommend", "POST", []string{"v1", "finding-recommendations"}, "v1/finding-recommendations"},
 		{"directive_propose", "POST", []string{"v1", "directive-proposals"}, "v1/directive-proposals"},
+		{"grade_claim", "POST", []string{"v1", "mission-grades", "claim"}, "v1/mission-grades/claim"},
+		{"grade_write", "POST", []string{"v1", "mission-grades"}, "v1/mission-grades"},
 	}
 
 	for _, tc := range mcpdPaths {

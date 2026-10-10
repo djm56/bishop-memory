@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
 # scripts/install-triage-schedule.sh
 #
-# Install (or remove) the two nightly findings-triage launchd user agents:
+# Install (or remove) the three nightly triage launchd user agents:
 #
 #   com.bishop-memory.triage-classify   runs scripts/triage-run.sh classify
 #   com.bishop-memory.triage-process    runs scripts/triage-run.sh process
+#   com.bishop-memory.triage-grade      runs scripts/triage-run.sh grade
 #
 # Usage:
 #   scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM]
-#                                      [--url URL] [--log-dir DIR] [--dry-run]
+#                                      [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
 #   scripts/install-triage-schedule.sh --uninstall
 #
-# Defaults: classify at 21:00, process at 21:20, URL http://127.0.0.1:8787,
-# logs in ~/Library/Logs/bishop-memory. macOS only (launchd); on Linux write a
-# systemd timer that runs the same two commands — see the wiki page Developer-Triage-Agents.
+# Defaults: classify at 21:00, process at 21:20, grade at 21:40, URL
+# http://127.0.0.1:8787, logs in ~/Library/Logs/bishop-memory. macOS only
+# (launchd); on Linux write a systemd timer that runs the same three commands
+# — see the wiki page Developer-Triage-Agents.
 #
-# Idempotent: re-running unloads and reloads both jobs with the new plists.
+# Idempotent: re-running unloads and reloads every job with the new plists.
 # Loading never triggers a run (RunAtLoad is false); to run now use
-# `make triage-classify` / `make triage-process`.
+# `make triage-classify` / `make triage-process` / `make triage-grade`.
 
 set -euo pipefail
 
@@ -33,6 +35,7 @@ AGENTS_DIR="$HOME/Library/LaunchAgents"
 
 CLASSIFY_AT="21:00"
 PROCESS_AT="21:20"
+GRADE_AT="21:40"
 URL="http://127.0.0.1:8787"
 LOG_DIR="$HOME/Library/Logs/bishop-memory"
 DRY_RUN=0
@@ -44,19 +47,21 @@ while [[ $# -gt 0 ]]; do
     --classify-at=*) CLASSIFY_AT="${1#*=}"; shift ;;
     --process-at) PROCESS_AT="${2:-}"; shift 2 ;;
     --process-at=*) PROCESS_AT="${1#*=}"; shift ;;
+    --grade-at) GRADE_AT="${2:-}"; shift 2 ;;
+    --grade-at=*) GRADE_AT="${1#*=}"; shift ;;
     --url) URL="${2:-}"; shift 2 ;;
     --url=*) URL="${1#*=}"; shift ;;
     --log-dir) LOG_DIR="${2:-}"; shift 2 ;;
     --log-dir=*) LOG_DIR="${1#*=}"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install-triage-schedule.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
-  for kind in classify process; do
+  for kind in classify process grade; do
     plist="$AGENTS_DIR/com.bishop-memory.triage-$kind.plist"
     if [[ -f "$plist" ]]; then
       launchctl unload "$plist" 2>/dev/null || true
@@ -78,6 +83,7 @@ parse_time() {
 
 read -r CLASSIFY_H CLASSIFY_M <<<"$(parse_time "$CLASSIFY_AT" --classify-at)"
 read -r PROCESS_H PROCESS_M <<<"$(parse_time "$PROCESS_AT" --process-at)"
+read -r GRADE_H GRADE_M <<<"$(parse_time "$GRADE_AT" --grade-at)"
 
 case "$LOG_DIR" in
   /*) ;;
@@ -96,6 +102,7 @@ done
 echo "[install-triage] bishop-memory root: $BISHOP_ROOT"
 echo "[install-triage] classify at:        $CLASSIFY_AT"
 echo "[install-triage] process at:         $PROCESS_AT"
+echo "[install-triage] grade at:           $GRADE_AT"
 echo "[install-triage] service URL:        $URL"
 echo "[install-triage] log directory:      $LOG_DIR"
 echo "[install-triage] job PATH:           $job_path"
@@ -115,7 +122,7 @@ render() {
       "$TEMPLATE"
 }
 
-for spec in "classify $CLASSIFY_H $CLASSIFY_M" "process $PROCESS_H $PROCESS_M"; do
+for spec in "classify $CLASSIFY_H $CLASSIFY_M" "process $PROCESS_H $PROCESS_M" "grade $GRADE_H $GRADE_M"; do
   read -r kind hour minute <<<"$spec"
   dest="$AGENTS_DIR/com.bishop-memory.triage-$kind.plist"
   if [[ "$DRY_RUN" -eq 1 ]]; then

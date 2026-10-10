@@ -4,22 +4,25 @@
 # Usage:
 #   scripts/triage-run.sh classify [--reclassify SLUG] [--engine E] [--model M] [--dry-run]
 #   scripts/triage-run.sh process  [--category SLUG] [--limit N] [--engine E] [--model M] [--dry-run]
+#   scripts/triage-run.sh grade    [--limit N] [--mission ID[,ID...]] [--regrade] [--engine E] [--model M] [--dry-run]
 #
 # Called by launchd (scripts/install-triage-schedule.sh), by `make
-# triage-classify` / `make triage-process`, and by hand. It:
+# triage-classify` / `make triage-process` / `make triage-grade`, and by hand. It:
 #
 #   1. checks bishop-memory answers on /healthz (exit 2 if not — never run an
 #      agent against nothing);
 #   2. decides whether there is work: classify exits 0 when no finding is
 #      unclassified; process asks GET /v1/triage/next-category and exits 0
-#      when nothing is waiting;
+#      when nothing is waiting; grade asks GET /v1/mission-grades/waiting and
+#      exits 0 when every finished mission has a verdict;
 #   3. runs the agent headless from the bishop-memory checkout, with ONLY the
 #      bishop-triage MCP server (mcpd in its triage profile) and the tools the
 #      agent definition names, on one of two engines:
 #        claude    Claude Code (`claude -p`); agents in .claude/agents/
 #        opencode  OpenCode (`opencode run`); agents in .opencode/agents/,
 #                  using the providers and keys in your own OpenCode config
-#      Both engines follow the same doctrine, .claude/skills/findings-triage/SKILL.md;
+#      Both engines follow the same doctrine: .claude/skills/findings-triage/SKILL.md
+#      for classify and process, .claude/skills/mission-grading/SKILL.md for grade;
 #   4. appends one line per run to $TRIAGE_LOG_DIR/triage.log and keeps the
 #      full result beside it (.json for claude, .jsonl events for opencode).
 #
@@ -32,17 +35,26 @@
 #   TRIAGE_ENGINE             claude (default) or opencode, for both kinds
 #   TRIAGE_CLASSIFY_ENGINE    engine for classify only; wins over TRIAGE_ENGINE
 #   TRIAGE_PROCESS_ENGINE     engine for process only; wins over TRIAGE_ENGINE
+#   TRIAGE_GRADE_ENGINE       engine for grade only; wins over TRIAGE_ENGINE
+#   TRIAGE_GRADE_LIMIT        finished missions graded per run, 1-10 (default 10); --limit wins
 #   TRIAGE_ITEMS_PER_RUN      findings the processor may recommend on per run (default 30)
 #   TRIAGE_CATEGORIES_PER_RUN categories per process invocation (default 1)
 #   TRIAGE_CLASSIFY_MODEL     default haiku (claude) / opencode-go/glm-5.3-flash (opencode)
 #   TRIAGE_PROCESS_MODEL      default sonnet (claude) / opencode-go/glm-5.2 (opencode)
-#   TRIAGE_MAX_TURNS          default 60 (classify) / 120 (process); OpenCode calls them steps
-#   TRIAGE_MAX_BUDGET_USD     default 2 (classify) / 5 (process); claude only
-#   TRIAGE_TIMEOUT_MIN        stop a run still going after this many minutes (default 45; 0 = never)
+#   TRIAGE_GRADE_MODEL        default sonnet (claude) / opencode-go/glm-5.2 (opencode)
+#   TRIAGE_MAX_TURNS          default 60 (classify) / 120 (process) / 20 (grade); OpenCode calls them steps
+#   TRIAGE_MAX_BUDGET_USD     default 2 (classify) / 5 (process) / 2 (grade); claude only
+#   TRIAGE_TIMEOUT_MIN        stop a run still going after this many minutes (default 45, 20 for grade; 0 = never)
 #   TRIAGE_LOG_DIR            default ~/Library/Logs/bishop-memory
 #   TRIAGE_ADD_DIRS           colon-separated extra directories to open read-only for the
 #                             processor; by default every registered harness checkout
 #                             (derived from /v1/harnesses memory_root, two levels up).
+#                             The grader works from the database only and gets none.
+#
+# grade flags: --mission names the missions to grade (each must be finished);
+# --regrade first deletes their existing verdicts (DELETE /v1/mission-grades/ID),
+# which is the only way a graded mission is graded again. --regrade needs
+# --mission.
 #   CLAUDE_BIN                default: `claude` on PATH
 #   OPENCODE_BIN              default: `opencode` on PATH
 #
@@ -138,6 +150,8 @@ RECLASSIFY=""
 MODEL=""
 LIMIT=""
 ENGINE_FLAG=""
+MISSIONS=""
+REGRADE=0
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
@@ -152,8 +166,11 @@ while [[ $# -gt 0 ]]; do
     --limit=*) LIMIT="${1#*=}"; shift ;;
     --engine) ENGINE_FLAG="${2:-}"; shift 2 ;;
     --engine=*) ENGINE_FLAG="${1#*=}"; shift ;;
+    --mission) MISSIONS="${2:-}"; shift 2 ;;
+    --mission=*) MISSIONS="${1#*=}"; shift ;;
+    --regrade) REGRADE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,71p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
@@ -161,8 +178,15 @@ done
 case "$KIND" in
   classify) KIND_ENGINE="${TRIAGE_CLASSIFY_ENGINE:-}" ;;
   process) KIND_ENGINE="${TRIAGE_PROCESS_ENGINE:-}" ;;
-  *) echo "triage-run.sh: first argument must be classify or process" >&2; exit 64 ;;
+  grade) KIND_ENGINE="${TRIAGE_GRADE_ENGINE:-}" ;;
+  *) echo "triage-run.sh: first argument must be classify, process or grade" >&2; exit 64 ;;
 esac
+if [[ "$KIND" != "grade" && ( -n "$MISSIONS" || "$REGRADE" -eq 1 ) ]]; then
+  echo "triage-run.sh: --mission and --regrade apply to grade only" >&2; exit 64
+fi
+if [[ "$REGRADE" -eq 1 && -z "$MISSIONS" ]]; then
+  echo "triage-run.sh: --regrade needs --mission ID[,ID...]; it never regrades everything" >&2; exit 64
+fi
 ENGINE="${ENGINE_FLAG:-${KIND_ENGINE:-${TRIAGE_ENGINE:-claude}}}"
 case "$ENGINE" in
   claude|opencode) ;;
@@ -234,6 +258,52 @@ if [[ "$KIND" == "classify" ]]; then
     PROMPT="Re-classify every finding currently in category '$RECLASSIFY' (fetch them with finding_list category=$RECLASSIFY, in batches), following the Classifier section of .claude/skills/findings-triage/SKILL.md. Overwrite each classification. Model id: $MODEL."
   else
     PROMPT="Classify every unclassified finding, following the Classifier section of .claude/skills/findings-triage/SKILL.md. Model id: $MODEL."
+  fi
+elif [[ "$KIND" == "grade" ]]; then
+  GRADE_LIMIT="${LIMIT:-${TRIAGE_GRADE_LIMIT:-10}}"
+  if [[ ! "$GRADE_LIMIT" =~ ^[0-9]+$ || "$GRADE_LIMIT" -lt 1 || "$GRADE_LIMIT" -gt 10 ]]; then
+    log "[grade] the grade limit must be 1-10, got '$GRADE_LIMIT' (from --limit or TRIAGE_GRADE_LIMIT); nothing run"
+    exit 2
+  fi
+  MISSION_JSON=""
+  if [[ -n "$MISSIONS" ]]; then
+    MISSION_JSON="$(printf '%s' "$MISSIONS" | python3 -c '
+import json, sys
+ids = [m.strip() for m in sys.stdin.read().split(",") if m.strip()]
+if not 1 <= len(ids) <= 10:
+    sys.exit("name 1-10 missions")
+print(json.dumps(ids))')" || { log "[grade] --mission must name 1-10 mission ids; nothing run"; exit 64; }
+    # --regrade: the operator reopening missions, here and nowhere else.
+    if [[ "$REGRADE" -eq 1 ]]; then
+      for m in $(printf '%s' "$MISSION_JSON" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+          log "[grade] DRY RUN — would delete the verdict on $m"
+        else
+          api_curl -fsS -X DELETE "$URL/v1/mission-grades/$m" >/dev/null || { log "[grade] could not reopen $m for regrading; nothing run"; exit 2; }
+          log "[grade] reopened $m for regrading"
+        fi
+      done
+    fi
+  else
+    WAITING="$(api_curl -fsS "$URL/v1/mission-grades/waiting" | json_field waiting)"
+    if [[ "$WAITING" == "0" ]]; then
+      log "[grade] every finished mission has a verdict; nothing to do"
+      exit 0
+    fi
+  fi
+  if [[ "$ENGINE" == "opencode" ]]; then default_model="opencode-go/glm-5.2"; else default_model="sonnet"; fi
+  MODEL="${MODEL:-${TRIAGE_GRADE_MODEL:-$default_model}}"
+  MODEL_VAR="TRIAGE_GRADE_MODEL"
+  AGENT="mission-grader"
+  MAX_TURNS="${TRIAGE_MAX_TURNS:-20}"
+  BUDGET="${TRIAGE_MAX_BUDGET_USD:-2}"
+  # A grade run is one short pass; it gets a tighter default timeout.
+  if [[ -z "${TRIAGE_TIMEOUT_MIN:-}" ]]; then TIMEOUT_MIN=20; fi
+  ALLOWED="mcp__bishop-triage__triage_run_start,mcp__bishop-triage__triage_run_finish,mcp__bishop-triage__grade_claim,mcp__bishop-triage__grade_write,Read"
+  if [[ -n "$MISSION_JSON" ]]; then
+    PROMPT="Grade these finished missions, following .claude/skills/mission-grading/SKILL.md: call grade_claim once with mission_ids=$MISSION_JSON. Model id: $MODEL."
+  else
+    PROMPT="Grade finished missions, following .claude/skills/mission-grading/SKILL.md: call grade_claim once with limit=$GRADE_LIMIT. Model id: $MODEL."
   fi
 else
   if [[ "$ENGINE" == "opencode" ]]; then default_model="opencode-go/glm-5.2"; else default_model="sonnet"; fi
@@ -451,6 +521,13 @@ PY
 
 if [[ "$KIND" == "classify" ]]; then
   run_agent "$PROMPT" "bishop-memory triage classify"
+  exit $?
+fi
+
+# --- grade: one pass over at most GRADE_LIMIT finished missions -------------
+
+if [[ "$KIND" == "grade" ]]; then
+  run_agent "$PROMPT" "bishop-memory mission grade"
   exit $?
 fi
 

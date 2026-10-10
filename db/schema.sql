@@ -324,7 +324,9 @@ CREATE TABLE IF NOT EXISTS finding_categories (
     created_at        TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP)
 );
 
--- triage_runs — one row per scheduled or manual classifier/processor run.
+-- triage_runs — one row per scheduled or manual classifier, processor or
+-- mission-grader run. A database created before 'grade' existed has the
+-- narrower CHECK; store.EnsureTriageRunKinds rebuilds the table to widen it.
 CREATE TABLE IF NOT EXISTS triage_runs (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     kind        TEXT    NOT NULL,
@@ -337,7 +339,7 @@ CREATE TABLE IF NOT EXISTS triage_runs (
     started_at  TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
     finished_at TEXT,
 
-    CHECK (kind IN ('classify', 'process')),
+    CHECK (kind IN ('classify', 'process', 'grade')),
     CHECK (status IN ('running', 'done', 'failed'))
 );
 
@@ -414,6 +416,35 @@ CREATE TABLE IF NOT EXISTS directive_proposals (
 
     CHECK (state IN ('pending', 'accepted', 'declined', 'expired'))
 );
+
+-- mission_grades — the mission grader's verdict on one finished mission, one
+-- row per mission. A run claims a mission by creating its row (state
+-- 'pending', attempts + 1); writing a grade or an 'insufficient' verdict
+-- closes it for good. A claim that is never written is retried by one later
+-- run, then marked 'skipped', so no mission is graded in a loop. Only the
+-- operator's DELETE /v1/mission-grades/:id reopens a mission for regrading.
+-- signals is a JSON object the server computes from the database (criteria,
+-- steps, fix rounds, findings); the agent never writes it.
+CREATE TABLE IF NOT EXISTS mission_grades (
+    mission_id   TEXT    PRIMARY KEY REFERENCES missions(id) ON DELETE CASCADE,
+    state        TEXT    NOT NULL DEFAULT 'pending',
+    grade        TEXT,
+    summary      TEXT,
+    suggestions  TEXT,
+    signals      TEXT,
+    graded_by    TEXT,
+    run_id       INTEGER REFERENCES triage_runs(id),
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    claimed_at   TEXT,
+    graded_at    TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+
+    CHECK (state IN ('pending', 'graded', 'insufficient', 'skipped')),
+    CHECK (grade IS NULL OR grade IN ('A', 'B', 'C', 'D', 'E', 'F')),
+    CHECK (state <> 'graded' OR grade IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mission_grades_state ON mission_grades(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_pending
     ON finding_recommendations(finding_id) WHERE state = 'pending';

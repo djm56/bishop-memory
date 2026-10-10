@@ -17,8 +17,9 @@ if (!base || !outDir) { console.error('usage: node capture.js <base-url> <output
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
-// name, theme, viewport, tab (a /triage tab) or mission (a /missions title to
-// open), and an optional step run after the page loads.
+// name, theme, viewport, tab (a /triage tab), mission (a /missions title to
+// open) or page (another path, such as /performance), and an optional step run
+// after the page loads.
 const SHOTS = [
   { name: 'pending-light', theme: 'light', viewport: DESKTOP, tab: 'pending' },
   { name: 'pending-dark', theme: 'dark', viewport: DESKTOP, tab: 'pending' },
@@ -30,9 +31,11 @@ const SHOTS = [
   { name: 'missions-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors' },
   { name: 'missions-dark', theme: 'dark', viewport: DESKTOP, mission: 'Retry transient provider errors' },
   { name: 'missions-steps-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors',
-    after: async (page) => { await scrollToSection(page, 1); } },
+    after: async (page) => { await scrollToSection(page, 2); } },
   { name: 'missions-phone-light', theme: 'light', viewport: PHONE, mission: 'Retry transient provider errors',
     after: async (page) => { await scrollToSection(page, -1); } },
+  { name: 'performance-light', theme: 'light', viewport: DESKTOP, page: '/performance' },
+  { name: 'performance-dark', theme: 'dark', viewport: DESKTOP, page: '/performance' },
   { name: 'phone-light', theme: 'light', viewport: PHONE, tab: 'pending',
     // Scroll past the stacked category list so the first group sits just
     // below the sticky header, rather than under it.
@@ -82,7 +85,11 @@ function chromePath() {
     const page = await context.newPage();
     page.on('pageerror', e => errors.push(`${shot.name}: ${e.message}`));
     page.on('console', m => { if (m.type() === 'error') errors.push(`${shot.name}: ${m.text()}`); });
-    if (shot.mission) {
+    if (shot.page) {
+      await page.goto(`${base}${shot.page}?theme=${shot.theme}`);
+      await page.waitForSelector('#view .card, #view table, #view .empty');
+      await page.waitForTimeout(300);
+    } else if (shot.mission) {
       await page.goto(`${base}/missions?theme=${shot.theme}`);
       await page.click(`.mrow:has-text(${JSON.stringify(shot.mission)})`);
       await page.waitForSelector('#view .head');

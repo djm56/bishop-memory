@@ -19,6 +19,7 @@ Every `make` target and every script, with flags, environment, exit codes and wh
 | `make triage-backfill REGISTER="name=/abs/.claude/memory …"` | Register harnesses and set `findings.harness` on old rows | Run once per service |
 | `make triage-classify [RECLASSIFY=slug]` | Run the classifier now | Exits 0 with nothing to do when everything is classified |
 | `make triage-process [CATEGORY=slug] [LIMIT=n]` | Run the processor now | Default: next category in rotation, 30 items |
+| `make triage-grade [LIMIT=n] [MISSIONS=id,…] [REGRADE=1]` | Grade finished missions now | Default: the next 10 ungraded; `REGRADE=1` needs `MISSIONS`. See [Mission Grading](Mission-Grading) |
 | `make triage-export` | Write decisions to every registered harness's Markdown | Exit 3 means a conflict was skipped |
 | `make triage-review` | Open the review page | |
 | `make triage-install` / `triage-uninstall` | Install or remove the nightly launchd jobs | macOS |
@@ -100,21 +101,23 @@ Registers the harness with this root, then pushes every Markdown file under it w
 ```
 scripts/triage-run.sh classify [--reclassify SLUG] [--engine claude|opencode] [--model M] [--dry-run]
 scripts/triage-run.sh process  [--category SLUG] [--limit N] [--engine claude|opencode] [--model M] [--dry-run]
+scripts/triage-run.sh grade    [--limit N] [--mission ID[,ID…]] [--regrade] [--engine claude|opencode] [--model M] [--dry-run]
 ```
 
-The single entry point for both agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for credentials and defaults, checks `/healthz`, checks there is work, then runs the agent headless from the checkout with only the `bishop-triage` MCP server and the agent's tools, on Claude Code (`claude -p`, the default) or OpenCode (`opencode run`, using your own OpenCode config for the provider and key). `--dry-run` prints the exact command; on opencode it also checks the agent resolves. `make triage-classify` / `triage-process` take `ENGINE=` and `MODEL=` for one run. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's result beside it (`.json` for claude, `.jsonl` events for opencode).
+The single entry point for all three agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for credentials and defaults, checks `/healthz`, checks there is work, then runs the agent headless from the checkout with only the `bishop-triage` MCP server and the agent's tools, on Claude Code (`claude -p`, the default) or OpenCode (`opencode run`, using your own OpenCode config for the provider and key). `--dry-run` prints the exact command; on opencode it also checks the agent resolves. `make triage-classify` / `triage-process` take `ENGINE=` and `MODEL=` for one run. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's result beside it (`.json` for claude, `.jsonl` events for opencode).
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | Service URL; also read from `client.env` when neither the environment nor `.env` sets it |
 | `BISHOP_MEMORY_API_KEY` | — | Sent to the service as `Authorization: Bearer`, through a mode-600 header file rather than the `curl` command line; also read from `client.env` |
-| `TRIAGE_ENGINE` | `claude` | `claude` or `opencode`; `TRIAGE_CLASSIFY_ENGINE` / `TRIAGE_PROCESS_ENGINE` set one job |
+| `TRIAGE_ENGINE` | `claude` | `claude` or `opencode`; `TRIAGE_CLASSIFY_ENGINE` / `TRIAGE_PROCESS_ENGINE` / `TRIAGE_GRADE_ENGINE` set one job |
+| `TRIAGE_GRADE_LIMIT` | 10 | Finished missions per grade run, 1–10 |
 | `TRIAGE_ITEMS_PER_RUN` | 30 | Findings per processed category |
 | `TRIAGE_CATEGORIES_PER_RUN` | 1 | Categories per `process` call |
-| `TRIAGE_CLASSIFY_MODEL` / `TRIAGE_PROCESS_MODEL` | `haiku` / `sonnet`; on opencode `opencode-go/glm-5.3-flash` / `opencode-go/glm-5.2` | Models |
-| `TRIAGE_MAX_TURNS` | 60 / 120 | Turn cap (steps on opencode) |
-| `TRIAGE_MAX_BUDGET_USD` | 2 / 5 | Spend cap per run; claude only |
-| `TRIAGE_TIMEOUT_MIN` | 45 | Stop a run still going after this many minutes; `0` never |
+| `TRIAGE_CLASSIFY_MODEL` / `TRIAGE_PROCESS_MODEL` / `TRIAGE_GRADE_MODEL` | `haiku` / `sonnet` / `sonnet`; on opencode `opencode-go/glm-5.3-flash` / `opencode-go/glm-5.2` / `opencode-go/glm-5.2` | Models |
+| `TRIAGE_MAX_TURNS` | 60 / 120 / 20 | Turn cap (steps on opencode) |
+| `TRIAGE_MAX_BUDGET_USD` | 2 / 5 / 2 | Spend cap per run; claude only |
+| `TRIAGE_TIMEOUT_MIN` | 45 (20 for grade) | Stop a run still going after this many minutes; `0` never |
 | `TRIAGE_ADD_DIRS` | every registered harness checkout | Read-only directories for the processor |
 | `TRIAGE_ENV_FILE` | `<checkout>/.env` | Credentials file |
 | `CLAUDE_BIN` / `OPENCODE_BIN` | `claude` / `opencode` | CLI per engine |
@@ -124,11 +127,11 @@ Exit 0 ran or nothing to do, 1 the agent failed, 2 a precondition failed (servic
 ### `scripts/install-triage-schedule.sh`
 
 ```
-scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
+scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM] [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
 scripts/install-triage-schedule.sh --uninstall
 ```
 
-Renders `scripts/com.bishop-memory.triage.plist` twice and loads `com.bishop-memory.triage-classify` (21:00) and `com.bishop-memory.triage-process` (21:20). Loading never runs a job; `launchctl start <label>` does. Bakes in a PATH that includes wherever `claude` and `go` are now.
+Renders `scripts/com.bishop-memory.triage.plist` three times and loads `com.bishop-memory.triage-classify` (21:00), `com.bishop-memory.triage-process` (21:20) and `com.bishop-memory.triage-grade` (21:40). Loading never runs a job; `launchctl start <label>` does. Bakes in a PATH that includes wherever `claude` and `go` are now.
 
 ### `scripts/triage-seed-categories.py`
 

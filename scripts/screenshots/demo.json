@@ -423,5 +423,27 @@
       "patterns": [],
       "service_records": []
     }
-  ]
+  ],
+  "grades": {
+    "_comment": "Mission grades, written through the grader's own claim and write routes. 'missions' grades the demo missions above by key; 'history' adds small finished missions on other made-up harnesses so the performance page has averages and trends to show.",
+    "model": "opencode-go/glm-5.2",
+    "missions": {
+      "retry": {"grade": "B", "summary": "4/4 acceptance criteria met; @hicks's first report overclaimed the cap test and was returned once (step 3); no escalation, three improvement findings.",
+                "suggestions": "Have @hicks paste the failing-then-passing test output in the step report, so a review never has to re-run a test to learn whether a claim holds. Keep backoff caps as named constants; the review spent its round on a literal."},
+      "config": {"grade": "A", "summary": "2/2 criteria met in two steps with no rework; the debrief records no sub-agent mistakes and the one finding is an improvement idea, not an error.",
+                 "suggestions": "None — keep the current approach."}
+    },
+    "history": [
+      {"harness": "api-service", "title": "Paginate the audit log endpoint", "closed": "2026-09-08 16:20:00", "grade": "C", "summary": "3/3 criteria met after two fix rounds; an escalation to @vasquez resolved an off-by-one in the cursor.", "suggestions": "Brief cursor-pagination steps with the exact boundary cases to test."},
+      {"harness": "api-service", "title": "Rotate signing keys without downtime", "closed": "2026-09-11 12:05:00", "grade": "B", "summary": "4/4 criteria met; one fix round for a missing rollback path.", "suggestions": "Name the rollback path as an acceptance criterion when a change is hard to undo."},
+      {"harness": "api-service", "title": "Add request IDs to every log line", "closed": "2026-09-15 10:40:00", "grade": "B", "summary": "3/3 criteria met; one fix round; tracker and reality agreed at close.", "suggestions": "None — keep the current approach."},
+      {"harness": "api-service", "title": "Retire the v1 health endpoint", "closed": "2026-09-19 09:15:00", "grade": "A", "summary": "2/2 criteria met in three steps; no rework, no findings.", "suggestions": "None — keep the current approach."},
+      {"harness": "api-service", "title": "Cache tenant settings for 60 seconds", "closed": "2026-09-24 15:30:00", "grade": "B", "summary": "3/3 criteria met; one fix round for a stale-read test.", "suggestions": "Give cache steps a test that proves the entry expires, not only that it is set."},
+      {"harness": "api-service", "title": "Validate webhook signatures", "closed": "2026-09-29 11:00:00", "grade": "A", "summary": "4/4 criteria met; no rework; the QA pass found nothing open.", "suggestions": "None — keep the current approach."},
+      {"harness": "docs-site", "title": "Move the guides to the new theme", "closed": "2026-09-09 17:45:00", "grade": "D", "summary": "2 of 4 criteria met; three fix rounds and an escalation; the debrief records two wrong assumptions about the theme's build.", "suggestions": "Start theme migrations with a spike step that builds one page end to end before the bulk move."},
+      {"harness": "docs-site", "title": "Fix broken anchors in the API reference", "closed": "2026-09-16 13:10:00", "grade": "C", "summary": "3/3 criteria met after two fix rounds; the link checker ran only after the second.", "suggestions": "Run the link checker in the first step, not at review."},
+      {"harness": "docs-site", "title": "Add a changelog page", "closed": "2026-09-22 10:25:00", "grade": "B", "summary": "2/2 criteria met; one fix round for a heading level.", "suggestions": "None — keep the current approach."},
+      {"harness": "docs-site", "title": "Write the upgrade guide for 2.0", "closed": "2026-09-30 16:00:00", "grade": "C", "summary": "3/4 criteria met, one partial; one fix round; a finding records a missed version table.", "suggestions": "Give @lambert the release notes as a named input when a guide depends on them."}
+    ]
+  }
 }

@@ -95,7 +95,7 @@ func registerTriageTools(s *server.MCPServer, c *client) {
 	s.AddTool(
 		mcp.NewTool("triage_run_start",
 			mcp.WithDescription("Open a triage run row. Call once at the start; pass the returned id as run_id on every write and to triage_run_finish."),
-			mcp.WithString("kind", mcp.Required(), mcp.Description("classify or process. Required.")),
+			mcp.WithString("kind", mcp.Required(), mcp.Description("classify, process or grade. Required.")),
 			mcp.WithString("category", mcp.Description("For a process run: the category being processed.")),
 			mcp.WithString("model", mcp.Description("The model id doing the work, e.g. claude-haiku-4-5-20251001.")),
 		),
@@ -158,6 +158,27 @@ func registerTriageTools(s *server.MCPServer, c *client) {
 			[]string{"title", "applies_when", "rule", "rationale", "reviewer_check", "example", "evidence", "group_id", "harness", "run_id"},
 			[]string{"title", "applies_when", "rule", "rationale", "reviewer_check", "evidence"},
 			"v1", "directive-proposals"),
+	)
+
+	// Mission-grader tools. There is no tool for reopening a graded mission:
+	// regrading is the operator's DELETE /v1/mission-grades/:id.
+	s.AddTool(
+		mcp.NewTool("grade_claim",
+			mcp.WithDescription("Claim up to 10 finished missions that have no grade and return a grading packet for each: the mission row, signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. Returns {\"missions\":[...]}; an empty list means nothing is waiting. Call it once per run."),
+			mcp.WithInteger("run_id", mcp.Description("Run id from triage_run_start.")),
+			mcp.WithInteger("limit", mcp.Description("How many missions to claim, 1-10 (default 10).")),
+			mcp.WithArray("mission_ids", mcp.Description("Optional: claim exactly these missions (the runner passes them when the operator named some).")),
+		),
+		makeBodyProxy(c, "grade_claim", http.MethodPost, []string{"run_id", "limit", "mission_ids"}, nil, "v1", "mission-grades", "claim"),
+	)
+	s.AddTool(
+		mcp.NewTool("grade_write",
+			mcp.WithDescription("Write the verdicts for missions you claimed. Each item: {mission_id, grade: A|B|C|D|E|F, summary, suggestions} or {mission_id, insufficient: true, summary} when the packet does not hold enough to grade. A verdict is final; an unclaimed mission or one that already has a verdict is skipped and reported."),
+			mcp.WithString("graded_by", mcp.Required(), mcp.Description("Model id doing the grading. Required.")),
+			mcp.WithInteger("run_id", mcp.Description("Run id from triage_run_start.")),
+			mcp.WithArray("items", mcp.Required(), mcp.Description("Array of verdict items, 1-10. Required.")),
+		),
+		makeBodyProxy(c, "grade_write", http.MethodPost, []string{"graded_by", "run_id", "items"}, []string{"graded_by", "items"}, "v1", "mission-grades"),
 	)
 }
 

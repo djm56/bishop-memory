@@ -10,6 +10,7 @@ SQLite through `modernc.org/sqlite` (pure Go, no CGo). One file, WAL mode, forei
 2. `store.ApplySchema(db, "db/schema.sql")` — splits the file on top-level `;` (comment- and string-aware; no trigger bodies) and executes each statement. Everything is `CREATE … IF NOT EXISTS`, so this is a no-op on an existing database **and cannot add a column to an existing table**.
 3. `store.EnsureColumns` — for each entry in `additiveColumns`, `ALTER TABLE … ADD COLUMN` if `PRAGMA table_info` lacks it; then each statement in `additiveIndexes`.
 4. `store.EnsureMissionStepsIndex` — creates the unique index on `mission_steps(mission_id, step)` after checking for duplicates and producing an actionable error if any exist.
+5. `store.EnsureTriageRunKinds` — rebuilds `triage_runs` once on a database created before mission grading, to widen its `kind` CHECK to admit `grade`. SQLite cannot alter a CHECK, so it follows SQLite's documented rebuild: foreign keys off on one connection, then in one transaction create, copy every row with its id, drop, rename, and compare `foreign_key_check` before and after. Not fatal: on any error it rolls back, logs a warning and the service starts without grade runs. The rebuilt table is a superset of the old one, so an older `memoryd` still runs against it.
 
 Consequence: a fresh database and an upgraded one end up identical, by different paths. `TestUpgradeFromPreTriageDatabase` in `internal/store/migrate_test.go` proves the upgrade path.
 
@@ -36,11 +37,12 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 |---|---|---|
 | `harnesses` | `name` | `memory_root` absolute path; upserted by the reconciler |
 | `finding_categories` | `slug` | description read by the classifier; `last_processed_at` is the rotation pointer |
-| `triage_runs` | autoincrement | `kind` CHECK classify/process; `status` running/done/failed |
+| `triage_runs` | autoincrement | `kind` CHECK classify/process/grade; `status` running/done/failed |
 | `finding_triage` | `finding_id` (one row per finding) | FK cascade; `category` FK to categories |
 | `finding_groups` | autoincrement | `category` FK |
 | `finding_recommendations` | autoincrement; partial unique on `finding_id WHERE state='pending'` | `recommendation` CHECK approve/reject/supersede/defer; `state` pending/accepted/declined/expired |
 | `directive_proposals` | autoincrement | six template fields; `evidence` JSON array of finding ids; `directive_id` once accepted |
+| `mission_grades` | `mission_id` (one row per mission) | FK cascade to `missions`; `state` pending/graded/insufficient/skipped; `grade` A–F (required when graded); `signals` JSON the service computed; `attempts` claims so far. Claiming creates the row; a verdict closes it; two unanswered claims mark it skipped. See [Mission Grading](Mission-Grading) |
 
 ## Mission links
 
