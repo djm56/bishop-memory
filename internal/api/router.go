@@ -41,6 +41,7 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 	// the /v1 triage routes with fetch; loopback-only like everything else.
 	router.GET("/triage", ui.TriagePageHandler())
 	router.GET("/missions", ui.MissionsPageHandler())
+	router.GET("/performance", ui.PerformancePageHandler())
 	router.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/missions") })
 	router.GET("/favicon.svg", ui.FaviconSVGHandler())
 	router.GET("/favicon.ico", ui.FaviconICOHandler())
@@ -115,6 +116,19 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 			triage.GET("/runs", listTriageRunsHandler(db))
 			triage.POST("/runs", startTriageRunHandler(db))
 			triage.PATCH("/runs/:runID", finishTriageRunHandler(db))
+		}
+
+		// Mission grading (grades.go). The grader claims and writes through
+		// mcpd's triage profile; DELETE is the operator's regrade and is
+		// registered in no mcpd profile.
+		grades := v1.Group("/mission-grades")
+		{
+			grades.GET("", listGradesHandler(db))
+			grades.POST("", writeGradesHandler(db))
+			grades.GET("/waiting", waitingGradesHandler(db))
+			grades.GET("/performance", performanceHandler(db))
+			grades.POST("/claim", claimGradesHandler(db))
+			grades.DELETE("/:missionID", deleteGradeHandler(db))
 		}
 
 		memory := v1.Group("/memory")

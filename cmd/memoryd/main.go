@@ -106,6 +106,14 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// EnsureTriageRunKinds widens triage_runs.kind to admit mission-grader
+	// runs, rebuilding the table once on a database created before them.
+	// Deliberately not fatal: the rebuild rolls back on any error, and every
+	// other route works without it; only starting a grade run is refused.
+	if err := store.EnsureTriageRunKinds(db); err != nil {
+		log.Printf("bishop-memory: WARNING: %v; mission grading runs are unavailable until this succeeds", err)
+	}
+
 	router := api.NewRouterWithKeys(cfg, db, keys)
 
 	srv := &http.Server{

@@ -1,6 +1,6 @@
 # Developer: Triage Agents
 
-Two headless agents (on Claude Code by default, or on OpenCode), one skill, one runner, two launchd jobs. This page is how they work and how to tune them; the operator's view is in the [Review Page Guide](Review-Page-Guide).
+Three headless agents (on Claude Code by default, or on OpenCode), two skills, one runner, three launchd jobs. This page is how they work and how to tune them; the operator's view is in the [Review Page Guide](Review-Page-Guide).
 
 ## The pieces
 
@@ -9,11 +9,12 @@ Two headless agents (on Claude Code by default, or on OpenCode), one skill, one 
 | Classifier | `.claude/agents/findings-classifier.md` | Haiku. Reads unclassified findings in batches of 50, writes one classification each |
 | Processor | `.claude/agents/findings-processor.md` | Sonnet. One category per run: groups, recommendations, directive drafts |
 | OpenCode twins | `.opencode/agents/findings-classifier.md`, `.opencode/agents/findings-processor.md` | The same two agents for `opencode run` (`TRIAGE_ENGINE=opencode`); defaults `opencode-go/glm-5.3-flash` and `opencode-go/glm-5.2` |
-| Doctrine | `.claude/skills/findings-triage/SKILL.md` | The rules both agents read first with the Read tool, on either engine |
+| Grader | `.claude/agents/mission-grader.md`, `.opencode/agents/mission-grader.md` | Sonnet, or `opencode-go/glm-5.2`. Grades up to 10 finished missions A–F per run from the database only; see [Mission Grading](Mission-Grading) |
+| Doctrine | `.claude/skills/findings-triage/SKILL.md`, `.claude/skills/mission-grading/SKILL.md` | The rules each agent reads first with the Read tool, on either engine |
 | Runner | `scripts/triage-run.sh` | Credentials, health check, work check, category rotation, the `claude -p` or `opencode run` call, logging |
-| Tools | `cmd/mcpd/triage.go` (`MCPD_PROFILE=triage`) | 13 tools; see [MCP Tool Reference](MCP-Tool-Reference) |
+| Tools | `cmd/mcpd/triage.go` (`MCPD_PROFILE=triage`) | 15 tools, two of them the grader's (`grade_claim`, `grade_write`); see [MCP Tool Reference](MCP-Tool-Reference) |
 | Taxonomy | `db/finding-categories.json` | 17 categories; descriptions are written for the classifier |
-| Schedule | `scripts/com.bishop-memory.triage.plist`, `install-triage-schedule.sh` | 21:00 classify, 21:20 process |
+| Schedule | `scripts/com.bishop-memory.triage.plist`, `install-triage-schedule.sh` | 21:00 classify, 21:20 process, 21:40 grade |
 
 Agents are **project-scope**: Claude Code discovers `.claude/agents/*.md` in the working directory, so the runner always `cd`s to the bishop-memory checkout. `--strict-mcp-config` with an inline `--mcp-config` means the agents see only the `bishop-triage` server; `--allowedTools` plus the agent's `tools:` frontmatter bound what they may call; `--permission-mode dontAsk` makes anything else a denial rather than a prompt.
 
@@ -24,6 +25,8 @@ On the **opencode engine** the runner passes the same server through `OPENCODE_C
 **Classify.** `triage_run_start(kind=classify)` → `triage_categories` → loop: `triage_next_unclassified(limit=50)` → `triage_classify(items)` → until empty or 300 classified → `triage_run_finish`. 314 findings took two runs of 23 and 8 turns, about $0.70 in total, with confidence 0.85–0.95 and two findings marked LOW.
 
 **Process.** `triage_run_start(kind=process, category)` → `triage_categories`, `triage_recent_decisions(category)` → `triage_category_findings(category, limit)` → read each finding → `Read` the target doctrine file under the harness checkout → `triage_group_create` per group → one `triage_recommend` batch → `directive_propose` per qualifying group → `triage_run_finish`. 30 brief-writing findings took 24 turns and $0.34.
+
+**Grade.** `triage_run_start(kind=grade)` → one `grade_claim(run_id, limit)` → one `grade_write(items)` → `triage_run_finish`. The packet `grade_claim` returns is everything the grader may use; it has no file or search tools beyond reading its doctrine. A claim creates the mission's `mission_grades` row; a verdict closes it for good; a claim left unanswered is retried by one later run, then marked skipped. The runner asks `GET /v1/mission-grades/waiting` first and starts no agent when nothing waits.
 
 A finished `process` run stamps `finding_categories.last_processed_at`; `GET /v1/triage/next-category` picks the active category with waiting findings that was processed longest ago. Findings beyond the item cap wait for the next rotation.
 
@@ -53,7 +56,7 @@ Every run is wrapped in a `TRIAGE_TIMEOUT_MIN` alarm (45 minutes by default; `pe
 
 The evening slots are deliberate: the machine is awake and any external volume holding a harness checkout is mounted, and launchd runs a missed slot on wake. `scripts/install-triage-schedule.sh --classify-at HH:MM --process-at HH:MM` moves them.
 
-Linux has no launchd; schedule the same two commands with a systemd user timer:
+Linux has no launchd; schedule the same three commands (`classify`, `process`, `grade`) with a systemd user timer each:
 
 ```ini
 # ~/.config/systemd/user/bishop-triage-classify.service

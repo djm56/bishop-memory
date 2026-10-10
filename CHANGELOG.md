@@ -11,6 +11,11 @@ here ahead of an actual release.
 
 ### Added
 
+- **Mission grading** (wiki Mission-Grading): a third nightly triage agent, `mission-grader` (21:40; `opencode-go/glm-5.2` or Sonnet), grades every finished mission A to F with a short summary and suggestions for the next mission. It works from the database alone: `grade_claim` returns a compact packet per mission — the brief's criteria, the debrief's judgement sections, one line per step, finding and agent note, and signals the service counts itself — and `grade_write` records the verdicts. One pass of at most ten missions per run; a verdict is final, an unanswered claim is retried once and then skipped, and only `make triage-grade MISSIONS=… REGRADE=1` (or `DELETE /v1/mission-grades/:id`) reopens a mission.
+  - New table `mission_grades`; `triage_runs.kind` admits `grade`, widened on an existing database by a one-time table rebuild at boot that never stops the service from starting.
+  - Routes `/v1/mission-grades` (list, write), `/waiting`, `/claim`, `/performance` and `DELETE /:missionID`; `make triage-grade`; `install-triage-schedule.sh --grade-at`.
+  - The mission HUD shows each mission's grade, a Grade section and a grade filter; the new `/performance` page rolls grades up per harness with averages, an A–F distribution, the latest grades and a trend.
+
 - **Network deployment** (docs/plans/NETWORK-DEPLOYMENT-PLAN.md, wiki Server-Install):
   - **API keys.** Keys are named and stored hashed (`memoryd keys add|list|revoke`) and are required on every `/v1` route once one exists. Off loopback they are always required: memoryd refuses to start on a non-loopback address without a key unless `BISHOP_ALLOW_NO_AUTH=1`. The access log names the key behind each request.
   - **Built-in HTTPS** via `TLS_CERT_FILE` and `TLS_KEY_FILE`.

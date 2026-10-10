@@ -52,9 +52,20 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 			}
 			where = append(where, "("+clause+")")
 		}
+		// grade: a letter A-F, or "ungraded" for missions without a verdict.
+		if v := strings.TrimSpace(c.Query("grade")); v != "" {
+			if strings.EqualFold(v, "ungraded") {
+				where = append(where, "(SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) IS NULL")
+			} else {
+				where = append(where, "(SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) = ?")
+				args = append(args, strings.ToUpper(v))
+			}
+		}
 
 		query := `
 			SELECT m.id, m.title, m.status, m.outcome, m.harness, m.owner, m.priority,
+			       (SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) AS grade,
+			       (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) AS grade_state,
 			       m.opened_at, m.closed_at, m.updated_at,
 			       (SELECT COUNT(*) FROM mission_steps s WHERE s.mission_id = m.id) AS steps,
 			       (SELECT COUNT(*) FROM mission_steps s WHERE s.mission_id = m.id AND s.status = 'done') AS steps_done,
@@ -174,6 +185,20 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 				return
 			}
 			out["service_records"] = records
+		}
+
+		// The grader's verdict, when the mission has one.
+		out["grade"] = nil
+		grades, err := queryMaps(ctx, db,
+			`SELECT state, grade, summary, suggestions, signals, graded_by, run_id, attempts, graded_at
+			   FROM mission_grades WHERE mission_id = ?`, id)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if len(grades) == 1 {
+			decodeSignals(grades[0])
+			out["grade"] = grades[0]
 		}
 
 		c.JSON(http.StatusOK, out)

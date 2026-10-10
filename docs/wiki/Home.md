@@ -16,6 +16,7 @@ Read these in order if you run a harness against bishop-memory or review its fin
 | [MCP Tool Reference](MCP-Tool-Reference) | Every MCP tool in both profiles: arguments, examples, what comes back, what can go wrong |
 | [Review Page Guide](Review-Page-Guide) | Deciding findings and ratifying directives at `/triage`, and getting decisions back into Markdown |
 | [Mission HUD Guide](Mission-HUD-Guide) | Reading a mission's brief, steps, findings and debrief at `/missions`, and getting its documents and links into the database |
+| [Mission Grading](Mission-Grading) | The nightly A–F grade on every finished mission, its suggestions, and harness performance at `/performance` |
 | [Commands and Scripts](Commands-and-Scripts) | Every `make` target and script with its flags, exit codes and when to use it |
 | [Troubleshooting](Troubleshooting) | Symptoms, causes, fixes |
 

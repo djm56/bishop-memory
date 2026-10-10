@@ -1,5 +1,6 @@
 // Package ui serves the operator's pages — the findings-triage review page at
-// /triage and the mission HUD at /missions — and their icon.
+// /triage, the mission HUD at /missions and harness performance at
+// /performance — and their icon.
 //
 // The page is one embedded HTML file with inline CSS and JavaScript. It holds
 // no state of its own: everything it shows comes from the /v1 triage routes,
@@ -26,6 +27,9 @@ var triagePage []byte
 //go:embed missions.html
 var missionsPage []byte
 
+//go:embed performance.html
+var performancePage []byte
+
 //go:embed favicon.svg
 var faviconSVG []byte
 
@@ -47,6 +51,14 @@ func TriagePageHandler() gin.HandlerFunc {
 func MissionsPageHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", missionsPage)
+	}
+}
+
+// PerformancePageHandler serves GET /performance: the mission grades rolled
+// up per harness.
+func PerformancePageHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", performancePage)
 	}
 }
 

@@ -110,6 +110,7 @@ def seed_missions(url, demo, memory_root, db_path):
     mission_of = {}
     for m in demo.get("missions", []):
         mid = call(url, "POST", "/v1/missions/allocate", {"harness": harness, "title": m["title"], "owner": m["owner"]})["id"]
+        demo.setdefault("_mission_ids", {})[m["key"]] = mid
         bullets = lambda items: "\n".join("- " + i for i in items)
         rows = lambda: "\n".join(f"| {s['step']} | {s['phase'] or '—'} | {s['agent']} | {s['status']} | {s['summary'] or s['notes']} |" for s in m["steps"])
         folder = os.path.join(memory_root, "missions", mid)
@@ -166,6 +167,41 @@ def seed_missions(url, demo, memory_root, db_path):
 
     call(url, "POST", "/v1/documents/sync", {"harness": harness})
     return mission_of
+
+
+def seed_grades(url, demo, db_path):
+    """Grade the demo missions, and a short made-up history on other harnesses,
+    through the mission grader's own routes: a grade run, claim, write."""
+    spec = demo.get("grades")
+    if not spec:
+        return 0
+    verdicts = {}
+    for key, v in spec.get("missions", {}).items():
+        verdicts[demo["_mission_ids"][key]] = v
+    for h in spec.get("history", []):
+        mid = call(url, "POST", "/v1/missions/allocate", {"harness": h["harness"], "title": h["title"], "owner": "@bishop"})["id"]
+        call(url, "PATCH", f"/v1/missions/{mid}", {"status": "complete", "outcome": "done"})
+        if db_path:
+            db = sqlite3.connect(db_path)
+            db.execute("UPDATE missions SET opened_at = datetime(?, '-3 hours'), closed_at = ?, updated_at = ? WHERE id = ?",
+                       (h["closed"], h["closed"], h["closed"], mid))
+            db.commit()
+            db.close()
+        verdicts[mid] = h
+
+    run_id = call(url, "POST", "/v1/triage/runs", {"kind": "grade", "model": spec["model"]})["id"]
+    ids = list(verdicts)
+    written = 0
+    for i in range(0, len(ids), 10):
+        batch = ids[i:i + 10]
+        call(url, "POST", "/v1/mission-grades/claim", {"run_id": run_id, "mission_ids": batch})
+        items = [{"mission_id": mid, "grade": verdicts[mid]["grade"], "summary": verdicts[mid]["summary"],
+                  "suggestions": verdicts[mid]["suggestions"]} for mid in batch]
+        written += call(url, "POST", "/v1/mission-grades", {"graded_by": spec["model"], "run_id": run_id, "items": items})["written"]
+    call(url, "PATCH", f"/v1/triage/runs/{run_id}",
+         {"status": "done", "considered": len(ids), "written": written,
+          "notes": f"Graded {written} finished missions."})
+    return written
 
 
 def main():
@@ -253,11 +289,13 @@ def main():
         call(url, "POST", f"/v1/directive-proposals/{proposal_ids[group_key]}/decision",
              {"state": "accepted", "decided_by": approver})
 
+    graded = seed_grades(url, demo, args.db) if args.memory_root else 0
+
     pending = call(url, "GET", "/v1/triage/pending")
     missions = len(demo.get("missions", [])) if args.memory_root else 0
     print(f"[seed-demo] {missions} missions, {len(ids)} findings, {len(demo['runs'])} runs, "
           f"{pending['pending_findings']} pending recommendations, "
-          f"{len(pending['directive_proposals'])} pending directive drafts")
+          f"{len(pending['directive_proposals'])} pending directive drafts, {graded} mission grades")
 
 
 if __name__ == "__main__":

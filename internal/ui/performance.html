@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mission HUD</title>
+<title>Harness Performance</title>
 <link rel="icon" href="/favicon.ico" sizes="32x32">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -238,12 +238,28 @@
     .head h2 { font-size:32px }
   }
   @media (prefers-reduced-motion: reduce) { .empty::after, .step .dot.in-progress { animation:none } }
+  .hgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px; margin:0 0 36px }
+  .hcard { display:flex; flex-direction:column; gap:10px }
+  .hcard .top { display:flex; align-items:center; gap:14px }
+  .hcard .name { font:400 24px/1 var(--disp); letter-spacing:.06em; text-transform:uppercase; overflow-wrap:anywhere }
+  .hcard .sub2 { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .dist { display:flex; height:14px; border:1px solid var(--line2); padding:1px; gap:1px }
+  .dist i { display:block; height:100% }
+  .dist .dA, .dist .dB { background:var(--ok) } .dist .dB { opacity:.65 } .dist .dC { background:var(--accent); opacity:.55 }
+  .dist .dD { background:var(--warn) } .dist .dE { background:var(--bad); opacity:.65 } .dist .dF { background:var(--bad) }
+  .legend { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .recent { display:flex; flex-wrap:wrap; gap:4px }
+  .recent a { text-decoration:none } .recent a:hover { background:none }
+  .rowfilters { display:flex; gap:10px; flex-wrap:wrap; margin:0 0 14px }
+  .rowfilters select { min-width:160px }
+  td .sugg { margin:0 }
+  main.single { display:block }
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark"></span><h1>Mission HUD</h1></div>
-  <nav class="seg" aria-label="Pages"><a href="/triage">Triage</a><a href="/missions" class="on">Missions</a><a href="/performance">Performance</a></nav>
+  <div class="brand"><span class="mark"></span><h1>Harness Performance</h1></div>
+  <nav class="seg" aria-label="Pages"><a href="/triage">Triage</a><a href="/missions">Missions</a><a href="/performance" class="on">Performance</a></nav>
   <span class="spacer"></span>
   <span id="stats" class="stats"></span>
   <button id="signout" class="signout" hidden title="Forget the API key stored in this browser">Forget key</button>
@@ -253,26 +269,14 @@
     <button data-set="dark">Dark</button>
   </div>
 </header>
-<main>
-  <aside>
-    <div class="filters">
-      <input id="q" type="search" placeholder="Search missions, briefs, debriefs">
-      <div class="row">
-        <select id="harness"><option value="">All harnesses</option></select>
-        <select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option></select>
-      </div>
-      <select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option></select>
-    </div>
-    <div class="rail-head"><span>Missions</span><span id="count"></span></div>
-    <div class="mlist" id="mlist"></div>
-  </aside>
+<main class="single">
   <section id="view"><div class="empty">Loading…</div></section>
 </main>
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
-  const state = { missions:[], current:null, filters:{ q:'', harness:'', status:'', grade:'' } };
-  try { Object.assign(state.filters, JSON.parse(localStorage.getItem('hud.filters') || '{}'), { q:'' }); } catch (e) {}
+  const state = { perf:null, grades:[], filters:{ harness:'', grade:'' } };
+  try { Object.assign(state.filters, JSON.parse(localStorage.getItem('perf.filters') || '{}')); } catch (e) {}
 
   const root = document.documentElement;
   const paintTheme = () => $('#theme').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.set === root.dataset.theme));
@@ -301,207 +305,80 @@
     const r = await authed(path); const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
     if (!r.ok) throw new Error(json.error || r.status); return json;
   };
-  const label = s => String(s || '').replace(/-/g, ' ');
-  const crewName = a => String(a || '').split(':').pop().replace(/^@/, '').trim().toLowerCase();
-  // Mission grades: A=5 … F=0 for averages, as GET /v1/mission-grades/performance computes them.
-  const GRADE_POINTS = { A:5, B:4, C:3, D:2, E:1, F:0 };
-  const pointsToGrade = p => p >= 4.5 ? 'A' : p >= 3.5 ? 'B' : p >= 2.5 ? 'C' : p >= 1.5 ? 'D' : p >= 0.5 ? 'E' : 'F';
-  const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
-
-  // SQLite CURRENT_TIMESTAMP values are UTC "YYYY-MM-DD HH:MM:SS".
   const toDate = s => { if (!s) return null; const d = new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z')); return isNaN(d) ? null : d; };
-  const fmtWhen = s => { const d = toDate(s); return d ? d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : ''; };
-  const fmtDay = s => { const d = toDate(s); return d ? d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) : ''; };
-  const dur = (a, b) => {
-    const s = toDate(a), e = b ? toDate(b) : null; if (!s || (b && !e)) return '';
-    let m = Math.round(((e || new Date()) - s) / 60000); if (m < 0) return '';
-    if (m < 60) return m + 'm'; const h = Math.floor(m / 60); m %= 60;
-    if (h < 24) return h + 'h' + (m ? ' ' + m + 'm' : ''); const d = Math.floor(h / 24); return d + 'd ' + (h % 24) + 'h';
+  const fmtDay = s => { const d = toDate(s); return d ? d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : ''; };
+  const LETTERS = ['A','B','C','D','E','F'];
+  const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
+  const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
+
+  // Distribution bar: one segment per letter, width by share of graded missions.
+  const dist = h => {
+    if (!h.graded) return '<div class="none">No grades yet.</div>';
+    const seg = LETTERS.filter(l => h.distribution[l]).map(l => `<i class="d${l}" style="width:${(h.distribution[l] / h.graded * 100).toFixed(1)}%" title="${l}: ${h.distribution[l]}"></i>`).join('');
+    const legend = LETTERS.map(l => `<span>${l} ${h.distribution[l] || 0}</span>`).join('');
+    return `<div class="dist">${seg}</div><div class="legend">${legend}</div>`;
+  };
+  // Trend: the average of the five newest grades against the five before them.
+  const trend = h => {
+    const pts = { A:5, B:4, C:3, D:2, E:1, F:0 };
+    const r = h.recent.map(x => pts[x.grade]);
+    if (r.length < 6) return '';
+    const a = r.slice(0, 5), b = r.slice(5);
+    const avg = xs => xs.reduce((n, x) => n + x, 0) / xs.length;
+    const delta = avg(a) - avg(b);
+    if (Math.abs(delta) < 0.3) return '<span class="tag">steady</span>';
+    return delta > 0 ? '<span class="tag" style="color:var(--ok);border-color:var(--ok)">improving</span>' : '<span class="tag" style="color:var(--bad);border-color:var(--bad)">slipping</span>';
   };
 
-  // Minimal Markdown: headings, lists, task boxes, tables, fences, inline code,
-  // bold and http(s) links. Everything is escaped first.
-  function md(src) {
-    const inline = t => esc(t)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    const lines = String(src || '').replace(/\r\n/g, '\n').split('\n'); const out = []; let i = 0;
-    const cells = l => l.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map(c => c.trim().replace(/\\\|/g, '|'));
-    while (i < lines.length) {
-      const l = lines[i];
-      if (/^```/.test(l)) { const buf = []; i++; while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]); i++; out.push(`<pre>${esc(buf.join('\n'))}</pre>`); continue; }
-      const h = l.match(/^(#{1,4})\s+(.*)/); if (h) { out.push(`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`); i++; continue; }
-      if (/^\s*\|/.test(l) && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
-        const head = cells(l); i += 2; const rows = [];
-        while (i < lines.length && /^\s*\|/.test(lines[i])) rows.push(cells(lines[i++]));
-        out.push(`<div class="tw"><table><tr>${head.map(c => `<th>${inline(c)}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${inline(c)}</td>`).join('')}</tr>`).join('')}</table></div>`); continue;
-      }
-      if (/^\s*([-*]|\d+\.)\s+/.test(l)) {
-        const ordered = /^\s*\d+\./.test(l); const items = [];
-        while (i < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[i])) {
-          const indent = lines[i].match(/^\s*/)[0].length; let t = lines[i++].replace(/^\s*([-*]|\d+\.)\s+/, '');
-          const box = t.match(/^\[( |x|X)\]\s*/); if (box) t = (box[1] === ' ' ? '☐ ' : '☑ ') + t.slice(box[0].length);
-          items.push(`<li style="margin-left:${Math.min(indent, 8) * 6}px">${inline(t)}</li>`);
-        }
-        out.push(ordered ? `<ol>${items.join('')}</ol>` : `<ul>${items.join('')}</ul>`); continue;
-      }
-      if (!l.trim()) { i++; continue; }
-      const para = []; while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*\||\s*([-*]|\d+\.)\s)/.test(lines[i])) para.push(lines[i++]);
-      if (!para.length) para.push(lines[i++]);
-      out.push(`<p>${inline(para.join(' '))}</p>`);
-    }
-    return out.join('');
+  function harnessCard(h) {
+    const name = h.harness || 'no harness';
+    return `<div class="card hcard">
+      <div class="top">${h.avg_grade ? gradeBadge(h.avg_grade, 'lg solid') : '<span class="grade lg">—</span>'}
+        <div><div class="name">${esc(name)}</div>
+          <div class="sub2">${h.graded} graded${h.avg_points != null ? ` · ${Number(h.avg_points).toFixed(2)}&nbsp;/&nbsp;5` : ''}${h.waiting ? ` · ${h.waiting} waiting` : ''}${h.insufficient ? ` · ${h.insufficient} not enough evidence` : ''}${h.skipped ? ` · ${h.skipped} skipped` : ''}</div></div>
+        <span class="spacer"></span>${trend(h)}</div>
+      ${dist(h)}
+      ${h.recent.length ? `<div><div class="sub2" style="margin-bottom:4px">Latest, newest first</div><div class="recent">${h.recent.map(x => `<a href="/missions#${encodeURIComponent(x.mission_id)}" title="${esc(x.mission_id)} · ${esc(x.title)}">${gradeBadge(x.grade)}</a>`).join('')}</div></div>` : ''}
+    </div>`;
   }
 
-  // Splits a Markdown document into its "## " sections.
-  const sections = body => { const out = {}; let key = '_'; String(body || '').split('\n').forEach(l => { const m = l.match(/^##\s+(.*)/); if (m) { key = m[1].trim(); out[key] = []; } else (out[key] = out[key] || []).push(l); }); Object.keys(out).forEach(k => out[k] = out[k].join('\n').trim()); return out; };
-  const bullets = text => String(text || '').split('\n').filter(l => /^\s*[-*]\s+/.test(l)).map(l => l.replace(/^\s*[-*]\s+/, '').trim());
-
-  // ---- mission list -------------------------------------------------------
-
-  async function loadList() {
-    const f = state.filters, q = new URLSearchParams();
-    ['q','harness','status','grade'].forEach(k => { if (f[k]) q.set(k, f[k]); });
-    const d = await api('/v1/hud/missions?' + q);
-    state.missions = d.missions;
-    const sel = $('#harness'), cur = f.harness;
-    sel.innerHTML = '<option value="">All harnesses</option>' + d.harnesses.map(h => `<option value="${esc(h.name)}">${esc(h.name)} (${h.missions})</option>`).join('');
-    sel.value = cur; $('#status').value = f.status; $('#grade').value = f.grade;
-    $('#count').textContent = d.missions.length;
-    const total = d.missions.reduce((n, m) => n + m.findings, 0);
-    const graded = d.missions.filter(m => m.grade);
-    const avg = graded.length ? graded.reduce((n, m) => n + GRADE_POINTS[m.grade], 0) / graded.length : null;
-    $('#stats').innerHTML = `<b>${d.missions.length}</b> missions · <b>${total}</b> linked findings${avg !== null ? ` · average <b>${pointsToGrade(avg)}</b>` : ''}`;
-    renderList();
-    if (!state.current && d.missions.length && !location.hash) location.hash = d.missions[0].id;
-  }
-  function renderList() {
-    $('#mlist').innerHTML = state.missions.length ? state.missions.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''}" href="#${esc(m.id)}">
-        <span class="id">${m.grade ? gradeBadge(m.grade) + ' ' : ''}${esc(m.id)}</span>
-        <span class="t">${esc(m.title)}</span>
-        <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>
-          <span>${esc(m.harness || '—')}</span><span>${m.steps_done}/${m.steps} steps</span>${m.findings ? `<span>${m.findings} finding${m.findings === 1 ? '' : 's'}</span>` : ''}<span>${fmtDay(m.opened_at)}</span></span>
-      </a>`).join('') : '<div class="none" style="padding:10px">No missions match.</div>';
-  }
-  const saveFilters = () => { try { localStorage.setItem('hud.filters', JSON.stringify({ harness: state.filters.harness, status: state.filters.status, grade: state.filters.grade })); } catch (e) {} };
-  let qTimer; $('#q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.filters.q = e.target.value.trim(); loadList().catch(showError); }, 250); };
-  $('#harness').onchange = e => { state.filters.harness = e.target.value; saveFilters(); loadList().catch(showError); };
-  $('#status').onchange = e => { state.filters.status = e.target.value; saveFilters(); loadList().catch(showError); };
-  $('#grade').onchange = e => { state.filters.grade = e.target.value; saveFilters(); loadList().catch(showError); };
-
-  // ---- one mission -------------------------------------------------------
-
-  async function loadMission(id) {
-    state.current = id; renderList();
-    const view = $('#view'); view.innerHTML = '<div class="empty">Loading…</div>';
-    const [d, f] = await Promise.all([api('/v1/hud/missions/' + encodeURIComponent(id)), api('/v1/findings?mission_id=' + encodeURIComponent(id))]);
-    if (state.current !== id) return;
-    renderMission(d, f.findings);
-    document.title = id + ' · Mission HUD';
-    { const on = $('.mrow.on'), a = $('aside'); if (on && a) { const r = on.getBoundingClientRect(), ar = a.getBoundingClientRect(); if (r.top < ar.top || r.bottom > ar.bottom) a.scrollTop += r.top - ar.top - ar.height / 2; } }
-  }
-
-  function renderMission(d, findings) {
-    const m = d.mission, docs = {}; d.documents.forEach(x => docs[x.kind] = x);
-    const brief = sections(docs.brief?.body), debrief = sections(docs.debrief?.body);
-    const crew = {}; d.crew.forEach(c => crew[c.name] = c);
-    const steps = d.steps, done = steps.filter(s => s.status === 'done').length;
-    const fstatus = {}; findings.forEach(x => fstatus[x.status] = (fstatus[x.status] || 0) + 1);
-
-    // Acceptance criteria: the brief's list, ticked from the debrief's "- [x] text — evidence" lines in order.
-    const outcome = bullets(debrief['Acceptance Criteria Outcome']).map(t => { const b = t.match(/^\[( |x|X)\]\s*(.*)$/); return b ? { met: b[1] !== ' ', text: b[2] } : null; }).filter(Boolean);
-    const criteria = bullets(brief['Acceptance Criteria']).map((t, i) => { const o = outcome[i]; const ev = o ? (o.text.split(/\s+—\s+/).slice(1).join(' — ')) : ''; return { text:t, met: o ? o.met : null, ev }; });
-
-    const pillFor = s => `<span class="pill ${esc(s)}">${esc(label(s))}</span>`;
-    const tile = (k, v, s, frac) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}${frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : ''}</div>`;
-    const evFor = step => d.events.filter(e => e.step === step.step);
-
+  function render() {
+    const p = state.perf, o = p.overall;
+    const f = state.filters;
+    const grades = state.grades.filter(g => (!f.harness || (g.harness || '') === f.harness) && (!f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient')));
+    const harnessNames = p.harnesses.map(h => h.harness);
+    $('#stats').innerHTML = `<b>${o.graded}</b> graded · average <b>${o.avg_grade || '—'}</b>${o.waiting ? ` · <b>${o.waiting}</b> waiting` : ''}`;
     $('#view').innerHTML = `
-      <div class="head">
-        <div class="ids"><span class="id">${esc(m.id)}</span><span>${esc(m.harness || 'no harness')}</span>${m.owner ? `<span>owner ${esc(m.owner)}</span>` : ''}${m.priority && m.priority !== 'normal' ? `<span class="tag">${esc(m.priority)}</span>` : ''}
-          ${pillFor(m.status)}${m.outcome ? pillFor(m.outcome) : ''}${d.grade?.grade ? gradeBadge(d.grade.grade) : ''}</div>
-        <h2>${esc(m.title)}</h2>
-        <div class="when">Opened ${esc(fmtWhen(m.opened_at))}${m.closed_at ? ` · closed ${esc(fmtWhen(m.closed_at))}` : ''}${m.next_action ? ` · next: ${esc(m.next_action)}` : ''}${m.blockers ? ` · <span style="color:var(--bad)">blocked: ${esc(m.blockers)}</span>` : ''}</div>
-      </div>
       <div class="tiles">
-        ${tile('Steps', `${done}/${steps.length}`, steps.length ? '' : 'none recorded', steps.length ? done / steps.length : null)}
-        ${tile('Duration', esc(dur(m.opened_at, m.closed_at) || '—'), m.closed_at ? '' : 'still open')}
-        ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${v} ${k}`).join(' · '))}
-        ${criteria.length ? tile('Criteria met', `${criteria.filter(c => c.met).length}/${criteria.length}`, criteria.some(c => c.met === null) ? 'no debrief yet' : '', criteria.length ? criteria.filter(c => c.met).length / criteria.length : null) : ''}
-        ${tile('Patterns', d.patterns.length)}
-        ${tile('Directives', d.directives.length)}
+        ${tile('Average grade', o.avg_grade ? gradeBadge(o.avg_grade, 'lg solid') : '—', o.avg_points != null ? `${Number(o.avg_points).toFixed(2)} of 5 over every harness` : 'nothing graded yet')}
+        ${tile('Graded', o.graded, 'finished missions with a grade')}
+        ${tile('Waiting', o.waiting, o.waiting ? 'graded by the next run, 10 at a time' : 'every finished mission has a verdict')}
+        ${tile('Set aside', o.insufficient + o.skipped, `${o.insufficient} not enough evidence · ${o.skipped} skipped`)}
       </div>
-
-      ${gradeSection(d.grade, m)}
-
-      <section class="sec"><h3>Brief</h3>${docs.brief ? `<div class="card">
-        ${brief['Goal'] ? `<p class="goal">${md(brief['Goal']).replace(/^<p>|<\/p>$/g, '')}</p>` : ''}
-        ${criteria.length ? `<ul class="crit">${criteria.map(c => `<li><span class="box ${c.met === true ? 'yes' : c.met === false ? 'no' : ''}">${c.met === true ? '✓' : c.met === false ? '✕' : ''}</span><span>${md(c.text).replace(/^<p>|<\/p>$/g, '')}${c.ev ? `<span class="ev">${esc(c.ev)}</span>` : ''}</span></li>`).join('')}</ul>` : ''}
-        <details><summary>Full brief</summary><div class="md" style="margin-top:10px">${md(docs.brief.body)}</div></details>
-      </div>` : `<div class="none">No brief imported. <code>POST /v1/documents/sync</code> imports it.</div>`}</section>
-
-      <section class="sec"><h3>Steps <span class="n">${steps.length}</span></h3>${steps.length ? `<div class="card"><div class="steps">${steps.map(s => {
-        const who = crew[crewName(s.agent)], events = evFor(s);
-        return `<div class="step"><div class="rail"><span class="dot ${esc(s.status)}">${esc(s.step)}</span><span class="line"></span></div><div class="body">
-          <div class="top"><span class="agent" title="${esc(who?.description || '')}">${esc(s.agent || '—')}</span>${who?.role ? `<span>${esc(who.role)}</span>` : ''}${s.phase ? `<span class="tag">${esc(s.phase)}</span>` : ''}${pillFor(s.status || 'pending')}
-            ${s.started_at || s.ended_at ? `<span>${esc(fmtWhen(s.started_at || s.ended_at))}${s.started_at && s.ended_at ? ' · ' + esc(dur(s.started_at, s.ended_at)) : ''}</span>` : ''}</div>
-          ${s.summary ? `<div class="sum">${esc(s.summary)}</div>` : ''}
-          ${s.notes || events.length ? `<details><summary>Notes${events.length ? ` and ${events.length} journal events` : ''}</summary>${s.notes ? `<div class="detail">${esc(s.notes)}</div>` : ''}${events.length ? `<ul class="ev">${events.map(e => `<li><span class="ts">${esc(fmtWhen(e.created_at))}</span>${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul>` : ''}</details>` : ''}
-        </div></div>`; }).join('')}</div></div>` : '<div class="none">No steps recorded.</div>'}</section>
-
-      <section class="sec"><h3>Findings <span class="n">${findings.length}</span></h3>${findings.length ? `<div class="list">${findings.map(x => { const t = x.triage, r = x.recommendation; return `<div class="card">
-        <div class="meta-row"><span class="id">#${x.id}</span>${x.finding_date ? `<span>${esc(x.finding_date)}</span>` : ''}${pillFor(x.status)}${t ? `<span class="tag">${esc(t.category)}</span>` : '<span class="tag">uncategorised</span>'}${t?.directive_candidate ? '<span class="tag dc">directive candidate</span>' : ''}
-          <a class="open" href="/triage?finding=${x.id}">Open in triage →</a></div>
-        ${x.target ? `<div class="target">${esc(x.target)}</div>` : ''}<div class="sugg">${esc(t?.summary || x.suggestion)}</div>
-        ${r ? `<div class="rec-row"><span class="rec ${esc(r.recommendation)}">${esc(r.recommendation)}</span><p>${esc(r.rationale)}</p></div>` : ''}
-        ${x.decision_note ? `<div class="meta-row" style="margin-top:8px">${esc([x.approver, x.date_approved, x.decision_note].filter(Boolean).join(' · '))}</div>` : ''}
-      </div>`; }).join('')}</div>` : '<div class="none">No findings linked to this mission.</div>'}</section>
-
-      <section class="sec"><h3>Debrief</h3>${docs.debrief ? `<div class="card md">${md(docs.debrief.body)}</div>` : `<div class="none">${m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
-
-      ${d.patterns.length ? `<section class="sec"><h3>Patterns <span class="n">${d.patterns.length}</span></h3><div class="list">${d.patterns.map(p => `<div class="card"><b>${esc(p.name)}</b>${p.context ? `<div class="sugg" style="color:var(--muted)">${esc(p.context)}</div>` : ''}<details><summary>Solution and example</summary><div class="md" style="margin-top:8px">${md(p.solution)}${p.example ? md(p.example) : ''}</div></details></div>`).join('')}</div></section>` : ''}
-
-      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span></div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
-
-      ${d.crew.length ? `<section class="sec"><h3>Crew <span class="n">${d.crew.length}</span></h3><div class="two">${d.crew.map(c => `<div class="card crew-card"><b>@${esc(c.name)}</b><span>${esc(c.description || c.role || '')}</span></div>`).join('')}</div></section>` : ''}
-
-      ${d.service_records.length ? `<section class="sec"><h3>Service records <span class="n">${d.service_records.length}</span></h3><div class="list">${d.service_records.map(s => `<div class="card"><div class="meta-row"><span class="id">@${esc(crewName(s.agent))}</span><span>${esc(s.record_date)}</span>${s.source ? `<span class="tag">${esc(s.source)}</span>` : ''}</div>${s.title ? `<div class="target">${esc(s.title)}</div>` : ''}<div class="sugg">${esc(s.note)}</div>${s.adjustment ? `<div class="rec-row"><span class="rec defer">adjust</span><p>${esc(s.adjustment)}</p></div>` : ''}</div>`).join('')}</div></section>` : ''}
-
-      <section class="sec"><h3>Journal <span class="n">${d.events.length}</span></h3>${d.events.length ? `<details><summary>Show every flight-recorder event</summary><div class="table-wrap" style="margin-top:10px"><table><tr><th>When</th><th>Step</th><th>Agent</th><th>Event</th><th>Note</th></tr>${d.events.map(e => `<tr><td class="mono">${esc(fmtWhen(e.created_at))}</td><td>${esc(e.step || '')}</td><td>${esc(e.agent || '')}</td><td>${esc(e.event)}</td><td>${esc(e.note)}</td></tr>`).join('')}</table></div></details>` : '<div class="none">No events.</div>'}
-        ${docs.progress ? `<details><summary>PROGRESS.md as written</summary><div class="card md" style="margin-top:10px">${md(docs.progress.body)}</div></details>` : ''}</section>`;
+      <section class="sec"><h3>Harnesses <span class="n">${p.harnesses.length}</span></h3>
+        ${p.harnesses.length ? `<div class="hgrid">${p.harnesses.map(harnessCard).join('')}</div>` : '<div class="none">No finished missions yet.</div>'}</section>
+      <section class="sec"><h3>Grades <span class="n">${grades.length}</span></h3>
+        <div class="rowfilters">
+          <select id="fh"><option value="">All harnesses</option>${harnessNames.map(n => `<option value="${esc(n)}">${esc(n || 'no harness')}</option>`).join('')}</select>
+          <select id="fg"><option value="">Any grade</option>${LETTERS.map(l => `<option>${l}</option>`).join('')}<option value="insufficient">Not enough evidence</option></select>
+        </div>
+        ${grades.length ? `<div class="table-wrap"><table><tr><th>Grade</th><th>Mission</th><th>Harness</th><th>Closed</th><th>Why, and what to change</th></tr>${grades.map(g => `<tr>
+          <td>${g.grade ? gradeBadge(g.grade) : '<span class="tag">n/e</span>'}</td>
+          <td class="mono"><a href="/missions#${encodeURIComponent(g.mission_id)}">${esc(g.mission_id)}</a><div class="sub2" style="white-space:normal">${esc(g.title)}</div></td>
+          <td>${esc(g.harness || '—')}</td>
+          <td class="mono">${esc(fmtDay(g.closed_at))}</td>
+          <td><p class="sugg">${esc(g.summary)}</p>${g.suggestions ? `<details><summary>Suggestions</summary><div class="detail">${esc(g.suggestions)}</div></details>` : ''}</td>
+        </tr>`).join('')}</table></div>` : '<div class="none">No grades match.</div>'}
+      </section>`;
+    $('#fh').value = f.harness; $('#fg').value = f.grade;
+    const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
+    $('#fh').onchange = e => { state.filters.harness = e.target.value; save(); render(); };
+    $('#fg').onchange = e => { state.filters.grade = e.target.value; save(); render(); };
   }
 
-  // The grader's verdict: letter, why, and what to change next time. signals
-  // are the server's own counts, shown so any grade can be checked.
-  function gradeSection(g, m) {
-    const done = m.status === 'complete' || m.outcome === 'failed';
-    if (!g || g.state === 'pending') return `<section class="sec"><h3>Grade</h3><div class="none">${done ? (g ? 'Claimed by a grading run; the verdict is not written yet.' : 'Not graded yet. The grader runs nightly; <code>make triage-grade</code> runs it now.') : 'Graded once the mission is finished.'}</div></section>`;
-    if (g.state === 'skipped') return `<section class="sec"><h3>Grade</h3><div class="none">Skipped after ${esc(g.attempts)} unanswered grading runs. <code>make triage-grade MISSIONS=${esc(m.id)} REGRADE=1</code> tries again.</div></section>`;
-    const s = g.signals || {};
-    const chips = [
-      s.criteria_planned != null ? `criteria ${s.criteria_met}/${s.criteria_planned}${s.criteria_unmet ? ` · ${s.criteria_unmet} unmet` : ''}` : '',
-      s.steps != null ? `${s.steps} steps` : '',
-      s.injected_steps ? `${s.injected_steps} injected` : '',
-      s.escalation_steps ? `${s.escalation_steps} escalation${s.escalation_steps === 1 ? '' : 's'}` : '',
-      s.qa_steps ? `${s.qa_steps} QA` : '',
-      s.blocked_events ? `${s.blocked_events} blocked` : '',
-      s.findings != null ? `${s.findings} finding${s.findings === 1 ? '' : 's'}` : '',
-    ].filter(Boolean);
-    return `<section class="sec"><h3>Grade</h3><div class="card verdict">
-      ${g.grade ? gradeBadge(g.grade, 'lg solid') : '<span class="grade lg">?</span>'}
-      <div>
-        <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
-        <h4>Why</h4><p>${esc(g.summary)}</p>
-        ${g.suggestions ? `<h4>Suggestions</h4><p>${esc(g.suggestions)}</p>` : ''}
-        ${chips.length ? `<div class="signals">${chips.map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div>` : ''}
-      </div></div></section>`;
-  }
-
-  const showError = e => { $('#view').innerHTML = `<div class="empty">Error: ${esc(e.message)}</div>`; };
-  const route = () => { const id = decodeURIComponent(location.hash.slice(1)); if (id) loadMission(id).catch(showError); };
-  window.addEventListener('hashchange', () => { route(); window.scrollTo(0, 0); });
-  loadList().then(route).catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });
+  Promise.all([api('/v1/mission-grades/performance'), api('/v1/mission-grades?limit=500')])
+    .then(([perf, list]) => { state.perf = perf; state.grades = list.grades; render(); })
+    .catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });
 })();
 </script>
 </body>

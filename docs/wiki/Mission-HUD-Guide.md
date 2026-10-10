@@ -34,8 +34,9 @@ Above the list:
 - **Search** matches the mission id and title, and runs a full-text search over the mission's brief, progress and debrief. It needs those documents imported (see [How data gets there](#how-data-gets-there)).
 - **Harness** narrows to one harness; each option shows its mission count.
 - **Status** narrows to `in-progress`, `blocked`, `complete` or `not-started`.
+- **Grade** narrows to one [mission grade](Mission-Grading), A to F, or to **Ungraded**.
 
-The harness and status filters are remembered in the browser. Search is not.
+The harness, status and grade filters are remembered in the browser. Search is not. A graded mission shows its letter beside its id, and the header adds the average grade of the missions shown.
 
 Click a mission to open it on the right. With no `#` in the URL the newest mission opens.
 
@@ -43,7 +44,7 @@ Click a mission to open it on the right. With no `#` in the URL the newest missi
 
 ### Header and tiles
 
-The header gives the id, harness, owner, priority when it is not `normal`, status and outcome, the title, when it opened and closed, and the next action or blockers when the mission records them.
+The header gives the id, harness, owner, priority when it is not `normal`, status and outcome, the grade when there is one, the title, when it opened and closed, and the next action or blockers when the mission records them.
 
 The tiles below it:
 
@@ -55,6 +56,10 @@ The tiles below it:
 | Criteria met | Acceptance criteria ticked out of listed; only when the brief lists criteria |
 | Patterns | Patterns discovered on this mission |
 | Directives | Directives ratified from proposals whose evidence includes this mission's findings |
+
+### Grade
+
+The [mission grader](Mission-Grading)'s verdict: the letter, **Why**, **Suggestions** for the next mission, and the counts the grade rests on (criteria, steps, injected steps, escalations, findings). Before the nightly run the section says the mission is not graded yet, and while a mission is open that it is graded once finished.
 
 ### Brief
 

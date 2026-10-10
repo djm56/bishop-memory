@@ -44,6 +44,11 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | PUT | `/v1/triage/classifications` | `classifyFindingsHandler` | `triage_classify` (triage) |
 | GET / POST | `/v1/triage/runs` | list / start | — / `triage_run_start` (triage) |
 | PATCH | `/v1/triage/runs/:runID` | `finishTriageRunHandler` | `triage_run_finish` (triage) |
+| GET | `/v1/mission-grades/waiting` | `waitingGradesHandler` | — (runner) |
+| POST | `/v1/mission-grades/claim` | `claimGradesHandler` | `grade_claim` (triage) |
+| GET / POST | `/v1/mission-grades` | list / write | — (performance page) / `grade_write` (triage) |
+| GET | `/v1/mission-grades/performance` | `performanceHandler` | — (performance page) |
+| DELETE | `/v1/mission-grades/:missionID` | `deleteGradeHandler` | — (operator: regrade) |
 | GET | `/v1/memory/search` | `searchMemoryHandler` | `memory_search` (both) |
 | POST | `/v1/documents/sync` | `syncDocumentsHandler` | `documents_sync` (harness) |
 | POST | `/v1/documents/push` | `pushDocumentsHandler` | — (reconciler, `push-memory.py`) |

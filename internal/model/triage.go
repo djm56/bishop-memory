@@ -51,7 +51,7 @@ type TriageRun struct {
 
 // StartTriageRunRequest is the JSON body for POST /v1/triage/runs.
 type StartTriageRunRequest struct {
-	Kind     string `json:"kind" binding:"required,oneof=classify process"`
+	Kind     string `json:"kind" binding:"required,oneof=classify process grade"`
 	Category string `json:"category" binding:"omitempty,max=64"`
 	Model    string `json:"model" binding:"omitempty,max=128"`
 }

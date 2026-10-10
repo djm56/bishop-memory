@@ -2,7 +2,7 @@ APP=memoryd
 DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
-        triage-seed triage-backfill triage-classify triage-process triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
+        triage-seed triage-backfill triage-classify triage-process triage-grade triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
         mission-links scratch-clean dist
 
 run:
@@ -129,6 +129,11 @@ triage-classify: build-mcpd
 # Run the processor now on the next category in rotation, or CATEGORY=<slug>.
 triage-process: build-mcpd
 	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh process $(if $(CATEGORY),--category $(CATEGORY)) $(if $(LIMIT),--limit $(LIMIT)) $(if $(ENGINE),--engine $(ENGINE)) $(if $(MODEL),--model $(MODEL))
+
+# Grade up to LIMIT (1-10, default 10) finished missions, or exactly MISSIONS
+# (comma-separated); REGRADE=1 with MISSIONS reopens them first.
+triage-grade: build-mcpd
+	BISHOP_MEMORY_URL=$(TRIAGE_URL) scripts/triage-run.sh grade $(if $(LIMIT),--limit $(LIMIT)) $(if $(MISSIONS),--mission $(MISSIONS)) $(if $(REGRADE),--regrade) $(if $(ENGINE),--engine $(ENGINE)) $(if $(MODEL),--model $(MODEL))
 
 # Write operator decisions back into every registered harness's Markdown.
 triage-export:
