@@ -1019,7 +1019,7 @@ Creates a proposal only; a human ratifies it on the review page. Refused when th
 
 **Route:** ``
 
-Claim up to 10 finished missions that have no grade and return a grading packet for each: the mission row, signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. Returns {"missions":[...]}; an empty list means nothing is waiting. Call it once per run.
+Claim up to 10 finished missions that have no grade and return a grading packet for each, as plain text: one '=== MISSION <id>' block per mission with its row, the signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. 'NO MISSIONS WAITING' means there is nothing to grade. If the result was saved to a file, read the whole file before grading. Call it once per run.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

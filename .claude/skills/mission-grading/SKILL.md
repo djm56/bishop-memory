@@ -25,6 +25,10 @@ time. The operator reads them on the mission board and the performance page.
 1. `triage_run_start` with kind `grade` and your model id.
 2. `grade_claim` ONCE with the run id, the limit the prompt gives you, and
    `mission_ids` if the prompt names missions. Never call it a second time.
+   It returns plain text, one `=== MISSION <id>` block per mission. If your
+   tool reports the result was too large and saved it to a file, read that
+   whole file (in pages, until its end) before grading; every mission you
+   claimed is in it. Never grade a mission you have not read.
 3. If it returns no missions: `triage_run_finish` (status `done`,
    considered 0, written 0, notes "nothing waiting") and stop.
 4. Decide every mission's verdict from its packet.

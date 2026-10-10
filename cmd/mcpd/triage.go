@@ -164,12 +164,12 @@ func registerTriageTools(s *server.MCPServer, c *client) {
 	// regrading is the operator's DELETE /v1/mission-grades/:id.
 	s.AddTool(
 		mcp.NewTool("grade_claim",
-			mcp.WithDescription("Claim up to 10 finished missions that have no grade and return a grading packet for each: the mission row, signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. Returns {\"missions\":[...]}; an empty list means nothing is waiting. Call it once per run."),
+			mcp.WithDescription("Claim up to 10 finished missions that have no grade and return a grading packet for each, as plain text: one '=== MISSION <id>' block per mission with its row, the signals the server counted (criteria met, steps by status, injected steps, escalations, QA steps, blocked events, findings), the brief's goal and acceptance criteria, the debrief's judgement sections, the steps, the findings and the agent notes. Everything you may grade on is in the packet. 'NO MISSIONS WAITING' means there is nothing to grade. If the result was saved to a file, read the whole file before grading. Call it once per run."),
 			mcp.WithInteger("run_id", mcp.Description("Run id from triage_run_start.")),
 			mcp.WithInteger("limit", mcp.Description("How many missions to claim, 1-10 (default 10).")),
 			mcp.WithArray("mission_ids", mcp.Description("Optional: claim exactly these missions (the runner passes them when the operator named some).")),
 		),
-		makeBodyProxy(c, "grade_claim", http.MethodPost, []string{"run_id", "limit", "mission_ids"}, nil, "v1", "mission-grades", "claim"),
+		makeGradeClaimHandler(c),
 	)
 	s.AddTool(
 		mcp.NewTool("grade_write",
@@ -332,4 +332,110 @@ func makeRunFinishHandler(c *client) toolHandler {
 			"v1", "triage", "runs", strconv.FormatInt(id, 10))
 		return proxy(ctx, req)
 	}
+}
+
+// makeGradeClaimHandler proxies grade_claim and returns the packets as plain
+// text rather than the server's JSON. Ten packets are tens of kilobytes on
+// one JSON line; OpenCode saves a result that large to a file, and its read
+// tool cuts every line at 2,000 characters, so the grader saw nothing. Text
+// keeps every line short and is smaller to read either way.
+func makeGradeClaimHandler(c *client) toolHandler {
+	proxy := makeBodyProxy(c, "grade_claim", http.MethodPost, []string{"run_id", "limit", "mission_ids"}, nil, "v1", "mission-grades", "claim")
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		result, err := proxy(ctx, req)
+		if err != nil || result == nil || result.IsError || len(result.Content) != 1 {
+			return result, err
+		}
+		text, ok := result.Content[0].(mcp.TextContent)
+		if !ok {
+			return result, nil
+		}
+		rendered, err := renderGradingPackets([]byte(text.Text))
+		if err != nil {
+			return result, nil // the JSON as it came: still usable, never lost
+		}
+		return mcp.NewToolResultText(rendered), nil
+	}
+}
+
+// renderGradingPackets turns POST /v1/mission-grades/claim's JSON into one
+// plain-text block per mission.
+func renderGradingPackets(body []byte) (string, error) {
+	var response struct {
+		Missions []struct {
+			Mission  map[string]any    `json:"mission"`
+			Signals  map[string]any    `json:"signals"`
+			Brief    map[string]string `json:"brief"`
+			Debrief  map[string]string `json:"debrief"`
+			Steps    []string          `json:"steps"`
+			Findings []string          `json:"findings"`
+			Notes    []string          `json:"notes"`
+		} `json:"missions"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return "", err
+	}
+	if len(response.Missions) == 0 {
+		return "NO MISSIONS WAITING: every finished mission has a verdict. Close the run with considered 0, written 0.", nil
+	}
+	str := func(v any) string {
+		if v == nil {
+			return "—"
+		}
+		return fmt.Sprint(v)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "CLAIMED %d MISSIONS. Grade every one, then make ONE grade_write call with all of them.\n", len(response.Missions))
+	for _, p := range response.Missions {
+		m, s := p.Mission, p.Signals
+		fmt.Fprintf(&b, "\n=== MISSION %s — %s\n", str(m["id"]), str(m["title"]))
+		fmt.Fprintf(&b, "harness: %s | status: %s | outcome: %s | opened: %s | closed: %s | duration_minutes: %s\n",
+			str(m["harness"]), str(m["status"]), str(m["outcome"]), str(m["opened_at"]), str(m["closed_at"]), str(m["duration_minutes"]))
+		fmt.Fprintf(&b, "SIGNALS: criteria planned %s, met %s, partial %s, unmet %s, unclear %s | steps %s by status %s | injected steps %s | escalation steps %s | QA steps %s | blocked events %s | findings %s by status %s | has brief %s, has debrief %s\n",
+			str(s["criteria_planned"]), str(s["criteria_met"]), str(s["criteria_partial"]), str(s["criteria_unmet"]), str(s["criteria_unclear"]),
+			str(s["steps"]), compactJSON(s["steps_by_status"]), str(s["injected_steps"]), str(s["escalation_steps"]), str(s["qa_steps"]),
+			str(s["blocked_events"]), str(s["findings"]), compactJSON(s["findings_by_status"]), str(s["has_brief"]), str(s["has_debrief"]))
+		writeBlock(&b, "GOAL", p.Brief["goal"])
+		writeBlock(&b, "ACCEPTANCE CRITERIA (brief)", p.Brief["acceptance_criteria"])
+		for _, name := range []string{"Mission Summary", "Acceptance Criteria Outcome", "Tracker And Reality", "Wrong Assumptions", "Sub-Agent Mistakes", "QA Verdict"} {
+			if text, ok := p.Debrief[name]; ok {
+				writeBlock(&b, "DEBRIEF — "+name, text)
+			}
+		}
+		writeList(&b, "STEPS", p.Steps)
+		writeList(&b, "FINDINGS", p.Findings)
+		writeList(&b, "AGENT NOTES", p.Notes)
+	}
+	return b.String(), nil
+}
+
+func writeBlock(b *strings.Builder, heading, text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		fmt.Fprintf(b, "%s: (none)\n", heading)
+		return
+	}
+	fmt.Fprintf(b, "%s:\n%s\n", heading, text)
+}
+
+func writeList(b *strings.Builder, heading string, items []string) {
+	if len(items) == 0 {
+		fmt.Fprintf(b, "%s: (none)\n", heading)
+		return
+	}
+	fmt.Fprintf(b, "%s:\n", heading)
+	for _, item := range items {
+		fmt.Fprintf(b, "- %s\n", strings.ReplaceAll(item, "\n", " "))
+	}
+}
+
+func compactJSON(v any) string {
+	if v == nil {
+		return "{}"
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(raw)
 }
