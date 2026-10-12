@@ -177,6 +177,14 @@ Fills the mission links the database never recorded, in one transaction, in this
 
 `--apply` first copies the database with SQLite's backup API to `data/memory.bak-<timestamp>.db` (safe while `memoryd` runs), and refuses with exit 1 while a triage run is `running`. Run it after deploying the matching `memoryd` and `POST /v1/documents/sync`, so debriefs carry their mission.
 
+### `scripts/rename-harness.py`
+
+```
+scripts/rename-harness.py --rename OLD=NEW [--rename OLD=NEW …] [--db data/memory.db] [--apply]
+```
+
+Renames a harness everywhere the service records it: the registry row (its memory root kept), the `harness` column of missions, findings, directive proposals and documents, and every journal, step and service-record agent written as `OLD:agent`. Journal notes that mention the old name in their text are left as written. Change `BISHOP_HARNESS` in the harness's `bishop-memory.conf` and MCP registration (`.mcp.json` or `opencode.json`) first, then run this; a session started before that change keeps writing under the old name until it restarts, so run it once more afterwards. Safe to repeat. Dry run unless `--apply`, which backs the database up first and writes in one transaction; refuses while a triage run started in the last two hours is still open. Opens the database file directly, so run it on the server.
+
 ### `scripts/clean-scratch.py`
 
 ```

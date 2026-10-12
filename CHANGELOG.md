@@ -11,6 +11,7 @@ here ahead of an actual release.
 
 ### Added
 
+- **`scripts/rename-harness.py`** renames a harness across every table that records it (registry, missions, findings, directive proposals, documents, and `harness:agent` actors in the journal, steps and service records). Dry run by default; `--apply` backs up first; safe to repeat after a session that still used the old name restarts.
 - **Mission grading** (wiki Mission-Grading): a third nightly triage agent, `mission-grader` (21:40; `opencode-go/glm-5.2` or Sonnet), grades every finished mission A to F with a short summary and suggestions for the next mission. It works from the database alone: `grade_claim` returns a compact packet per mission — the brief's criteria, the debrief's judgement sections, one line per step, finding and agent note, and signals the service counts itself — and `grade_write` records the verdicts. One pass of at most ten missions per run; a verdict is final, an unanswered claim is retried once and then skipped, and only `make triage-grade MISSIONS=… REGRADE=1` (or `DELETE /v1/mission-grades/:id`) reopens a mission.
   - New table `mission_grades`; `triage_runs.kind` admits `grade`, widened on an existing database by a one-time table rebuild at boot that never stops the service from starting.
   - Routes `/v1/mission-grades` (list, write), `/waiting`, `/claim`, `/performance` and `DELETE /:missionID`; `make triage-grade`; `install-triage-schedule.sh --grade-at`.
