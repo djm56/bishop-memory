@@ -113,9 +113,9 @@
   .rec, .pill { flex:none; font:600 10.5px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; padding:4px 6px; border:1px solid currentColor; background:none; color:var(--muted); white-space:nowrap }
   .rec { margin-top:1px }
   .rec.approve { color:var(--ok) } .rec.reject { color:var(--bad) } .rec.defer { color:var(--warn) } .rec.supersede { color:var(--faint) }
-  .pill.approved, .pill.applied, .pill.accepted, .pill.finished, .pill.done, .pill.complete { color:var(--ok) }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.active, .pill.finished, .pill.done, .pill.complete { color:var(--ok) }
   .pill.rejected, .pill.declined, .pill.failed, .pill.blocked { color:var(--bad) }
-  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress { color:var(--accent) }
+  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress, .pill.under-review { color:var(--accent) }
   .pill.not-started, .pill.retired, .pill.superseded { color:var(--faint) }
   pre { font-size:12px; line-height:1.5; background:var(--soft); border-left:2px solid var(--line2); padding:10px 12px; white-space:pre-wrap; max-height:280px; overflow:auto; margin:8px 0 }
   .status { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; font-size:12px; color:var(--muted) }
@@ -430,7 +430,7 @@
         ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${v} ${k}`).join(' · '))}
         ${criteria.length ? tile('Criteria met', `${criteria.filter(c => c.met).length}/${criteria.length}`, criteria.some(c => c.met === null) ? 'no debrief yet' : '', criteria.length ? criteria.filter(c => c.met).length / criteria.length : null) : ''}
         ${tile('Patterns', d.patterns.length)}
-        ${tile('Directives', d.directives.length)}
+        ${tile('Directives', d.directives.filter(x => x.status !== 'under-review').length, d.directives.some(x => x.status === 'under-review') ? `${d.directives.filter(x => x.status === 'under-review').length} under review` : '')}
       </div>
 
       ${gradeSection(d.grade, m)}
@@ -462,7 +462,7 @@
 
       ${d.patterns.length ? `<section class="sec"><h3>Patterns <span class="n">${d.patterns.length}</span></h3><div class="list">${d.patterns.map(p => `<div class="card"><b>${esc(p.name)}</b>${p.context ? `<div class="sugg" style="color:var(--muted)">${esc(p.context)}</div>` : ''}<details><summary>Solution and example</summary><div class="md" style="margin-top:8px">${md(p.solution)}${p.example ? md(p.example) : ''}</div></details></div>`).join('')}</div></section>` : ''}
 
-      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span></div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
+      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span>${pillFor(x.status || 'active')}</div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
 
       ${d.crew.length ? `<section class="sec"><h3>Crew <span class="n">${d.crew.length}</span></h3><div class="two">${d.crew.map(c => `<div class="card crew-card"><b>@${esc(c.name)}</b><span>${esc(c.description || c.role || '')}</span></div>`).join('')}</div></section>` : ''}
 

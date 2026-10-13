@@ -54,15 +54,17 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 **The log line starts `ERROR run closed as failed`.** The agent gave up and said why in the run's notes on the Runs tab. The usual cause is a tool call that failed twice, which the doctrine says to stop on rather than work around.
 
-**A run row stays `running` on the Runs tab.** The agent never reached `triage_run_finish`: it hit the turn or budget cap, or crashed. Open the JSON result in the log directory; `result` and `is_error` say what happened. The next run opens a fresh row; the stale one is harmless.
+**A run row stays `running` on the Runs tab.** The agent never reached `triage_run_finish`: it hit the turn or budget cap, or crashed. Open the JSON result in the log directory; `result` and `is_error` say what happened. The next run opens a fresh row; the stale one is harmless. If it is marked `stale` (running with no activity ≥30 minutes), you can close it: click **Mark done** or **Mark failed** on the Runs tab, or call `curl -X POST http://127.0.0.1:8787/v1/triage/runs/<id>/operator-close -d '{"status":"done","decided_by":"<your-name>","note":"<reason>"}'`.
 
 **`triage_classify` returns 400 naming an item.** The classifier used a slug that is not an active category, or a finding id that does not exist. The whole batch was refused. Re-seed the categories if you renamed one.
 
 **A finding shows `harness: ?` on the page.** It matched no harness's `FINDINGS.md` during the backfill (edited after import, or from a harness not registered). Set it: `curl -X PUT http://127.0.0.1:8787/v1/findings/<id>/harness -d '{"harness":"kirsch"}'`.
 
+**`export-decisions.py` exits 1.** A write to `FINDINGS.md` or `DIRECTIVES.md` failed. Check the disk and file permissions; a backup may have been made in `<memory_root>/workspace/triage-backups/`.
+
 **`export-decisions.py` exits 2.** The harness is not registered (run the reconciler once with `--harness`) or its memory root is not a directory (external volume unmounted).
 
-**`export-decisions.py` exits 3 with CONFLICT lines.** The file already carries a non-proposed status that differs from the service's. The file wins. Reconcile to mirror it, then reopen and re-decide on the page if the file was wrong.
+**`export-decisions.py` exits 3 with CONFLICT lines.** The file already carries a non-proposed status that differs from the service's. The file wins. Reconcile to mirror it, then reopen and re-decide on the page if the file was wrong. Exits 1 and 2 outrank 3; an exit 3 means no other errors occurred.
 
 **The exporter changed the wrong entry.** It cannot: it matches by the natural key `(finding_date, target, suggestion)` computed with the reconciler's own parser, and a backup of the file is in `<memory_root>/workspace/triage-backups/`. If two entries share a key the second is a duplicate the reconciler would also have collapsed.
 

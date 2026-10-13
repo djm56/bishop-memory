@@ -99,7 +99,9 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 //
 // It returns the mission row; its steps (in step order) and flight-recorder
 // events; its brief, progress and debrief bodies; the patterns it discovered;
-// directives ratified from proposals whose evidence includes its findings;
+// directives ratified from proposals whose evidence includes its findings
+// (status `active`), plus pending proposals that carry a directive_id, which
+// are reopened directives awaiting a fresh decision (status `under-review`);
 // the crew rows and service records of the agents that ran its steps, the
 // records limited to the mission's dates.
 func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
@@ -132,10 +134,11 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 			{"patterns", `SELECT id, name, context, solution, example, discovered_at
 			                FROM patterns WHERE discovered_mission = ? ORDER BY id`},
 			{"directives", `SELECT p.id AS proposal_id, p.directive_id, p.title, p.rule, p.decided_at,
-			                       d.ratified_at
+			                       d.ratified_at,
+			                       CASE WHEN p.state = 'pending' THEN 'under-review' ELSE 'active' END AS status
 			                  FROM directive_proposals p
 			                  LEFT JOIN directives d ON d.directive_id = p.directive_id
-			                 WHERE p.state = 'accepted'
+			                 WHERE (p.state = 'accepted' OR (p.state = 'pending' AND p.directive_id IS NOT NULL))
 			                   AND EXISTS (SELECT 1 FROM json_each(p.evidence) e
 			                               JOIN findings f ON f.id = e.value
 			                              WHERE f.mission_id = ?)

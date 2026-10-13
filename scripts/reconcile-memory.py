@@ -1036,9 +1036,18 @@ FINDING_STATUSES = ("proposed", "approved", "applied", "rejected", "retired", "s
 
 
 def reconcile_directives(client, root):
-    """Mirror reference/DIRECTIVES.md into the directives table (upsert by DIR id)."""
-    status_counts = {"parsed": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "fetch_failed": 0}
+    """Mirror reference/DIRECTIVES.md into the directives table (upsert by DIR id).
+
+    Service-owned directives (those with a corresponding proposal in the service)
+    are never PUT; they're managed by the export-decisions script. Hand-authored
+    directives (no corresponding proposal) are still PUT when they differ.
+    """
+    status_counts = {"parsed": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0, "fetch_failed": 0, "owned": 0}
+
+    # Fetch existing directives and proposals to identify service-owned ones
     existing = {}
+    service_owned_ids = set()
+
     try:
         _, body = client.get("/v1/directives")
         for d in body.get("directives", []):
@@ -1050,9 +1059,35 @@ def reconcile_directives(client, root):
         status_counts["fetch_failed"] = 1
         return status_counts
 
+    # Fetch proposals to identify which directives are service-owned
+    try:
+        _, body = client.get("/v1/directive-proposals")
+        for p in body.get("directive_proposals", []):
+            if p.get("directive_id"):
+                service_owned_ids.add(p["directive_id"])
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            print(f"  !! GET /v1/directive-proposals: HTTP {exc.code}", file=sys.stderr)
+            print("  !! Skipping all directive reconciliation to avoid overwriting service-owned entries", file=sys.stderr)
+            status_counts["fetch_failed"] = 1
+            return status_counts
+        # 404: an older memoryd with no proposals route, so nothing is service-owned.
+    except Exception as exc:
+        # If proposals fetch fails, skip all directive PUTs to be safe
+        print("  !! GET /v1/directive-proposals: could not fetch (network error, service down, or timeout)", file=sys.stderr)
+        print(f"     {exc}", file=sys.stderr)
+        print("  !! Skipping all directive reconciliation to avoid overwriting service-owned entries", file=sys.stderr)
+        status_counts["fetch_failed"] = 1
+        return status_counts
+
     directives = parse_directives(root)
     status_counts["parsed"] = len(directives)
     for d in directives:
+        # Skip service-owned directives
+        if d["directive_id"] in service_owned_ids:
+            status_counts["owned"] += 1
+            continue
+
         row = existing.get(d["directive_id"])
         payload = {k: v for k, v in d.items() if k != "directive_id"}
         if row is not None and all((row.get(k) or "") == (payload.get(k) or "") for k in ("title", "rule", "rationale", "ratified_at")):
@@ -1270,8 +1305,9 @@ def main():
     # --- Directives ------
     counts = reconcile_directives(client, root)
     fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
+    owned_note = f", {counts.get('owned', 0)} service-owned (skipped)" if counts.get('owned', 0) > 0 else ""
     print(f"[directives] {counts['parsed']} parsed, {counts['created']} created, {counts['updated']} updated, " +
-          f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")
+          f"{counts['skipped']} unchanged, {counts['failed']} failed{owned_note}{fetch_status}")
     total_failed_operations += counts['failed']
     total_fetch_failures += counts.get('fetch_failed', 0)
     total_entities += counts['created'] + counts['updated']

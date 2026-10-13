@@ -156,7 +156,7 @@ scripts/export-decisions.py --harness NAME [--url URL] [--dry-run]
 scripts/export-decisions.py --all [--url URL] [--dry-run]
 ```
 
-Writes decided findings and ratified directives into the harness's Markdown. Exit 0 done or nothing to do, 1 a write failed, 2 unregistered harness or missing tree, 3 at least one conflict skipped.
+Writes decided findings, ratified directives, amendments to existing `DIR-NNN` entries, and retirements into the harness's Markdown. Only touches entries whose Added line has `**Source:** bishop-memory triage` (service-owned); hand-authored entries are byte-preserved. Before every write it copies the file to `<memory_root>/workspace/triage-backups/`, writes atomically, and re-reads to confirm. Exit codes: 0 done or nothing to do, 1 a write failed, 2 unregistered harness or missing tree, 3 at least one conflict skipped (higher codes outrank 3). If the file already holds a status that differs from the service's decision, the entry is left alone and reported as a conflict; the file wins, and the next reconcile mirrors it into the service.
 
 ### `scripts/triage_common.py`
 

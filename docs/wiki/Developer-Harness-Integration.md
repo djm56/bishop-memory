@@ -36,7 +36,7 @@ The conf file exists because of the hook. `.mcp.json` sets `BISHOP_HARNESS` in t
 | Journal rows, steps | hook posts each new row; `POST /v1/missions/:id/steps` upserts | harness → service |
 | Findings, patterns, records, directives, missions | reconciler at close and on memory-tree writes | harness → service |
 | Hand-set finding status | reconciler calls the decision route | harness → service |
-| Operator decisions, ratified directives | `export-decisions.py` | service → harness (decision lines and appended entries only) |
+| Operator decisions, ratified directives, amendments and retirements | `export-decisions.py` | service → harness (decision lines, amendments, retirements and appended entries; only service-owned) |
 | Documents for search | reconciler (pushes changed files by content with `--harness`), `push-memory.py`; `documents_sync` only when the service shares the harness's disk | harness → service |
 
 ## A service on another machine
@@ -62,4 +62,4 @@ Rows written through `mcpd` carry `<harness>:<agent>` as the actor. Rows the hoo
 - `.mcp.json` must stay project-scope; user-scope would merge every harness into one identity.
 - `--harness` on the reconciler has no environment fallback on purpose; a stale shell export would misattribute a whole run.
 - The reconciler's `[findings]` natural key is what the exporter and backfill rely on; change it in one place (`reconcile-memory.py`) and the others follow through `triage_common`.
-- The exporter touches three lines per entry and appends. Widening that is a design change, because the harness tree is git-excluded in at least one harness and the backup directory is the only history.
+- The exporter is service-owned: it only touches entries whose Added line has `**Source:** bishop-memory triage`. It updates three lines per finding entry (`Status`, `Approver`, `Date approved`), appends ratified directives, and amends or retires existing `DIR-NNN` entries. Hand-authored entries are byte-preserved. Widening this scope is a design change, because the harness tree is git-excluded in at least one harness and the backup directory is the only history.

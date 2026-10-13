@@ -33,16 +33,20 @@ type UpsertFindingCategoryRequest struct {
 
 // TriageRun is one row of triage_runs.
 type TriageRun struct {
-	ID         int64   `json:"id"`
-	Kind       string  `json:"kind"`
-	Category   *string `json:"category,omitempty"`
-	Model      *string `json:"model,omitempty"`
-	Status     string  `json:"status"`
-	Considered int64   `json:"considered"`
-	Written    int64   `json:"written"`
-	Notes      *string `json:"notes,omitempty"`
-	StartedAt  string  `json:"started_at"`
-	FinishedAt *string `json:"finished_at,omitempty"`
+	ID             int64   `json:"id"`
+	Kind           string  `json:"kind"`
+	Category       *string `json:"category,omitempty"`
+	Model          *string `json:"model,omitempty"`
+	Status         string  `json:"status"`
+	Considered     int64   `json:"considered"`
+	Written        int64   `json:"written"`
+	Notes          *string `json:"notes,omitempty"`
+	StartedAt      string  `json:"started_at"`
+	FinishedAt     *string `json:"finished_at,omitempty"`
+	LastActivityAt string  `json:"last_activity_at"`
+	// Stale is true only when status='running' AND last activity is ≥ 30 minutes before now.
+	// Computed server-side in UTC.
+	Stale bool `json:"stale"`
 	// Accepted and Declined count the operator's decisions on the
 	// recommendations this run produced. Filled by the list route.
 	Accepted int64 `json:"accepted"`
@@ -62,6 +66,15 @@ type FinishTriageRunRequest struct {
 	Considered *int64 `json:"considered"`
 	Written    *int64 `json:"written"`
 	Notes      string `json:"notes" binding:"omitempty,max=4000"`
+}
+
+// OperatorCloseTriageRunRequest is the JSON body for POST /v1/triage/runs/:id/operator-close.
+// Allows the operator to manually mark a stuck running run as done or failed when it has
+// shown no activity for 30 minutes or more.
+type OperatorCloseTriageRunRequest struct {
+	Status    string `json:"status" binding:"required,oneof=done failed"`
+	DecidedBy string `json:"decided_by" binding:"required,max=128"`
+	Note      string `json:"note" binding:"required,max=2000"`
 }
 
 // FindingTriage is one row of finding_triage.
@@ -197,6 +210,14 @@ type DirectiveProposalDecisionRequest struct {
 	Rationale     *string `json:"rationale" binding:"omitempty,max=300"`
 	ReviewerCheck *string `json:"reviewer_check" binding:"omitempty,max=400"`
 	Example       *string `json:"example" binding:"omitempty,max=300"`
+}
+
+// ReopenDirectiveProposalRequest is the JSON body for
+// POST /v1/directive-proposals/:id/reopen. Sets a decided proposal back to
+// pending for the operator to ratify or decline again.
+type ReopenDirectiveProposalRequest struct {
+	DecidedBy string `json:"decided_by" binding:"required,max=128"`
+	Note      string `json:"note" binding:"required,max=2000"`
 }
 
 // Harness is one row of harnesses.

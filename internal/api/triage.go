@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -30,6 +31,68 @@ import (
 
 	"bishop-memory/internal/model"
 )
+
+// triageRunStalenessThreshold is the duration after which a run with no recent activity
+// is considered stale and eligible for operator-directed closure. Fixed at 30 minutes;
+// not configurable. The operator must explicitly mark such a run done or failed.
+const triageRunStalenessThreshold = 30 * time.Minute
+
+// triageRunLastActivitySQL is the single definition of a triage run's "last
+// activity": the newest of the run's own started_at and every timestamp on a
+// row the run wrote (classifications, groups, recommendations, directive
+// proposals, and the claim, grade and creation times of mission grades).
+// It is a scalar expression over the outer alias `r` (triage_runs r) and is
+// shared by operator-close and the runs list so the two routes cannot disagree
+// about what counts as activity. Add a new run-linked table here and nowhere
+// else.
+//
+// Plain string MAX is correct only because every operand is written by SQLite's
+// CURRENT_TIMESTAMP as 'YYYY-MM-DD HH:MM:SS' UTC; see parseTimestamp.
+const triageRunLastActivitySQL = `COALESCE(
+	(SELECT MAX(ts) FROM (
+		SELECT r.started_at AS ts
+		UNION ALL SELECT classified_at FROM finding_triage WHERE run_id = r.id
+		UNION ALL SELECT created_at FROM finding_groups WHERE run_id = r.id
+		UNION ALL SELECT created_at FROM finding_recommendations WHERE run_id = r.id
+		UNION ALL SELECT created_at FROM directive_proposals WHERE run_id = r.id
+		UNION ALL SELECT claimed_at FROM mission_grades WHERE run_id = r.id
+		UNION ALL SELECT graded_at FROM mission_grades WHERE run_id = r.id
+		UNION ALL SELECT created_at FROM mission_grades WHERE run_id = r.id
+	) AS times WHERE ts IS NOT NULL),
+	r.started_at)`
+
+// parseTimestamp parses a run-activity timestamp. The invariant it rests on:
+// every run-activity timestamp is written by SQL CURRENT_TIMESTAMP, which
+// yields 'YYYY-MM-DD HH:MM:SS' in UTC, and no Go code writes these columns.
+// That uniformity is also what lets triageRunLastActivitySQL use a plain string
+// MAX. There is deliberately no RFC3339 branch: such a value would sort wrongly
+// against the native format in MAX (a space sorts before 'T'), so it would be
+// corruption, and it is reported as a parse error rather than accepted.
+func parseTimestamp(ts string) (time.Time, error) {
+	t, err := time.Parse("2006-01-02 15:04:05", ts)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("unable to parse timestamp: %q", ts)
+	}
+	return t, nil
+}
+
+// triageRunIsStale is the single stale test: true only when the run is still
+// 'running' and its last activity is at least triageRunStalenessThreshold
+// before now. A non-running run is never stale and its timestamp is not
+// parsed. An unparseable last-activity value on a running run is returned as
+// an error and means corrupt data. The caller decides the response: the
+// operator-close route refuses with a 500, the list route degrades the one
+// row (see listTriageRunsHandler).
+func triageRunIsStale(status, lastActivityAt string, now time.Time) (bool, error) {
+	if status != "running" {
+		return false, nil
+	}
+	last, err := parseTimestamp(lastActivityAt)
+	if err != nil {
+		return false, err
+	}
+	return now.Sub(last) >= triageRunStalenessThreshold, nil
+}
 
 // --- Categories ------------------------------------------------------------
 
@@ -162,6 +225,13 @@ func startTriageRunHandler(db *sql.DB) gin.HandlerFunc {
 // finishTriageRunHandler handles PATCH /v1/triage/runs/:runID. A finished
 // process run stamps its category's last_processed_at, which is what moves
 // the nightly rotation forward.
+//
+// A run that is no longer 'running' is refused with 409 and nothing is
+// changed: a late agent call must not overwrite an operator close (status,
+// finished_at, the operator's audit note), stamp the rotation, or write a second
+// flight row. The guard is the UPDATE's `status = 'running'` plus a
+// RowsAffected check, so the stamp below happens only when this call really
+// changed the row.
 func finishTriageRunHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		runID, err := strconv.ParseInt(c.Param("runID"), 10, 64)
@@ -182,10 +252,10 @@ func finishTriageRunHandler(db *sql.DB) gin.HandlerFunc {
 		}
 		defer tx.Rollback()
 
-		var kind string
+		var kind, status string
 		var category sql.NullString
 		err = tx.QueryRowContext(c.Request.Context(),
-			`SELECT kind, category FROM triage_runs WHERE id = ?`, runID).Scan(&kind, &category)
+			`SELECT kind, category, status FROM triage_runs WHERE id = ?`, runID).Scan(&kind, &category, &status)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
 			return
@@ -194,14 +264,29 @@ func finishTriageRunHandler(db *sql.DB) gin.HandlerFunc {
 			internalError(c, err)
 			return
 		}
+		if status != "running" {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("run is already %s", status)})
+			return
+		}
 
-		_, err = tx.ExecContext(c.Request.Context(),
+		result, err := tx.ExecContext(c.Request.Context(),
 			`UPDATE triage_runs SET status = ?, considered = COALESCE(?, considered),
 			        written = COALESCE(?, written), notes = COALESCE(?, notes),
-			        finished_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			        finished_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'`,
 			request.Status, request.Considered, request.Written, nullIfEmpty(request.Notes), runID)
 		if err != nil {
 			internalError(c, err)
+			return
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if rowsAffected != 1 {
+			// Status-only guard; unreachable in-process (single-connection pool
+			// serialises the read above and this write) but cheap to keep honest.
+			c.JSON(http.StatusConflict, gin.H{"error": "run is no longer running"})
 			return
 		}
 
@@ -230,7 +315,144 @@ func finishTriageRunHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// operatorCloseTriageRunHandler handles POST /v1/triage/runs/:runID/operator-close.
+// Allows the operator to manually mark a stuck running run as done or failed when it
+// has shown no activity for 30 minutes or more. The operator decision is recorded in
+// flight_recorder and appended to the run's notes. The run must be status='running'
+// and stale; otherwise a 409 is returned. Do NOT stamp last_processed_at on process
+// runs marked done this way, since the operator is closing a stuck run, not certifying
+// that the category was processed — the nightly rotation should retry it.
+func operatorCloseTriageRunHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		runID, err := strconv.ParseInt(c.Param("runID"), 10, 64)
+		if err != nil {
+			validationError(c, errors.New("run id must be an integer"))
+			return
+		}
+		var request model.OperatorCloseTriageRunRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			validationError(c, err)
+			return
+		}
+
+		// Trim and validate required fields
+		request.DecidedBy = strings.TrimSpace(request.DecidedBy)
+		request.Note = strings.TrimSpace(request.Note)
+		if request.DecidedBy == "" {
+			validationError(c, errors.New("decided_by must not be empty or whitespace-only"))
+			return
+		}
+		if request.Note == "" {
+			validationError(c, errors.New("note must not be empty or whitespace-only"))
+			return
+		}
+
+		tx, err := db.BeginTx(c.Request.Context(), nil)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		defer tx.Rollback()
+
+		// Fetch current run state and last activity (shared definition).
+		var kind string
+		var category sql.NullString
+		var status string
+		var lastActivityAt string
+
+		err = tx.QueryRowContext(c.Request.Context(),
+			`SELECT r.kind, r.category, r.status, `+triageRunLastActivitySQL+` AS last_activity_at
+			 FROM triage_runs r WHERE r.id = ?`, runID).
+			Scan(&kind, &category, &status, &lastActivityAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "run not found"})
+			return
+		}
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+
+		if status != "running" {
+			c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("run is already %s", status)})
+			return
+		}
+
+		stale, err := triageRunIsStale(status, lastActivityAt, time.Now().UTC())
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if !stale {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": fmt.Sprintf("run is not stale: last activity %s, threshold %s", lastActivityAt, triageRunStalenessThreshold),
+			})
+			return
+		}
+
+		// One statement sets status, finished_at and appends to any existing
+		// notes. The WHERE re-checks status only, not staleness: the read above
+		// and this write share one transaction on a single-connection pool, so no
+		// other request in this process can interleave between them. A
+		// RowsAffected other than 1 is therefore defensive, not an expected race.
+		newNote := fmt.Sprintf("[operator-closed %s by %s, idle since %s] %s",
+			request.Status, request.DecidedBy, lastActivityAt, request.Note)
+		result, err := tx.ExecContext(c.Request.Context(), `
+			UPDATE triage_runs
+			SET status = ?, finished_at = CURRENT_TIMESTAMP,
+			    notes = CASE WHEN notes IS NULL THEN ? ELSE notes || char(10) || ? END
+			WHERE id = ? AND status = 'running'
+		`, request.Status, newNote, newNote, runID)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if rowsAffected != 1 {
+			c.JSON(http.StatusConflict, gin.H{"error": "run is no longer running"})
+			return
+		}
+
+		// Flight row. The category is left out of the label when there is none.
+		label := kind
+		if category.Valid && category.String != "" {
+			label = kind + ", " + category.String
+		}
+		if _, err := tx.ExecContext(c.Request.Context(),
+			`INSERT INTO flight_recorder (event, note, agent) VALUES (?, ?, ?)`,
+			"triage_run.operator_closed",
+			fmt.Sprintf("Triage run #%d (%s) operator-closed %s: %s",
+				runID, label, request.Status, request.Note),
+			"operator:"+request.DecidedBy); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"id":     runID,
+			"status": request.Status,
+			"closed": true,
+		})
+	}
+}
+
 // listTriageRunsHandler handles GET /v1/triage/runs?limit=N (default 50).
+// Each run includes last_activity_at (the most recent timestamp across the run
+// and all its child table rows) and stale (true when status='running' and
+// last activity is ≥ 30 minutes before now, computed server-side in UTC).
+// A running run whose last activity cannot be parsed does not fail the list:
+// the error is logged with the run id and the raw value, that row reports
+// stale=false and still carries its raw last_activity_at, and the remaining
+// runs are served. The operator-close route keeps refusing such a run with 500.
 func listTriageRunsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		limit, _, err := parseLimitOffset(c)
@@ -242,23 +464,27 @@ func listTriageRunsHandler(db *sql.DB) gin.HandlerFunc {
 			limit = 50
 		}
 		rows, err := db.QueryContext(c.Request.Context(), `
-			SELECT r.id, r.kind, r.category, r.model, r.status, r.considered, r.written, r.notes,
-			       r.started_at, r.finished_at,
-			       (SELECT COUNT(*) FROM finding_recommendations x WHERE x.run_id = r.id AND x.state = 'accepted'),
-			       (SELECT COUNT(*) FROM finding_recommendations x WHERE x.run_id = r.id AND x.state = 'declined')
-			FROM triage_runs r ORDER BY r.id DESC LIMIT ?`, limit)
+				SELECT r.id, r.kind, r.category, r.model, r.status, r.considered, r.written, r.notes,
+				       r.started_at, r.finished_at,
+				       (SELECT COUNT(*) FROM finding_recommendations x WHERE x.run_id = r.id AND x.state = 'accepted'),
+				       (SELECT COUNT(*) FROM finding_recommendations x WHERE x.run_id = r.id AND x.state = 'declined'),
+				       `+triageRunLastActivitySQL+` AS last_activity_at
+				FROM triage_runs r ORDER BY r.id DESC LIMIT ?`, limit)
 		if err != nil {
 			internalError(c, err)
 			return
 		}
 		defer rows.Close()
 
+		now := time.Now().UTC()
 		runs := make([]model.TriageRun, 0)
 		for rows.Next() {
 			var run model.TriageRun
 			var category, modelName, notes, finished sql.NullString
+			var lastActivityAt string
 			if err := rows.Scan(&run.ID, &run.Kind, &category, &modelName, &run.Status, &run.Considered,
-				&run.Written, &notes, &run.StartedAt, &finished, &run.Accepted, &run.Declined); err != nil {
+				&run.Written, &notes, &run.StartedAt, &finished, &run.Accepted, &run.Declined,
+				&lastActivityAt); err != nil {
 				internalError(c, err)
 				return
 			}
@@ -266,6 +492,16 @@ func listTriageRunsHandler(db *sql.DB) gin.HandlerFunc {
 			run.Model = nullStringPtr(modelName)
 			run.Notes = nullStringPtr(notes)
 			run.FinishedAt = nullStringPtr(finished)
+			run.LastActivityAt = lastActivityAt
+
+			run.Stale, err = triageRunIsStale(run.Status, lastActivityAt, now)
+			if err != nil {
+				// Degrade this row only; one corrupt timestamp must not hide the history.
+				log.Printf("request_id=%v triage run=%d unparseable last_activity_at=%q error=%v",
+					requestID(c), run.ID, lastActivityAt, err)
+				run.Stale = false
+			}
+
 			runs = append(runs, run)
 		}
 		if err := rows.Err(); err != nil {
@@ -785,11 +1021,16 @@ var directiveIDPattern = regexp.MustCompile(`^DIR-(\d+)$`)
 // decideDirectiveProposalHandler handles POST /v1/directive-proposals/:proposalID/decision.
 //
 // Accepting a proposal is the human ratification act. In one transaction it
-// allocates the next DIR-NNN across both the directives table and every
-// already-accepted proposal, stores the (possibly edited) fields, mirrors the
-// directive into the directives table, marks each evidence finding applied
-// and closes their pending recommendations. scripts/export-decisions.py then
-// writes the entry into the harness's DIRECTIVES.md.
+// allocates the next DIR-NNN (or reuses an existing one if the proposal has been
+// reopened with an existing directive_id), stores the (possibly edited) fields,
+// mirrors the directive into the directives table, marks each evidence finding applied,
+// and closes their pending recommendations. A new directive records a directive.ratified
+// flight event; an amendment records directive.amended with the amendment date appended
+// to the note. Declining a proposal with an existing directive_id records a directive.retired
+// event and marks the directive as retired (readable via a derived status field in GET /v1/directives).
+// Declining a proposal without a directive_id writes no retirement event.
+// scripts/export-decisions.py writes new directives into DIRECTIVES.md; the exporter and
+// reconciler handle amendments and retirements.
 func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		proposalID, err := strconv.ParseInt(c.Param("proposalID"), 10, 64)
@@ -803,11 +1044,12 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 		request.DecidedBy = strings.TrimSpace(request.DecidedBy)
+		request.Note = strings.TrimSpace(request.Note)
 		if request.DecidedBy == "" {
 			validationError(c, errors.New("decided_by must not be empty or whitespace-only"))
 			return
 		}
-		if request.State == "declined" && strings.TrimSpace(request.Note) == "" {
+		if request.State == "declined" && request.Note == "" {
 			validationError(c, errors.New("note is required when declining"))
 			return
 		}
@@ -820,11 +1062,11 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 		defer tx.Rollback()
 
 		var state, title, appliesWhen, rule, rationale, reviewerCheck, evidenceJSON string
-		var example sql.NullString
+		var example, existingDirectiveID sql.NullString
 		err = tx.QueryRowContext(c.Request.Context(),
-			`SELECT state, title, applies_when, rule, rationale, reviewer_check, example, evidence
+			`SELECT state, title, applies_when, rule, rationale, reviewer_check, example, evidence, directive_id
 			 FROM directive_proposals WHERE id = ?`, proposalID).
-			Scan(&state, &title, &appliesWhen, &rule, &rationale, &reviewerCheck, &example, &evidenceJSON)
+			Scan(&state, &title, &appliesWhen, &rule, &rationale, &reviewerCheck, &example, &evidenceJSON, &existingDirectiveID)
 		if errors.Is(err, sql.ErrNoRows) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "proposal not found"})
 			return
@@ -841,9 +1083,19 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 		if request.State == "declined" {
 			if _, err := tx.ExecContext(c.Request.Context(),
 				`UPDATE directive_proposals SET state = 'declined', decided_by = ?, decided_at = CURRENT_TIMESTAMP,
-				        decision_note = ? WHERE id = ?`, request.DecidedBy, request.Note, proposalID); err != nil {
+				        decision_note = ? WHERE id = ?`, request.DecidedBy, nullIfEmpty(request.Note), proposalID); err != nil {
 				internalError(c, err)
 				return
+			}
+			// If this proposal has a directive_id, record a directive.retired event.
+			if existingDirectiveID.Valid {
+				if _, err := tx.ExecContext(c.Request.Context(),
+					`INSERT INTO flight_recorder (event, note, agent) VALUES ('directive.retired', ?, ?)`,
+					fmt.Sprintf("%s — proposal #%d", existingDirectiveID.String, proposalID),
+					"operator:"+request.DecidedBy); err != nil {
+					internalError(c, err)
+					return
+				}
 			}
 			if err := tx.Commit(); err != nil {
 				internalError(c, err)
@@ -879,11 +1131,21 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		directiveID, err := nextDirectiveID(c, tx)
-		if err != nil {
-			internalError(c, err)
-			return
+		// If the proposal already has a directive_id (from a reopened proposal),
+		// reuse it. Otherwise, allocate the next one.
+		var directiveID string
+		isAmendment := false
+		if existingDirectiveID.Valid {
+			directiveID = existingDirectiveID.String
+			isAmendment = true
+		} else {
+			directiveID, err = nextDirectiveID(c, tx)
+			if err != nil {
+				internalError(c, err)
+				return
+			}
 		}
+
 		today := time.Now().UTC().Format("2006-01-02")
 		budgetCheck := renderDirectiveEntry(directiveID, title, appliesWhen, rule, rationale, reviewerCheck,
 			exampleText, today, evidencePlaceholder)
@@ -904,12 +1166,37 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// On amendment, preserve the original ratified_at; on new directives, set it to today.
+		var ratifiedAtValue string
+		if isAmendment {
+			// Read the existing ratified_at to preserve it.
+			var ratifiedAt sql.NullString
+			if err := tx.QueryRowContext(c.Request.Context(),
+				`SELECT ratified_at FROM directives WHERE directive_id = ?`, directiveID).Scan(&ratifiedAt); err != nil {
+				if !errors.Is(err, sql.ErrNoRows) {
+					internalError(c, err)
+					return
+				}
+				// Should not happen on amendment, but fallback to today.
+				ratifiedAtValue = today
+			} else {
+				// If ratified_at is NULL, fall back to today.
+				if ratifiedAt.Valid {
+					ratifiedAtValue = ratifiedAt.String
+				} else {
+					ratifiedAtValue = today
+				}
+			}
+		} else {
+			ratifiedAtValue = today
+		}
+
 		if _, err := tx.ExecContext(c.Request.Context(),
 			`INSERT INTO directives (directive_id, title, rule, rationale, ratified_at)
 			 VALUES (?, ?, ?, ?, ?)
 			 ON CONFLICT(directive_id) DO UPDATE SET title = excluded.title, rule = excluded.rule,
 			   rationale = excluded.rationale, ratified_at = excluded.ratified_at`,
-			directiveID, title, rule, rationale, today); err != nil {
+			directiveID, title, rule, rationale, ratifiedAtValue); err != nil {
 			internalError(c, err)
 			return
 		}
@@ -939,9 +1226,18 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 			}
 		}
 
+		// Use "directive.amended" for reopened proposals with an existing directive_id,
+		// "directive.ratified" for new directives.
+		event := "directive.ratified"
+		noteText := fmt.Sprintf("%s — %s (proposal #%d)", directiveID, title, proposalID)
+		if isAmendment {
+			event = "directive.amended"
+			noteText += fmt.Sprintf("; amended %s", today)
+		}
 		if _, err := tx.ExecContext(c.Request.Context(),
-			`INSERT INTO flight_recorder (event, note, agent) VALUES ('directive.ratified', ?, ?)`,
-			fmt.Sprintf("%s — %s (proposal #%d)", directiveID, title, proposalID),
+			`INSERT INTO flight_recorder (event, note, agent) VALUES (?, ?, ?)`,
+			event,
+			noteText,
 			"operator:"+request.DecidedBy); err != nil {
 			internalError(c, err)
 			return
@@ -956,6 +1252,114 @@ func decideDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
 			"state":        "accepted",
 			"directive_id": directiveID,
 			"rendered":     rendered,
+		})
+	}
+}
+
+// reopenDirectiveProposalHandler handles POST /v1/directive-proposals/:proposalID/reopen.
+// Sets a decided proposal (accepted, declined, or expired) back to pending, keeping
+// its directive_id if one is set. This allows the operator to accept it again with
+// amendments, decline it to retire the directive, or revisit the decision. The prior
+// decision record (decided_by, decided_at, decision_note) is captured in the flight_recorder
+// event before being cleared.
+func reopenDirectiveProposalHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		proposalID, err := strconv.ParseInt(c.Param("proposalID"), 10, 64)
+		if err != nil {
+			validationError(c, errors.New("proposal id must be an integer"))
+			return
+		}
+		var request model.ReopenDirectiveProposalRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			validationError(c, err)
+			return
+		}
+		request.DecidedBy = strings.TrimSpace(request.DecidedBy)
+		request.Note = strings.TrimSpace(request.Note)
+		if request.DecidedBy == "" {
+			validationError(c, errors.New("decided_by must not be empty or whitespace-only"))
+			return
+		}
+		if request.Note == "" {
+			validationError(c, errors.New("note must not be empty or whitespace-only"))
+			return
+		}
+
+		tx, err := db.BeginTx(c.Request.Context(), nil)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		defer tx.Rollback()
+
+		var state string
+		var directiveID, decidedBy, decidedAt, decisionNote sql.NullString
+		err = tx.QueryRowContext(c.Request.Context(),
+			`SELECT state, directive_id, decided_by, decided_at, decision_note FROM directive_proposals WHERE id = ?`, proposalID).
+			Scan(&state, &directiveID, &decidedBy, &decidedAt, &decisionNote)
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "proposal not found"})
+			return
+		}
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if state == "pending" {
+			validationError(c, errors.New("proposal is already pending"))
+			return
+		}
+
+		if _, err := tx.ExecContext(c.Request.Context(),
+			`UPDATE directive_proposals SET state = 'pending', decided_by = NULL, decided_at = NULL,
+			        decision_note = NULL WHERE id = ?`, proposalID); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		// Compose the flight_recorder note with the directive_id and prior decision record if it exists.
+		note := fmt.Sprintf("Proposal #%d reopened from %s", proposalID, state)
+
+		// Build inner parts: directive_id and/or prior decision
+		var innerParts []string
+		if directiveID.Valid {
+			innerParts = append(innerParts, fmt.Sprintf("directive_id=%s", directiveID.String))
+		}
+		if decidedBy.Valid || decidedAt.Valid || decisionNote.Valid {
+			priorDecision := "previously decided by "
+			if decidedBy.Valid {
+				priorDecision += decidedBy.String
+			} else {
+				priorDecision += "?"
+			}
+			if decidedAt.Valid {
+				priorDecision += " at " + decidedAt.String
+			}
+			if decisionNote.Valid {
+				priorDecision += ": " + decisionNote.String
+			}
+			innerParts = append(innerParts, priorDecision)
+		}
+		if len(innerParts) > 0 {
+			note += " (" + strings.Join(innerParts, "; ") + ")"
+		}
+
+		note += fmt.Sprintf("; operator note: %s", request.Note)
+
+		if _, err := tx.ExecContext(c.Request.Context(),
+			`INSERT INTO flight_recorder (event, note, agent) VALUES ('directive.reopened', ?, ?)`,
+			note, "operator:"+request.DecidedBy); err != nil {
+			internalError(c, err)
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			internalError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"id":    proposalID,
+			"state": "pending",
 		})
 	}
 }

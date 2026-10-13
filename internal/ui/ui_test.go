@@ -79,3 +79,46 @@ func TestPagesLinkEachOther(t *testing.T) {
 		}
 	}
 }
+
+// TestMissionsPageRendersDirectiveStatus guards the HUD's use of a
+// directive's status: the directive card must render its pill from the
+// directive's status (defaulting to active), and the under-review pill must be
+// styled, or a reopened directive renders identically to an active one. The
+// pillFor(x.status || 'active') needle appears only in the directive card.
+func TestMissionsPageRendersDirectiveStatus(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	for _, want := range []string{"pillFor(x.status || 'active')", ".pill.under-review", ".pill.active"} {
+		if !strings.Contains(page, want) {
+			t.Fatalf("missions page does not contain %q", want)
+		}
+	}
+}
+
+// TestTriagePageRendersStaleRunsUI is a source-text check only: it cannot run
+// the page's JavaScript, so it does not prove the handlers behave. It asserts
+// that the reopen and operator-close endpoints, the stale pill styling, the
+// amendment label and the data-amends detection are present in the served
+// source, and that one known-broken expression has not returned.
+func TestTriagePageRendersStaleRunsUI(t *testing.T) {
+	page := serve(t, TriagePageHandler()).Body.String()
+	needles := []string{
+		`/v1/directive-proposals/${b.dataset.reopen}/reopen`,
+		"/v1/triage/runs/${run}/operator-close",
+		".pill.stale { color:var(--warn) }",
+		"Ratify as amendment to",
+		"data-amends=",
+		"card.dataset.amends",
+		`data-close="failed"`,
+		"b.dataset.close",
+	}
+	for _, needle := range needles {
+		if !strings.Contains(page, needle) {
+			t.Fatalf("triage page does not contain %q", needle)
+		}
+	}
+	// Regression: the card is the data-pid element, so searching its
+	// descendants returned null and threw after the server had ratified.
+	if strings.Contains(page, "card.querySelector('[data-pid]')") {
+		t.Fatal("triage page contains the broken card.querySelector('[data-pid]') expression")
+	}
+}

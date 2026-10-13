@@ -64,9 +64,11 @@ Every finding, by category and status, with the same buttons. This is where you 
 
 ![Directives tab: an editable directive draft with its length meter and the Ratify and Decline buttons](images/directives-light.png)
 
-Each pending draft is an editable form: title, applies-when, rule, rationale, reviewer check, example, with the evidence finding ids. A meter under the form shows the rendered length against the template budget as you edit. It turns amber above 1,300 characters (the typical size) and red above 1,510 (the absolute maximum, which the service refuses).
+Pending drafts are editable forms: title, applies-when, rule, rationale, reviewer check, example, with the evidence finding ids. A meter under the form shows the rendered length against the template budget as you edit. It turns amber above 1,300 characters (the typical size) and red above 1,510 (the absolute maximum, which the service refuses).
 
 **Ratify** allocates the next `DIR-NNN`, stores your edited text, mirrors the directive into the `directives` table, marks every evidence finding `applied` with the note `Ratified as DIR-NNN`, and closes their pending recommendations. **Decline** needs a reason.
+
+Decided directives show their ratification or decline. A reopened proposal (one you moved back to pending) shows "reopened — amends DIR-xxx" with two buttons: **Ratify as amendment to DIR-xxx** (updates the existing directive's text, preserving its original `ratified_at` date) and **Retire DIR-xxx** (marks the directive retired instead).
 
 The entry does not reach `DIRECTIVES.md` until you export (below).
 
@@ -74,7 +76,9 @@ The entry does not reach `DIRECTIVES.md` until you export (below).
 
 ![Runs tab: one row per classifier and processor run, with counts of findings read, rows written, and recommendations accepted and declined](images/runs-light.png)
 
-Every classifier and processor run: category, model, how many findings it read, how many rows it wrote, and how many of its recommendations you accepted or declined. A category whose acceptance rate falls is the one whose description in `db/finding-categories.json` wants tightening; see [Developer: Triage Agents](Developer-Triage-Agents).
+Every classifier and processor run: category, model, how many findings it read, how many rows it wrote, and how many of its recommendations you accepted or declined. Last activity shows the most recent timestamp from the run's child tables; a `stale` pill appears on runs that are still marked running with no activity for 30 minutes or more. A category whose acceptance rate falls is the one whose description in `db/finding-categories.json` wants tightening; see [Developer: Triage Agents](Developer-Triage-Agents).
+
+Stale runs have **Mark done** and **Mark failed** buttons. Click one and enter a reason to close the run. The operator note is appended to the run's notes.
 
 ## Keyboard
 
@@ -89,7 +93,7 @@ make triage-export                              # every registered harness
 scripts/export-decisions.py --harness kirsch --dry-run   # preview one
 ```
 
-For each decided finding the exporter finds the entry in that harness's `FINDINGS.md` by its natural key and rewrites exactly three lines — `**Status**`, `**Approver**`, `**Date approved**` — plus one `**Disposition (triage):**` line for a reject, retire or supersede. Ratified directives are appended to `DIRECTIVES.md` in template form with an index row. Before every write it copies the file to `<memory_root>/workspace/triage-backups/`, writes atomically, and re-reads to confirm.
+For each decided finding the exporter finds the entry in that harness's `FINDINGS.md` by its natural key and rewrites exactly three lines — `**Status**`, `**Approver**`, `**Date approved**` — plus one `**Disposition (triage):**` line for a reject, retire or supersede. Ratified directives are appended to `DIRECTIVES.md` in template form with an index row. When a reopened proposal is ratified as an amendment, the exporter updates the existing `DIR-NNN` entry in place (preserving the original date). When a proposal is declined, its directive is marked retired in place. The exporter only touches entries whose Added line has `**Source:** bishop-memory triage` (service-owned); hand-authored entries are byte-preserved. Before every write it copies the file to `<memory_root>/workspace/triage-backups/`, writes atomically, and re-reads to confirm.
 
 Run it when no mission in that harness is mid-sync. It cannot start a reconcile loop: the harness hook only fires on Claude Code tool writes.
 

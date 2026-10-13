@@ -37,6 +37,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | POST | `/v1/finding-recommendations` | `recommendFindingsHandler` | `triage_recommend` (triage) |
 | GET / POST | `/v1/directive-proposals` | list / create | — / `directive_propose` (triage) |
 | POST | `/v1/directive-proposals/:proposalID/decision` | `decideDirectiveProposalHandler` | — (operator) |
+| POST | `/v1/directive-proposals/:proposalID/reopen` | `reopenDirectiveProposalHandler` | — (operator) |
 | GET / PUT | `/v1/harnesses[/:name]` | list / upsert | — (reconciler, backfill) |
 | GET | `/v1/triage/pending` | `pendingTriageHandler` | — (review page) |
 | GET | `/v1/triage/decisions` | `recentDecisionsHandler` | `triage_recent_decisions` (triage) |
@@ -44,6 +45,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | PUT | `/v1/triage/classifications` | `classifyFindingsHandler` | `triage_classify` (triage) |
 | GET / POST | `/v1/triage/runs` | list / start | — / `triage_run_start` (triage) |
 | PATCH | `/v1/triage/runs/:runID` | `finishTriageRunHandler` | `triage_run_finish` (triage) |
+| POST | `/v1/triage/runs/:runID/operator-close` | `operatorCloseTriageRunHandler` | — (operator) |
 | GET | `/v1/mission-grades/waiting` | `waitingGradesHandler` | — (runner) |
 | POST | `/v1/mission-grades/claim` | `claimGradesHandler` | `grade_claim` (triage) |
 | GET / POST | `/v1/mission-grades` | list / write | — (performance page) / `grade_write` (triage) |
@@ -144,7 +146,7 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 
 `GET /v1/flight-recorder?mission_id=&limit=` — default 50, hard cap 100, and no offset. That cap is why the reconciler's `--include-journal` enumerates per mission and skips a mission at exactly 100 rows.
 
-`GET /v1/directives` — the rulebook in rule order (`ORDER BY id`), not as a feed. No route creates one except the reconciler's `PUT /v1/directives/:directiveID` and the proposal decision below.
+`GET /v1/directives` — the rulebook in rule order (`ORDER BY id`), not as a feed. Each directive carries a derived `status` field: `active` (ratified and not retired), `retired` (declined via proposal or directly retired), or `under-review` (has a pending proposal). No route creates one except the reconciler's `PUT /v1/directives/:directiveID` and the proposal decision below.
 
 ### Search query handling
 
@@ -187,8 +189,9 @@ The mission update's re-import (`syncMissionDocuments`) stays, but returns silen
 | `GET /v1/finding-categories?include_inactive=1` | | `{"categories":[…],"uncategorised_count":N}`; each category has `slug`, `name`, `description`, `examples`, `sort_order`, `active`, `last_processed_at`, `proposed_count`, `pending_count` |
 | `PUT /v1/finding-categories/:slug` | `{"name","description","examples","sort_order","active"}` | Slug must be lower-case kebab-case and not `uncategorised` |
 | `POST /v1/triage/runs` | `{"kind":"classify"\|"process","category","model"}` | 201 `{"id"}` |
-| `PATCH /v1/triage/runs/:runID` | `{"status":"done"\|"failed","considered","written","notes"}` | A finished `process` run stamps its category's `last_processed_at` |
-| `GET /v1/triage/runs?limit=50` | | Each run with `accepted` and `declined` counts from the recommendations it wrote |
+| `PATCH /v1/triage/runs/:runID` | `{"status":"done"\|"failed","considered","written","notes"}` | A finished `process` run stamps its category's `last_processed_at`. 409 `run is already <status>` or `run is no longer running` (nothing changed) if the run has finished or an operator-close has moved it, preventing overwrites after an operator-close |
+| `GET /v1/triage/runs?limit=50` | | Each run with `accepted`, `declined`, `last_activity_at`, and `stale` fields; stale means running with no activity ≥30 minutes |
+| `POST /v1/triage/runs/:runID/operator-close` | `{"status":"done"\|"failed","decided_by","note"}` | Closes a stale run. 409 if already finished or not stale, 404 if unknown. Appends operator note and writes `triage_run.operator_closed` flight row. `{"id","status"}` |
 | `GET /v1/triage/next-category` | | `{"category","waiting"}`, or 404 when nothing waits |
 | `PUT /v1/triage/classifications` | `{"classified_by","run_id","items":[{"finding_id","category","secondary_category","directive_candidate","confidence","summary"}]}` | 1–200 items, upsert (re-classifying replaces). The whole batch is refused, naming the item, if a slug is not active or a finding id is unknown. `{"classified":N}` |
 | `GET` / `POST /v1/finding-groups` | `?category=` / `{"category","title","summary","target","run_id"}` | 201 `{"id"}` |
@@ -197,7 +200,8 @@ The mission update's re-import (`syncMissionDocuments`) stays, but returns silen
 | `GET /v1/triage/pending` | | `{"categories":[{"slug","groups":[…],"ungrouped":[…]}],"directive_proposals":[…],"pending_findings":N,"decided_findings":N}` |
 | `GET /v1/directive-proposals?state=` | | `pending`, `accepted`, `declined` or `expired` |
 | `POST /v1/directive-proposals` | `{"title" (≤60),"applies_when","rule","rationale","reviewer_check","example","evidence":[ids],"group_id","harness","run_id"}` | Rendered with an 80-character Evidence placeholder and refused over 1,510 characters. 201 `{"id","rendered_length"}` |
-| `POST /v1/directive-proposals/:proposalID/decision` | `{"state":"accepted"\|"declined","decided_by","note", …edited fields}` | Declining needs a note. Accepting allocates the next `DIR-NNN` across `directives` and every accepted proposal, stores the possibly edited text, upserts `directives`, marks every evidence finding `applied` and appends `directive.ratified`. `{"id","state","directive_id","rendered"}` |
+| `POST /v1/directive-proposals/:proposalID/decision` | `{"state":"accepted"\|"declined","decided_by","note", …edited fields}` | Declining needs a note. Accepting a pending proposal allocates the next `DIR-NNN` across `directives` and every accepted proposal, stores the possibly edited text, upserts `directives`, marks every evidence finding `applied` and appends `directive.ratified`. Accepting an accepted proposal (carrying a `directive_id`) amends the directive — its text is updated and `directive_id` is kept, but the original `ratified_at` is preserved and `directive.amended` is appended. Declining a proposal retires its directive if it has one. `{"id","state","directive_id","rendered"}` |
+| `POST /v1/directive-proposals/:proposalID/reopen` | `{"decided_by","note"}` | Moves an accepted, declined or expired proposal back to pending. Prior state, decider and time are recorded in a `directive.reopened` flight row. 400 if already pending, 404 if unknown. `{"id","state"}` |
 | `GET /v1/harnesses`, `PUT /v1/harnesses/:name` | `{"memory_root":"/abs/path/.claude/memory"}` | `memory_root` must be absolute |
 
 The pages and their icons (`/triage`, `/missions`, `/favicon.svg`, `/favicon.ico`) are embedded in the binary from `internal/ui/`; the icons are cached for a day, and `.ico` is a 32-pixel PNG so a browser's automatic request is not logged as a 404.

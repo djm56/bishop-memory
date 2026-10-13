@@ -117,6 +117,7 @@
   .pill.rejected, .pill.declined, .pill.failed, .pill.blocked { color:var(--bad) }
   .pill.running, .pill.proposed, .pill.pending, .pill.in-progress { color:var(--accent) }
   .pill.not-started, .pill.retired, .pill.superseded { color:var(--faint) }
+  .pill.stale { color:var(--warn) }
   pre { font-size:12px; line-height:1.5; background:var(--soft); border-left:2px solid var(--line2); padding:10px 12px; white-space:pre-wrap; max-height:280px; overflow:auto; margin:8px 0 }
   .status { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; font-size:12px; color:var(--muted) }
   .btns { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:14px }
@@ -428,13 +429,25 @@
     const pending = d.directive_proposals.filter(p => p.state === 'pending');
     const done = d.directive_proposals.filter(p => p.state !== 'pending');
     const keys = ['title','applies_when','rule','rationale','reviewer_check','example'];
-    const form = p => `<div class="card" data-pid="${p.id}">
+    const form = p => {
+      const isReopened = p.directive_id !== null && p.directive_id !== undefined && p.directive_id !== '';
+      const dirID = esc(p.directive_id || '');
+      const reopenedMeta = isReopened ? `<div class="meta-row" style="font-size:11.5px;color:var(--faint)">reopened — amends ${dirID}</div>` : '';
+      const ratifyLabel = isReopened ? `Ratify as amendment to ${dirID}` : 'Ratify as next DIR-NNN';
+      const declineLabel = isReopened ? `Retire ${dirID}…` : 'Decline…';
+      return `<div class="card" data-pid="${p.id}"${isReopened ? ` data-amends="${dirID}"` : ''}>
       <div class="meta-row"><span class="id">proposal #${p.id}</span><span>${esc(p.harness || 'every harness')}</span><span>evidence ${p.evidence.map(i => '#' + i).join(', ')}</span>${p.group_id ? `<span>group ${p.group_id}</span>` : ''}</div>
+      ${reopenedMeta}
       <div class="fields">${keys.map(k => `<div class="field ${['title','rule','rationale'].includes(k) ? 'full' : ''}"><label>${human(k)}</label>${k==='rule' ? `<textarea rows="3" name="${k}">${esc(p[k]||'')}</textarea>` : `<input class="wide" name="${k}" value="${esc(p[k]||'')}">`}</div>`).join('')}</div>
       <div class="len-row"><div class="lenbar"><i></i></div><span>Rendered length <b class="len"></b> / 1,510 (typical ≤ 1,300)</span></div>
-      <div class="btns"><button class="ok" data-ratify="${p.id}">Ratify as next DIR-NNN</button><button class="bad" data-decline="${p.id}">Decline…</button></div></div>`;
+      <div class="btns"><button class="ok" data-ratify="${p.id}">${ratifyLabel}</button><button class="bad" data-decline="${p.id}">${declineLabel}</button></div></div>`;
+    };
     view.innerHTML = (pending.length ? `<div class="list">${pending.map(form).join('')}</div>` : '<div class="empty">No directive proposals pending.</div>') +
-      (done.length ? `<h3 class="sub">Decided</h3><div class="table-wrap"><table><tr><th>ID</th><th>Title</th><th>State</th><th>By</th><th>Note</th></tr>${done.map(p => `<tr><td class="mono">${esc(p.directive_id||'')}</td><td>${esc(p.title)}</td><td><span class="pill ${esc(p.state)}">${esc(p.state)}</span></td><td>${esc(p.decided_by||'')}</td><td>${esc(p.decision_note||'')}</td></tr>`).join('')}</table></div>` : '');
+      (done.length ? `<h3 class="sub">Decided</h3><div class="table-wrap"><table><tr><th>ID</th><th>Title</th><th>State</th><th>By</th><th>Note</th><th>Actions</th></tr>${done.map(p => {
+        const stateClass = (p.state === 'declined' && p.directive_id) ? 'retired' : p.state;
+        const stateText = (p.state === 'declined' && p.directive_id) ? 'retired' : p.state;
+        return `<tr><td class="mono">${esc(p.directive_id||'')}</td><td>${esc(p.title)}</td><td><span class="pill ${esc(stateClass)}">${esc(stateText)}</span></td><td>${esc(p.decided_by||'')}</td><td>${esc(p.decision_note||'')}</td><td><button class="btn sm" data-reopen="${p.id}">Reopen</button></td></tr>`;
+      }).join('')}</table></div>` : '');
     const measure = card => {
       const v = n => card.querySelector(`[name=${n}]`).value.trim();
       const text = `### DIR-NNN — ${v('title')}\n- **Applies when:** ${v('applies_when')}\n- **Status:** active\n- **Rule:** ${v('rule')}\n- **Rationale:** ${v('rationale')}\n- **Reviewer check:** ${v('reviewer_check')}\n${v('example') ? '- **Example:** Illustrative — ' + v('example') + '\n' : ''}- **Added:** 2026-01-01 · **Source:** bishop-memory triage · **Evidence:** ${'x'.repeat(80)}\n`;
@@ -448,22 +461,49 @@
       const card = b.closest('.card'); let body;
       try { body = { state:'accepted', decided_by: approver() }; } catch (e) { return; }
       keys.forEach(k => body[k] = card.querySelector(`[name=${k}]`).value);
-      try { const r = await api('POST', `/v1/directive-proposals/${b.dataset.ratify}/decision`, body); toast(`Ratified ${r.directive_id}. Run make triage-export to write DIRECTIVES.md`); renderDirectives(); loadCategories(); }
+      try {
+        const r = await api('POST', `/v1/directive-proposals/${b.dataset.ratify}/decision`, body);
+        const amends = card.dataset.amends;
+        const hint = 'Run make triage-export to write DIRECTIVES.md';
+        toast(amends ? `Amended ${amends}. ${hint}` : `Ratified ${r.directive_id ?? ''}. ${hint}`);
+        renderDirectives();
+        loadCategories();
+      }
       catch (e) { toast('Error: ' + e.message); }
     });
     view.querySelectorAll('[data-decline]').forEach(b => b.onclick = async () => {
       let who; try { who = approver(); } catch (e) { return; }
-      const note = prompt('Reason for declining:'); if (!note) return;
+      const note = (prompt('Reason for declining:') || '').trim(); if (!note) return;
       try { await api('POST', `/v1/directive-proposals/${b.dataset.decline}/decision`, { state:'declined', decided_by: who, note }); toast('Declined'); renderDirectives(); }
+      catch (e) { toast('Error: ' + e.message); }
+    });
+    view.querySelectorAll('[data-reopen]').forEach(b => b.onclick = async () => {
+      let who; try { who = approver(); } catch (e) { return; }
+      const note = (prompt('Reason for reopening:') || '').trim(); if (!note) return;
+      try { await api('POST', `/v1/directive-proposals/${b.dataset.reopen}/reopen`, { decided_by: who, note }); toast('Reopened — decide it above'); renderDirectives(); }
       catch (e) { toast('Error: ' + e.message); }
     });
   }
 
   async function renderRuns() {
     const d = await api('GET', '/v1/triage/runs?limit=100');
-    $('#view').innerHTML = d.runs.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th class="num">Read</th><th class="num">Written</th><th class="num">Accepted</th><th class="num">Declined</th><th>Started</th><th>Notes</th></tr>` +
-      d.runs.map(r => `<tr><td class="mono">${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td class="mono">${esc(r.model||'')}</td><td><span class="pill ${esc(r.status)}">${esc(r.status)}</span></td><td class="num">${r.considered}</td><td class="num">${r.written}</td><td class="num">${r.accepted}</td><td class="num">${r.declined}</td><td class="mono">${esc(r.started_at)}</td><td>${esc(r.notes||'')}</td></tr>`).join('') + '</table></div>'
+    const rows = d.runs.map(r => {
+      const statusPill = `<span class="pill ${esc(r.status)}">${esc(r.status)}</span>`;
+      const stalePill = r.stale ? ` <span class="pill stale">stale</span>` : '';
+      const statusCol = statusPill + stalePill;
+      const buttons = r.stale ? `<div class="btns" style="margin-top:0"><button class="ok" data-close="done" data-run="${r.id}">Mark done</button><button class="bad" data-close="failed" data-run="${r.id}">Mark failed</button></div>` : '';
+      return `<tr><td class="mono">${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td class="mono">${esc(r.model||'')}</td><td>${statusCol}</td><td class="num">${r.considered}</td><td class="num">${r.written}</td><td class="num">${r.accepted}</td><td class="num">${r.declined}</td><td class="mono">${esc(r.started_at)}</td><td class="mono">${esc(r.last_activity_at)}</td><td>${esc(r.notes||'')}</td><td>${buttons}</td></tr>`;
+    }).join('');
+    const view = $('#view');
+    view.innerHTML = d.runs.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th class="num">Read</th><th class="num">Written</th><th class="num">Accepted</th><th class="num">Declined</th><th>Started</th><th>Last activity</th><th>Notes</th><th>Actions</th></tr>` + rows + '</table></div>'
       : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';
+    view.querySelectorAll('[data-close]').forEach(b => b.onclick = async () => {
+      const status = b.dataset.close, run = b.dataset.run;
+      let who; try { who = approver(); } catch (e) { return; }
+      const note = (prompt(`Reason for marking run #${run} ${status}:`) || '').trim(); if (!note) return;
+      try { await api('POST', `/v1/triage/runs/${run}/operator-close`, { status, decided_by: who, note }); toast(`Run #${run} marked ${status}`); renderRuns(); }
+      catch (e) { toast('Error: ' + e.message); }
+    });
   }
 
   function focusCard(scroll = true) {
