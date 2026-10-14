@@ -228,11 +228,45 @@
     .head h2 { font-size:32px }
   }
   @media (prefers-reduced-motion: reduce) { .empty::after, .step .dot.in-progress { animation:none } }
+  .logo { display:block; height:28px; width:auto; max-width:120px; object-fit:contain }
+  .brand { gap:14px }
+  :root { --run:#1d5f86 } :root[data-theme=dark] { --run:#7fdcff }
+  @media (prefers-color-scheme: dark) { :root[data-theme=system] { --run:#7fdcff } }
+  .cat-block { margin-bottom:32px } .cat-title { margin-bottom:14px } .group { margin-bottom:22px }
+  .rec, .pill { border-color:transparent; color:var(--on); background:var(--faint); text-shadow:none }
+  .rec.approve { background:var(--ok); color:var(--on) } .rec.reject { background:var(--bad); color:var(--on) } .rec.defer { background:var(--warn); color:var(--on) } .rec.supersede { background:var(--faint); color:var(--on) }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.finished { background:var(--ok); color:var(--on) }
+  .pill.rejected, .pill.declined, .pill.failed { background:var(--bad); color:var(--on) }
+  .pill.running, .pill.proposed, .pill.pending { background:var(--run); color:var(--on) }
+  .cat.on { background:var(--fg); color:var(--on); border-left-color:var(--fg); text-shadow:none } .cat.on .count, .cat.on .count::before, .cat.on .count::after { color:var(--on) }
+  .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
+
+  /* Fit fixes for the MU/TH/UR header (2026-10-14). The wider brand pushed
+     the header past the viewport, and on phones the single grid column
+     grew to its widest child (a table, a long word) instead of the screen. */
+  @media (max-width: 860px) {
+    main { grid-template-columns:minmax(0,1fr) }
+    #view { overflow-wrap:anywhere }
+  }
+  @media (max-width: 560px) {
+    .brand { gap:10px }
+    .logo-text { font-size:22px; padding-right:10px }
+    .brand h1 { font-size:20px }
+  }
+  /* Triage carries two segmented controls and the approver box, about
+     1,790px of header: drop the summary counts (the rail shows them) below
+     1800px and let the header wrap to two rows below 1600px, moving the
+     sticky rail down to match. */
+  @media (min-width: 861px) and (max-width: 1800px) { #stats { display:none } }
+  @media (min-width: 861px) and (max-width: 1600px) {
+    header.top { height:104px; flex-wrap:wrap; align-content:center; row-gap:10px }
+    aside { top:104px; height:calc(100vh - 104px) }
+  }
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark"></span><h1>Findings Triage</h1></div>
+  <div class="brand"><span class="logo-text" aria-label="MU/TH/UR">MU/TH/UR</span><h1>Findings Triage</h1></div>
   <nav class="seg" aria-label="Pages"><a href="/triage" class="on">Triage</a><a href="/missions">Missions</a><a href="/performance">Performance</a></nav>
   <nav class="seg tabs" id="tabs">
     <button data-tab="pending" class="on">Pending</button>

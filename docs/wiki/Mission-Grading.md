@@ -29,9 +29,9 @@ A mission whose record is too thin to judge (no debrief and no steps) gets **not
 
 **Performance page** (`/performance`, the third link in the page switch):
 
-- **Tiles** — the average grade over every harness, how many missions are graded, how many are waiting, and how many were set aside (not enough evidence, or skipped).
-- **One card per harness** — its average letter and score out of 5, an A–F distribution bar, its latest ten grades newest first (each opens the mission), and **improving** or **slipping** when its five newest grades differ from the five before them by a third of a grade or more.
-- **Grades** — every verdict, newest first, filterable by harness and grade, with the suggestions one click away.
+- **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside (not enough evidence, or skipped).
+- **Harnesses** — one row per harness: its average letter and score, its latest grades newest first (each opens the mission), and **improving**, **slipping** or **steady** when its five newest grades differ from the five before them by a third of a grade or more (a dash with fewer than six). Click a row to filter the grades below to that harness; click it again to clear. **Display…** hides harnesses you do not want to see, such as test harnesses: a hidden harness drops out of the rows, the summary and the grade list, nothing is deleted, and the choice is kept in this browser.
+- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
 
 The average counts A as 5 down to F as 0 and turns the result back into the nearest letter.
 
