@@ -475,6 +475,30 @@ CREATE TABLE IF NOT EXISTS mission_criteria (
     CHECK (result IS NULL OR result IN ('met', 'partial', 'unmet', 'unclear'))
 );
 
+-- agent_mistakes — rows of the DEBRIEF.md "Sub-Agent Mistakes and Corrections" table,
+-- as split by internal/debrief.ParseMistakes (the cell rules live there).
+--
+-- ord is the row order within the table.
+-- agent is the crew name derived from agent_raw (for example hicks for @hicks).
+-- agent_raw is the Agent cell exactly as written in the source table.
+-- impact is 'low', 'med' or 'high', or NULL when the Impact cell is empty, "none",
+-- dashes only, or starts with a word that is not a level.
+-- impact_note is the text after the level (or after "none"); when the first word is
+-- not a level it holds the whole Impact cell.
+CREATE TABLE IF NOT EXISTS agent_mistakes (
+    mission_id  TEXT    NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    ord         INTEGER NOT NULL,
+    agent       TEXT    NOT NULL,
+    agent_raw   TEXT    NOT NULL,
+    mistake     TEXT    NOT NULL,
+    impact      TEXT,
+    impact_note TEXT,
+    correction  TEXT,
+    prevention  TEXT,
+
+    PRIMARY KEY (mission_id, ord),
+    CHECK (impact IS NULL OR impact IN ('low', 'med', 'high'))
+);
 
 CREATE INDEX IF NOT EXISTS idx_mission_grades_state ON mission_grades(state);
 

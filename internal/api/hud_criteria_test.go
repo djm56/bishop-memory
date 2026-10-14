@@ -48,18 +48,18 @@ func hudRow(t *testing.T, name string, arr []any, i int) map[string]any {
 	return m
 }
 
-// hudRowByOrd returns the criteria element whose ord is want, so a subtest
+// hudRowByOrd returns the element from rows whose ord is want, so a subtest
 // asserts the content of one seeded row independently of where ordering put
 // it. It fails the test if no such element exists.
-func hudRowByOrd(t *testing.T, criteria []any, want float64) map[string]any {
+func hudRowByOrd(t *testing.T, name string, rows []any, want float64) map[string]any {
 	t.Helper()
-	for i := range criteria {
-		row := hudRow(t, "criteria", criteria, i)
+	for i := range rows {
+		row := hudRow(t, name, rows, i)
 		if got, ok := row["ord"].(float64); ok && got == want {
 			return row
 		}
 	}
-	t.Fatalf("no criteria row with ord %v; criteria: %v", want, criteria)
+	t.Fatalf("no %s row with ord %v; %s: %v", name, want, name, rows)
 	return nil
 }
 
@@ -138,7 +138,7 @@ func TestHUDMissionDetailCriteria(t *testing.T) {
 	})
 
 	t.Run("NullResultAndEvidence", func(t *testing.T) {
-		row := hudRowByOrd(t, criteria, 1)
+		row := hudRowByOrd(t, "criteria", criteria, 1)
 		if row["criterion"] != "Zeta" {
 			t.Errorf("null-row criterion = %v, want %q", row["criterion"], "Zeta")
 		}
@@ -153,7 +153,7 @@ func TestHUDMissionDetailCriteria(t *testing.T) {
 	})
 
 	t.Run("GradedRow", func(t *testing.T) {
-		row := hudRowByOrd(t, criteria, 3)
+		row := hudRowByOrd(t, "criteria", criteria, 3)
 		if row["criterion"] != "Mid" {
 			t.Errorf("graded-row criterion = %v, want %q", row["criterion"], "Mid")
 		}

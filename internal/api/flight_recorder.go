@@ -342,6 +342,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			}
 			totalStats.CriteriaSkipped += stats.CriteriaSkipped
 			totalStats.CriteriaErrors += stats.CriteriaErrors
+			totalStats.MistakesSkipped += stats.MistakesSkipped
+			totalStats.MistakesErrors += stats.MistakesErrors
 			// A registered harness keeps its agent definitions beside its
 			// memory root; they fill the crew table.
 			if target.Name != "" {
@@ -358,6 +360,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 				"root":             roots[0],
 				"criteria_skipped": totalStats.CriteriaSkipped,
 				"criteria_errors":  totalStats.CriteriaErrors,
+				"mistakes_skipped": totalStats.MistakesSkipped,
+				"mistakes_errors":  totalStats.MistakesErrors,
 			})
 			return
 		}
@@ -366,6 +370,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			"roots":            roots,
 			"criteria_skipped": totalStats.CriteriaSkipped,
 			"criteria_errors":  totalStats.CriteriaErrors,
+			"mistakes_skipped": totalStats.MistakesSkipped,
+			"mistakes_errors":  totalStats.MistakesErrors,
 		})
 	}
 }
