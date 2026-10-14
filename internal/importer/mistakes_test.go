@@ -60,6 +60,13 @@ func TestMistakeAgentName(t *testing.T) {
 		{"BISHOP", "BISHOP", "bishop"},
 		{"apone;reason", "apone;reason", "apone"},
 		{"ripley/initial", "ripley/initial", "ripley"},
+		{"hicks.", "hicks.", "hicks"},
+		{"  @hicks", "  @hicks", "hicks"},
+		{"  hicks", "  hicks", "hicks"},
+		{"hicks: reason", "hicks: reason", "hicks"},
+		{"hicks reason", "hicks reason", "hicks"},
+		{"@vasquez and @hicks", "@vasquez and @hicks", "vasquez"},
+		{"see @apone, not hicks", "see @apone, not hicks", "apone"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

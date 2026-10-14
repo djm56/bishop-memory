@@ -11,6 +11,9 @@ import (
 	"bishop-memory/internal/debrief"
 )
 
+// agentMentionPattern matches @-mentions: @([A-Za-z][A-Za-z0-9_-]*)
+var agentMentionPattern = regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
+
 // storeAgentMistakes refreshes agent_mistakes for missionID after a debrief
 // document was imported by harness. It never returns an error: failures are
 // logged and counted in the returned MistakesErrors so the import that called
@@ -103,9 +106,8 @@ func storeAgentMistakes(db *sql.DB, missionID, harness string) SyncStats {
 // agent_raw is kept unchanged in agent_mistakes; this function is the
 // agent field's normalisation rule only.
 func mistakeAgentName(raw string) string {
-	// Rule 1: Extract @mention
-	re := regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
-	matches := re.FindStringSubmatch(raw)
+	// Rule 1: Extract @mention (first mention wins)
+	matches := agentMentionPattern.FindStringSubmatch(raw)
 	if len(matches) > 1 {
 		return strings.ToLower(matches[1])
 	}
