@@ -115,18 +115,16 @@ fills `documents.mission_id`), then the backfill.
 
 ## 3. Phase 2 — structure the debrief (optional)
 
+`mission_criteria` parsing is complete on branch `feat/insight-criteria` under the memory insight plan, under decision P1. The remaining tables below are planned.
+
 The debrief template has fixed sections. The importer parses them into small
 tables when it imports a `DEBRIEF.md`. Each table is replaced wholesale on
 re-import, keyed by `mission_id`.
 
 | Table | Columns | From section |
 |---|---|---|
-| `mission_criteria` | `mission_id, ord, criterion, met (0/1), evidence` | Acceptance Criteria Outcome (`- [x] text — pass: evidence`) |
 | `mission_deliverables` | `mission_id, path, note` | Deliverables Changed |
 | `mission_lessons` | `mission_id, kind ('wrong-assumption', 'agent-mistake', 'similar-mission'), text` | Wrong Assumptions; Sub-Agent Mistakes and Corrections; Similar Future Missions |
-
-The brief's criteria go into `mission_criteria` too, with `met` NULL, so an
-in-flight mission shows its criteria before it has a debrief.
 
 What this buys: questions the page can filter on, not only text to read —
 "missions with an unmet criterion", "every wrong assumption about the
