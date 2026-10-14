@@ -1,9 +1,10 @@
 # Memory Insight — Plan
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
-(mission_criteria) merged to main (c325080) and live; decision P1 settled yes
-(2026-10-14); remaining phase 1 tables (deliverables, lessons, agent_mistakes,
-step_reviews) planned; phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
+(mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
+built on branch feat/insight-agent-mistakes, not yet merged; decision P1 settled yes
+(2026-10-14); remaining phase 1 tables (deliverables, lessons, step_reviews) planned;
+phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
 Date: 2026-10-14.
 
 The service captures missions well, and the HUD shows one mission well. What
@@ -69,7 +70,7 @@ never a sync failure.
 | `mission_criteria` | `mission_id, ord, criterion, result ('met','partial','unmet','unclear', NULL before a debrief), evidence` | Brief's Acceptance Criteria; debrief's Acceptance Criteria Outcome |
 | `mission_deliverables` | `mission_id, path, note` | Deliverables Changed |
 | `mission_lessons` | `mission_id, kind ('wrong-assumption','similar-mission','reuse-step'), text, correction` | Wrong Assumptions; Similar Future Missions |
-| `agent_mistakes` | `mission_id, agent, mistake, impact ('low','med','high'), correction, prevention` | Sub-Agent Mistakes and Corrections |
+| `agent_mistakes` | `mission_id, ord, agent, agent_raw, mistake, impact ('low','med','high'), impact_note, correction, prevention` | Sub-Agent Mistakes and Corrections |
 
 Criteria are read only from `-` and `*` bullet lines; numbered lists (`1.`, `2.`) are not read and their section counts as skipped. The table is created via `db/schema.sql` `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot (not a separate migrate.go change).
 
