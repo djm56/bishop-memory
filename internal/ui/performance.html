@@ -238,30 +238,143 @@
     .head h2 { font-size:32px }
   }
   @media (prefers-reduced-motion: reduce) { .empty::after, .step .dot.in-progress { animation:none } }
-  .hgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:12px; margin:0 0 36px }
-  .hcard { display:flex; flex-direction:column; gap:10px }
-  .hcard .top { display:flex; align-items:center; gap:14px }
-  .hcard .name { font:400 24px/1 var(--disp); letter-spacing:.06em; text-transform:uppercase; overflow-wrap:anywhere }
-  .hcard .sub2 { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums }
-  .dist { display:flex; height:14px; border:1px solid var(--line2); padding:1px; gap:1px }
-  .dist i { display:block; height:100% }
-  .dist .dA, .dist .dB { background:var(--ok) } .dist .dB { opacity:.65 } .dist .dC { background:var(--accent); opacity:.55 }
-  .dist .dD { background:var(--warn) } .dist .dE { background:var(--bad); opacity:.65 } .dist .dF { background:var(--bad) }
-  .legend { display:flex; flex-wrap:wrap; gap:4px 12px; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums }
-  .recent { display:flex; flex-wrap:wrap; gap:4px }
-  .recent a { text-decoration:none } .recent a:hover { background:none }
-  .rowfilters { display:flex; gap:10px; flex-wrap:wrap; margin:0 0 14px }
-  .rowfilters select { min-width:160px }
-  td .sugg { margin:0 }
   main.single { display:block }
+  #view { max-width:1600px; margin:0 auto }
+  .summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:28px; align-items:center; padding:20px 22px; margin:0 0 40px }
+  .summary .big { display:flex; align-items:center; gap:16px }
+  .summary .big .grade.lg { min-width:72px; height:72px; font-size:68px }
+  .summary .big .k, .kv .k { font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+  .summary .big .v { font:400 34px/1 var(--disp); font-variant-numeric:tabular-nums }
+  .summary .big .s { font-size:12px; color:var(--muted) }
+  .summary .mid { display:flex; flex-direction:column; gap:8px; min-width:0 }
+  .summary .stats2 { display:flex; gap:28px; padding-left:28px; border-left:1px solid var(--line2) }
+  .kv .v { font:400 34px/1 var(--disp); font-variant-numeric:tabular-nums; margin-top:2px }
+  .kv .s { font-size:11.5px; color:var(--muted); max-width:22ch }
+  .dist { display:flex; height:14px; border:1px solid var(--line2); padding:1px; gap:1px; min-width:0 }
+  .summary .dist { height:20px }
+  .dist i { display:block; height:100%; min-width:2px }
+  .dist .dA { background:var(--ok) } .dist .dB { background:var(--ok); opacity:.6 } .dist .dC { background:var(--accent); opacity:.4 }
+  .dist .dD { background:var(--warn) } .dist .dE { background:var(--bad); opacity:.6 } .dist .dF { background:var(--bad) }
+  .legend { display:flex; flex-wrap:wrap; gap:2px 12px; font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums }
+  .legend b { font-weight:600 } .legend .gA b, .legend .gB b { color:var(--ok) } .legend .gC b { color:var(--fg) } .legend .gD b { color:var(--warn) } .legend .gE b, .legend .gF b { color:var(--bad) }
+  .legend .z { opacity:.55 }
+  .board { background:var(--panel); border:1px solid var(--line2) }
+  .bhead, .brow { display:grid; grid-template-columns:52px minmax(170px,1.1fr) minmax(200px,1.6fr) 96px minmax(0,1.4fr); gap:18px; align-items:center; padding:0 18px }
+  .bhead { padding-top:10px; padding-bottom:10px; border-bottom:1px solid var(--line2); font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+  .brow { padding-top:12px; padding-bottom:12px; border-bottom:1px solid var(--line); border-left:2px solid transparent; cursor:pointer; padding-left:16px }
+  .brow:last-child { border-bottom:0 }
+  .brow:hover { background:var(--soft) }
+  .brow.on { background:var(--soft); border-left-color:var(--fg) }
+  .brow .name { font:400 22px/1 var(--disp); letter-spacing:.06em; text-transform:uppercase; overflow-wrap:anywhere }
+  .brow .sub2 { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; margin-top:3px }
+  .brow .bars { display:flex; flex-direction:column; gap:6px; min-width:0 }
+  .brow .grade.lg { min-width:44px; height:44px; font-size:40px }
+  .trend { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint) }
+  .trend.up { color:var(--ok) } .trend.down { color:var(--bad) }
+  .recent { display:flex; flex-wrap:wrap; gap:4px }
+  .recent a { text-decoration:none; display:flex } .recent a:hover { background:none } .recent a:hover .grade { background:currentColor } .recent a:hover .grade::first-letter { color:var(--on) }
+  .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 14px }
+  .toolbar select { min-width:180px }
+  .clear { font-size:11.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); background:none; border:0; cursor:pointer; padding:4px; font-family:var(--mono); text-decoration:underline dotted; text-underline-offset:3px }
+  .clear:hover { color:var(--fg) }
+  .seg button .c { color:var(--faint); margin-left:5px; font-weight:400 }
+  .seg button.on .c { color:inherit; opacity:.7 }
+  .glist { background:var(--panel); border:1px solid var(--line2) }
+  .grow { display:grid; grid-template-columns:36px minmax(220px,300px) minmax(0,1fr); gap:6px 20px; padding:16px 18px; border-bottom:1px solid var(--line) }
+  .grow:last-child { border-bottom:0 }
+  .grow .gm .id a { font-size:12.5px }
+  .grow .gm .t { font-size:13px; margin-top:3px; text-wrap:pretty }
+  .grow .gm .m { display:flex; flex-wrap:wrap; gap:2px 10px; margin-top:6px; font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .grow .gs { min-width:0 }
+  .grow .gs p { margin:0; font-size:13px; line-height:1.6; max-width:96ch; text-wrap:pretty }
+  .grow .gs p.clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
+  .grow .acts { display:flex; flex-wrap:wrap; gap:4px 18px; margin-top:6px }
+  .grow .acts button { font:500 11.5px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted); background:none; border:0; padding:4px 0; cursor:pointer; text-shadow:inherit }
+  .grow .acts button::before { content:"[+] "; color:var(--faint) }
+  .grow .acts button.open::before { content:"[\2212] " }
+  .grow .acts button:hover { color:var(--fg) }
+  .grow .sug { margin-top:8px; padding:10px 12px; background:var(--soft); border-left:2px solid var(--line2); font-size:13px; white-space:pre-wrap; max-width:96ch }
+  @media (max-width: 1200px) {
+    .summary { grid-template-columns:auto minmax(0,1fr) } .summary .stats2 { grid-column:1 / -1; padding:16px 0 0; border-left:0; border-top:1px solid var(--line2) }
+    .bhead { display:none }
+    .brow { grid-template-columns:52px minmax(0,1fr) auto; grid-template-areas:"g n t" "g b b" "g r r"; gap:10px 16px }
+    .brow > :nth-child(1) { grid-area:g; align-self:start } .brow > :nth-child(2) { grid-area:n } .brow > :nth-child(3) { grid-area:b } .brow > :nth-child(4) { grid-area:t } .brow > :nth-child(5) { grid-area:r }
+  }
+  @media (max-width: 760px) {
+    .summary { grid-template-columns:1fr }
+    .grow { grid-template-columns:36px minmax(0,1fr) } .grow .gs { grid-column:2 }
+  }
+
+  #view { padding:18px 24px 64px }
+  .summary { padding:12px 18px; gap:22px; margin:0 0 22px }
+  .summary .big .grade.lg { min-width:48px; height:48px; font-size:46px }
+  .summary .big .v, .kv .v { font-size:26px }
+  .summary .stats2 { gap:22px; padding-left:22px }
+  .kv .s { max-width:none }
+  section.sec { margin-bottom:24px }
+  .sec > h3 { margin:0 0 8px; font-size:20px }
+
+  .bhead, .brow { grid-template-columns:36px minmax(150px,220px) minmax(0,1fr) 110px; grid-template-areas:"g n r t"; gap:14px }
+  .bhead > :nth-child(1) { grid-area:g } .bhead > :nth-child(2) { grid-area:n } .bhead > :nth-child(3) { display:none } .bhead > :nth-child(4) { grid-area:t } .bhead > :nth-child(5) { grid-area:r }
+  .brow > :nth-child(1) { grid-area:g } .brow > :nth-child(2) { grid-area:n } .brow > :nth-child(3) { display:none } .brow > :nth-child(4) { grid-area:t; text-align:right } .brow > :nth-child(5) { grid-area:r }
+  .bhead { padding-top:7px; padding-bottom:7px } .bhead > :nth-child(4) { text-align:right }
+  .brow { padding-top:5px; padding-bottom:5px }
+  .brow .grade.lg { min-width:30px; height:30px; font-size:28px }
+  .brow .name { font-size:18px } .brow .sub2 { margin-top:0; font-size:11px }
+  .recent { gap:3px; flex-wrap:nowrap; overflow:hidden }
+  .recent .grade { min-width:26px; width:26px; height:26px; font-size:20px; border:0; color:var(--on); text-shadow:none }
+  .recent .grade.gA { background:var(--ok) } .recent .grade.gB { background:color-mix(in srgb, var(--ok) 55%, var(--panel)); color:var(--fg) } .recent .grade.gC { background:color-mix(in srgb, var(--accent) 22%, var(--panel)); color:var(--fg) }
+  .recent .grade.gD { background:var(--warn) } .recent .grade.gE { background:color-mix(in srgb, var(--bad) 55%, var(--panel)); color:var(--fg) } .recent .grade.gF { background:var(--bad) }
+  .recent a:hover .grade { outline:1px solid var(--fg); outline-offset:1px }
+  .toolbar { margin-bottom:8px }
+  .grow { grid-template-columns:24px 170px 120px 92px minmax(0,1fr); gap:2px 14px; padding:7px 14px; align-items:baseline }
+  .grow .gm { display:contents } .grow .gm .t { display:none } .grow .gm .m { display:contents; font-size:11.5px; color:var(--muted) }
+  .grow .gm .m span { font-size:11.5px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .grow .gs { grid-column:5; grid-row:1 } .grow .gs p { font-size:12.5px; line-height:1.5 } .grow .gs p.clamp { -webkit-line-clamp:1 }
+  .grow .acts { margin-top:0 } .grow .acts button { padding:2px 0 }
+  @media (max-width: 1100px) { .bhead { display:none } .brow { grid-template-columns:36px minmax(0,1fr) auto; grid-template-areas:"g n t" "g r r" } .grow { grid-template-columns:24px minmax(0,1fr) } .grow .gm { display:block } .grow .gm .m { display:flex; gap:10px } .grow .gs { grid-column:2; grid-row:auto } }
+  .sec > h3 .hid { font:500 11px/1 var(--mono); letter-spacing:.08em; color:var(--warn); border:1px solid currentColor; padding:3px 6px }
+  .sec > h3 .gear { order:3; font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:none; border:1px solid var(--line2); padding:6px 9px; cursor:pointer; text-shadow:inherit }
+  .sec > h3 .gear:hover { color:var(--fg); border-color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  .modal-bg { position:fixed; inset:0; z-index:40; background:color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter:blur(2px); display:grid; place-items:center; padding:20px }
+  .modal { width:min(460px, 100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25), var(--glowbox) }
+  .modal .mh { padding:16px 18px 12px; border-bottom:1px solid var(--line2) }
+  .modal .mh h3 { margin:0 0 6px; font:400 24px/1 var(--disp); letter-spacing:.08em; text-transform:uppercase }
+  .modal .s { font-size:11.5px; color:var(--muted); text-wrap:pretty }
+  .mlist2 { overflow:auto; padding:6px 0 }
+  .opt { display:grid; grid-template-columns:18px minmax(0,1fr) auto 26px; gap:12px; align-items:center; padding:7px 18px; cursor:pointer }
+  .opt:hover { background:var(--soft) }
+  .opt input { margin:0; accent-color:var(--ok); width:15px; height:15px }
+  .opt .nm { font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .opt:has(input:not(:checked)) .nm { color:var(--faint); text-decoration:line-through }
+  .modal .mf { display:flex; align-items:center; gap:10px; padding:12px 18px; border-top:1px solid var(--line2) }
+  .logo { display:block; height:28px; width:auto; max-width:120px; object-fit:contain }
+  .brand { gap:14px }
+  :root { --run:#1d5f86 } :root[data-theme=dark] { --run:#7fdcff }
+  @media (prefers-color-scheme: dark) { :root[data-theme=system] { --run:#7fdcff } }
+  .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
+
+  /* Fit fixes for the MU/TH/UR header (2026-10-14). The wider brand pushed
+     the header past the viewport, and on phones the single grid column
+     grew to its widest child (a table, a long word) instead of the screen. */
+  @media (max-width: 860px) {
+    main { grid-template-columns:minmax(0,1fr) }
+    #view { overflow-wrap:anywhere }
+  }
+  @media (max-width: 560px) {
+    .brand { gap:10px }
+    .logo-text { font-size:22px; padding-right:10px }
+    .brand h1 { font-size:20px }
+  }
 </style>
 </head>
 <body>
 <header class="top">
-  <div class="brand"><span class="mark"></span><h1>Harness Performance</h1></div>
+  <div class="brand"><span class="logo-text" aria-label="MU/TH/UR">MU/TH/UR</span><h1>Harness Performance</h1></div>
   <nav class="seg" aria-label="Pages"><a href="/triage">Triage</a><a href="/missions">Missions</a><a href="/performance" class="on">Performance</a></nav>
   <span class="spacer"></span>
-  <span id="stats" class="stats"></span>
   <button id="signout" class="signout" hidden title="Forget the API key stored in this browser">Forget key</button>
   <div class="seg sm" id="theme" title="Theme">
     <button data-set="system">Auto</button>
@@ -275,7 +388,10 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
-  const state = { perf:null, grades:[], filters:{ harness:'', grade:'' } };
+  const state = { perf:null, grades:[], filters:{ harness:'', harnessSet:false, grade:'' }, page:0, hidden:new Set(), settings:false };
+  const PAGE = 20;
+  try { state.hidden = new Set(JSON.parse(localStorage.getItem('perf.hidden') || '[]')); } catch (e) {}
+  const saveHidden = () => { try { localStorage.setItem('perf.hidden', JSON.stringify([...state.hidden])); } catch (e) {} };
   try { Object.assign(state.filters, JSON.parse(localStorage.getItem('perf.filters') || '{}')); } catch (e) {}
 
   const root = document.documentElement;
@@ -311,69 +427,107 @@
   const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
   const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
 
-  // Distribution bar: one segment per letter, width by share of graded missions.
-  const dist = h => {
-    if (!h.graded) return '<div class="none">No grades yet.</div>';
-    const seg = LETTERS.filter(l => h.distribution[l]).map(l => `<i class="d${l}" style="width:${(h.distribution[l] / h.graded * 100).toFixed(1)}%" title="${l}: ${h.distribution[l]}"></i>`).join('');
-    const legend = LETTERS.map(l => `<span>${l} ${h.distribution[l] || 0}</span>`).join('');
-    return `<div class="dist">${seg}</div><div class="legend">${legend}</div>`;
-  };
+  const PTS = { A:5, B:4, C:3, D:2, E:1, F:0 };
+  const distOf = d => { const t = LETTERS.reduce((n, l) => n + (d[l] || 0), 0); return t ? `<div class="dist">${LETTERS.filter(l => d[l]).map(l => `<i class="d${l}" style="width:${(d[l] / t * 100).toFixed(1)}%" title="${l}: ${d[l]}"></i>`).join('')}</div>` : ''; };
+  const legendOf = d => `<div class="legend">${LETTERS.map(l => `<span class="g${l} ${d[l] ? '' : 'z'}">${l} <b>${d[l] || 0}</b></span>`).join('')}</div>`;
   // Trend: the average of the five newest grades against the five before them.
   const trend = h => {
-    const pts = { A:5, B:4, C:3, D:2, E:1, F:0 };
-    const r = h.recent.map(x => pts[x.grade]);
-    if (r.length < 6) return '';
-    const a = r.slice(0, 5), b = r.slice(5);
+    const r = h.recent.map(x => PTS[x.grade]);
+    if (r.length < 6) return '<span class="trend">—</span>';
     const avg = xs => xs.reduce((n, x) => n + x, 0) / xs.length;
-    const delta = avg(a) - avg(b);
-    if (Math.abs(delta) < 0.3) return '<span class="tag">steady</span>';
-    return delta > 0 ? '<span class="tag" style="color:var(--ok);border-color:var(--ok)">improving</span>' : '<span class="tag" style="color:var(--bad);border-color:var(--bad)">slipping</span>';
+    const delta = avg(r.slice(0, 5)) - avg(r.slice(5));
+    if (Math.abs(delta) < 0.3) return '<span class="trend">\u2192 steady</span>';
+    return delta > 0 ? '<span class="trend up">\u2191 improving</span>' : '<span class="trend down">\u2193 slipping</span>';
   };
+  const subline = h => [`${h.graded} graded`, h.avg_points != null ? `${Number(h.avg_points).toFixed(2)}&nbsp;/&nbsp;5` : '', h.waiting ? `${h.waiting} waiting` : '', h.insufficient ? `${h.insufficient} n/e` : '', h.skipped ? `${h.skipped} skipped` : ''].filter(Boolean).join(' · ');
 
-  function harnessCard(h) {
-    const name = h.harness || 'no harness';
-    return `<div class="card hcard">
-      <div class="top">${h.avg_grade ? gradeBadge(h.avg_grade, 'lg solid') : '<span class="grade lg">—</span>'}
-        <div><div class="name">${esc(name)}</div>
-          <div class="sub2">${h.graded} graded${h.avg_points != null ? ` · ${Number(h.avg_points).toFixed(2)}&nbsp;/&nbsp;5` : ''}${h.waiting ? ` · ${h.waiting} waiting` : ''}${h.insufficient ? ` · ${h.insufficient} not enough evidence` : ''}${h.skipped ? ` · ${h.skipped} skipped` : ''}</div></div>
-        <span class="spacer"></span>${trend(h)}</div>
-      ${dist(h)}
-      ${h.recent.length ? `<div><div class="sub2" style="margin-bottom:4px">Latest, newest first</div><div class="recent">${h.recent.map(x => `<a href="/missions#${encodeURIComponent(x.mission_id)}" title="${esc(x.mission_id)} · ${esc(x.title)}">${gradeBadge(x.grade)}</a>`).join('')}</div></div>` : ''}
+  function harnessRow(h) {
+    const key = h.harness || '';
+    return `<div class="brow ${state.filters.harness === key && state.filters.harnessSet ? 'on' : ''}" data-h="${esc(key)}" title="Show this harness's grades">
+      <div>${h.avg_grade ? gradeBadge(h.avg_grade, 'lg solid') : '<span class="grade lg">—</span>'}</div>
+      <div><div class="name">${esc(h.harness || 'no harness')}</div><div class="sub2">${subline(h)}</div></div>
+      <div class="bars">${h.graded ? distOf(h.distribution) + legendOf(h.distribution) : '<span class="none">No grades yet.</span>'}</div>
+      <div>${trend(h)}</div>
+      <div class="recent">${h.recent.map(x => `<a href="/missions#${encodeURIComponent(x.mission_id)}" title="${esc(x.mission_id)} · ${esc(x.title)}">${gradeBadge(x.grade)}</a>`).join('')}</div>
+    </div>`;
+  }
+
+  function gradeRow(g) {
+    return `<div class="grow">
+      <div>${g.grade ? gradeBadge(g.grade) : '<span class="tag">n/e</span>'}</div>
+      <div class="gm"><div class="id"><a href="/missions#${encodeURIComponent(g.mission_id)}">${esc(g.mission_id)}</a></div>
+        <div class="t">${esc(g.title)}</div>
+        <div class="m"><span>${esc(g.harness || 'no harness')}</span><span>${esc(fmtDay(g.closed_at))}</span></div></div>
+      <div class="gs"><p class="clamp">${esc(g.summary)}</p>
+        <div class="acts"><button data-more hidden>Full verdict</button>${g.suggestions ? '<button data-sug>Suggestions</button>' : ''}</div>
+        ${g.suggestions ? `<div class="sug" hidden>${esc(g.suggestions)}</div>` : ''}</div>
     </div>`;
   }
 
   function render() {
-    const p = state.perf, o = p.overall;
-    const f = state.filters;
-    const grades = state.grades.filter(g => (!f.harness || (g.harness || '') === f.harness) && (!f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient')));
-    const harnessNames = p.harnesses.map(h => h.harness);
-    $('#stats').innerHTML = `<b>${o.graded}</b> graded · average <b>${o.avg_grade || '—'}</b>${o.waiting ? ` · <b>${o.waiting}</b> waiting` : ''}`;
+    const p = state.perf, o = p.overall, f = state.filters;
+    const visible = p.harnesses.filter(h => !state.hidden.has(h.harness || ''));
+    const nHidden = p.harnesses.length - visible.length;
+    if (f.harnessSet && state.hidden.has(f.harness)) { f.harnessSet = false; f.harness = ''; }
+    const overall = {}; visible.forEach(h => LETTERS.forEach(l => overall[l] = (overall[l] || 0) + (h.distribution[l] || 0)));
+    const vGraded = LETTERS.reduce((n, l) => n + (overall[l] || 0), 0);
+    const vPts = vGraded ? LETTERS.reduce((n, l) => n + (overall[l] || 0) * PTS[l], 0) / vGraded : null;
+    const vGrade = nHidden ? (vPts != null ? 'FEDCBA'[Math.round(vPts)] : null) : o.avg_grade;
+    const byH = state.grades.filter(g => !state.hidden.has(g.harness || '') && (!f.harnessSet || (g.harness || '') === f.harness));
+    const counts = { '': byH.length, insufficient: byH.filter(g => g.state === 'insufficient').length }; LETTERS.forEach(l => counts[l] = byH.filter(g => g.grade === l).length);
+    const grades = byH.filter(g => !f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient'));
+    const pages = Math.max(1, Math.ceil(grades.length / PAGE)); state.page = Math.min(state.page, pages - 1);
+    const shown = grades.slice(state.page * PAGE, state.page * PAGE + PAGE);
+    const pageBtns = [...Array(pages).keys()].map(i => `<button data-pg="${i}" class="${i === state.page ? 'on' : ''}">${i + 1}</button>`).join('');
+    const pager = pages > 1 ? `<div class="pager"><span>${state.page * PAGE + 1}\u2013${state.page * PAGE + shown.length} of ${grades.length}</span><div class="seg sm"><button data-pg="prev" ${state.page ? '' : 'disabled'}>\u2039 Prev</button>${pageBtns}<button data-pg="next" ${state.page < pages - 1 ? '' : 'disabled'}>Next \u203a</button></div></div>` : '';
+    const chips = [['', 'All'], ...LETTERS.map(l => [l, l]), ['insufficient', 'n/e']].filter(([v]) => v === '' || counts[v] || f.grade === v);
     $('#view').innerHTML = `
-      <div class="tiles">
-        ${tile('Average grade', o.avg_grade ? gradeBadge(o.avg_grade, 'lg solid') : '—', o.avg_points != null ? `${Number(o.avg_points).toFixed(2)} of 5 over every harness` : 'nothing graded yet')}
-        ${tile('Graded', o.graded, 'finished missions with a grade')}
-        ${tile('Waiting', o.waiting, o.waiting ? 'graded by the next run, 10 at a time' : 'every finished mission has a verdict')}
-        ${tile('Set aside', o.insufficient + o.skipped, `${o.insufficient} not enough evidence · ${o.skipped} skipped`)}
-      </div>
-      <section class="sec"><h3>Harnesses <span class="n">${p.harnesses.length}</span></h3>
-        ${p.harnesses.length ? `<div class="hgrid">${p.harnesses.map(harnessCard).join('')}</div>` : '<div class="none">No finished missions yet.</div>'}</section>
-      <section class="sec"><h3>Grades <span class="n">${grades.length}</span></h3>
-        <div class="rowfilters">
-          <select id="fh"><option value="">All harnesses</option>${harnessNames.map(n => `<option value="${esc(n)}">${esc(n || 'no harness')}</option>`).join('')}</select>
-          <select id="fg"><option value="">Any grade</option>${LETTERS.map(l => `<option>${l}</option>`).join('')}<option value="insufficient">Not enough evidence</option></select>
+      <div class="card summary">
+        <div class="big">${vGrade ? gradeBadge(vGrade, 'lg solid') : '<span class="grade lg">—</span>'}
+          <div><div class="k">Average grade</div><div class="v">${(nHidden ? vPts : o.avg_points) != null ? Number(nHidden ? vPts : o.avg_points).toFixed(2) : '—'}<span style="color:var(--faint);font-size:.6em"> / 5</span></div><div class="s">over ${nHidden ? vGraded : o.graded} graded missions${nHidden ? ` · ${nHidden} harness${nHidden > 1 ? 'es' : ''} hidden` : ''}</div></div></div>
+        <div class="mid">${distOf(overall)}${legendOf(overall)}</div>
+        <div class="stats2">
+          <div class="kv"><div class="k">Waiting</div><div class="v">${o.waiting}</div><div class="s">${o.waiting ? 'graded by the next run, 10 at a time' : 'every finished mission has a verdict'}</div></div>
+          <div class="kv"><div class="k">Set aside</div><div class="v">${o.insufficient + o.skipped}</div><div class="s">${o.insufficient} not enough evidence · ${o.skipped} skipped</div></div>
         </div>
-        ${grades.length ? `<div class="table-wrap"><table><tr><th>Grade</th><th>Mission</th><th>Harness</th><th>Closed</th><th>Why, and what to change</th></tr>${grades.map(g => `<tr>
-          <td>${g.grade ? gradeBadge(g.grade) : '<span class="tag">n/e</span>'}</td>
-          <td class="mono"><a href="/missions#${encodeURIComponent(g.mission_id)}">${esc(g.mission_id)}</a><div class="sub2" style="white-space:normal">${esc(g.title)}</div></td>
-          <td>${esc(g.harness || '—')}</td>
-          <td class="mono">${esc(fmtDay(g.closed_at))}</td>
-          <td><p class="sugg">${esc(g.summary)}</p>${g.suggestions ? `<details><summary>Suggestions</summary><div class="detail">${esc(g.suggestions)}</div></details>` : ''}</td>
-        </tr>`).join('')}</table></div>` : '<div class="none">No grades match.</div>'}
-      </section>`;
-    $('#fh').value = f.harness; $('#fg').value = f.grade;
+      </div>
+      <section class="sec"><h3>Harnesses <span class="n">${visible.length}</span>${nHidden ? `<span class="hid">${nHidden} hidden</span>` : ''}<button class="gear" id="opensettings" title="Choose which harnesses to show">Display\u2026</button></h3>
+        ${visible.length ? `<div class="board"><div class="bhead"><span>Avg</span><span>Harness</span><span>Distribution</span><span>Trend</span><span>Latest, newest first</span></div>${visible.map(harnessRow).join('')}</div>` : `<div class="none">${p.harnesses.length ? 'Every harness is hidden. Use Display\u2026 to bring some back.' : 'No finished missions yet.'}</div>`}</section>
+      <section class="sec"><h3>Grades <span class="n">${grades.length}</span></h3>
+        <div class="toolbar">
+          <select id="fh"><option value="*">All harnesses</option>${visible.map(h => `<option value="${esc(h.harness || '')}">${esc(h.harness || 'no harness')}</option>`).join('')}</select>
+          <div class="seg sm" id="fg">${chips.map(([v, l]) => `<button data-g="${v}" class="${f.grade === v ? 'on' : ''}">${l}<span class="c">${counts[v]}</span></button>`).join('')}</div>
+          ${f.harnessSet || f.grade ? '<button class="clear" id="clear">Clear filters</button>' : ''}
+        </div>
+        ${grades.length ? `<div class="glist">${shown.map(gradeRow).join('')}</div>${pager}` : '<div class="none">No grades match.</div>'}
+      </section>
+      ${state.settings ? `<div class="modal-bg" id="mbg"><div class="modal card" role="dialog" aria-label="Harness display">
+        <div class="mh"><h3>Show harnesses</h3><span class="s">Hidden harnesses drop out of the leaderboard, the summary and the grade log. Nothing is deleted; tick a harness to bring it back.</span></div>
+        <div class="mlist2">${p.harnesses.map(x => { const k = x.harness || ''; return `<label class="opt"><input type="checkbox" data-hk="${esc(k)}" ${state.hidden.has(k) ? '' : 'checked'}><span class="nm">${esc(x.harness || 'no harness')}</span><span class="s">${x.graded} graded</span>${x.avg_grade ? gradeBadge(x.avg_grade) : ''}</label>`; }).join('')}</div>
+        <div class="mf"><button class="clear" data-all="1">Show all</button><button class="clear" data-all="0">Hide all</button><span class="spacer"></span><button class="btn ok" id="msave">Done</button></div>
+      </div></div>` : ''}`;
+    $('#fh').value = f.harnessSet ? f.harness : '*';
     const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
-    $('#fh').onchange = e => { state.filters.harness = e.target.value; save(); render(); };
-    $('#fg').onchange = e => { state.filters.grade = e.target.value; save(); render(); };
+    const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); };
+    $('#fh').onchange = e => { state.page = 0; setH(e.target.value); };
+    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const v = b.dataset.pg; state.page = v === 'prev' ? state.page - 1 : v === 'next' ? state.page + 1 : Number(v); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76 }); });
+    $('#opensettings').onclick = () => { state.settings = true; render(); };
+    if (state.settings) {
+      const close = () => { state.settings = false; render(); };
+      $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
+      $('#msave').onclick = close;
+      document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { c.checked ? state.hidden.delete(c.dataset.hk) : state.hidden.add(c.dataset.hk); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; });
+      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { p.harnesses.forEach(x => b.dataset.all === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); render(); });
+      document.onkeydown = e => { if (e.key === 'Escape' && state.settings) close(); };
+    }
+    document.querySelectorAll('.brow').forEach(r => r.onclick = e => { if (e.target.closest('a')) return; state.page = 0; setH(r.dataset.h); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76, behavior:'smooth' }); });
+    document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; save(); render(); });
+    const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; save(); render(); };
+    document.querySelectorAll('.grow').forEach(r => {
+      const p = r.querySelector('.gs p'), more = r.querySelector('[data-more]'), sb = r.querySelector('[data-sug]'), sug = r.querySelector('.sug');
+      if (p.scrollHeight > p.clientHeight + 2) { more.hidden = false; more.onclick = () => { const open = p.classList.toggle('clamp'); more.classList.toggle('open', !open); more.textContent = open ? 'Full verdict' : 'Less'; }; }
+      if (sb) sb.onclick = () => { sug.hidden = !sug.hidden; sb.classList.toggle('open', !sug.hidden); };
+    });
   }
 
   Promise.all([api('/v1/mission-grades/performance'), api('/v1/mission-grades?limit=500')])
