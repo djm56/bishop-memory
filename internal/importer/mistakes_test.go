@@ -32,6 +32,45 @@ func mistakesAt(t *testing.T, db *sql.DB, missionID string, ord int) (agentRaw, 
 	return
 }
 
+// TestMistakeAgentName tests the mistakeAgentName normalisation function.
+func TestMistakeAgentName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"@hicks", "@hicks", "hicks"},
+		{"hicks", "hicks", "hicks"},
+		{"@Bishop", "@Bishop", "bishop"},
+		{"@hicks, step 1", "@hicks, step 1", "hicks"},
+		{"@hicks (step 1)", "@hicks (step 1)", "hicks"},
+		{"@lambert (init)", "@lambert (init)", "lambert"},
+		{"@lambert, steps 8–11 syncs", "@lambert, steps 8–11 syncs", "lambert"},
+		{"@hicks and @vasquez (harness edits)", "@hicks and @vasquez (harness edits)", "hicks"},
+		{"multiple steps (@hicks, @lambert, @bishop)", "multiple steps (@hicks, @lambert, @bishop)", "hicks"},
+		{"@apone (step 2) / @hicks (step 3)", "@apone (step 2) / @hicks (step 3)", "apone"},
+		{"senior (general-purpose)", "senior (general-purpose)", "senior"},
+		{"— (harness, not an agent)", "— (harness, not an agent)", ""},
+		{"—", "—", ""},
+		{"empty string", "", ""},
+		{"ripley (step 10)", "ripley (step 10)", "ripley"},
+		{"vasquez, steps 9–10", "vasquez, steps 9–10", "vasquez"},
+		{"RIPLEY (step 10)", "RIPLEY (step 10)", "ripley"},
+		{"ripley(step 10)", "ripley(step 10)", "ripley"},
+		{"BISHOP", "BISHOP", "bishop"},
+		{"apone;reason", "apone;reason", "apone"},
+		{"ripley/initial", "ripley/initial", "ripley"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mistakeAgentName(tt.input)
+			if got != tt.expected {
+				t.Errorf("got %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 // TestStoreAgentMistakesGoodDebrief tests that a well-formed debrief section
 // is parsed and stored with agent names normalized and agent_raw preserved.
 func TestStoreAgentMistakesGoodDebrief(t *testing.T) {
@@ -46,7 +85,7 @@ func TestStoreAgentMistakesGoodDebrief(t *testing.T) {
 
 | Agent | Mistake | Impact | Correction | Prevention |
 |-------|---------|--------|-----------|-----------|
-| @hicks | Misread brief | low | Re-read it | Slow down |
+| @hicks (step 1) | Misread brief | low | Re-read it | Slow down |
 | @ripley | Wrong call | high — risk noted | Fixed | Review first |
 `
 
@@ -67,10 +106,10 @@ func TestStoreAgentMistakesGoodDebrief(t *testing.T) {
 		t.Errorf("row count: got %d, want 2", n)
 	}
 
-	// Check first row: agent should be normalized to "hicks", agent_raw kept as "@hicks"
+	// Check first row: agent should be normalized to "hicks", agent_raw kept as "@hicks (step 1)"
 	agentRaw, agent, mistake, impact, correction, _ := mistakesAt(t, db, missionID, 1)
-	if agentRaw != "@hicks" {
-		t.Errorf("row 1 agent_raw: got %q, want %q", agentRaw, "@hicks")
+	if agentRaw != "@hicks (step 1)" {
+		t.Errorf("row 1 agent_raw: got %q, want %q", agentRaw, "@hicks (step 1)")
 	}
 	if agent != "hicks" {
 		t.Errorf("row 1 agent (normalized): got %q, want %q", agent, "hicks")

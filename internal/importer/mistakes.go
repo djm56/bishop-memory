@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
 
 	"bishop-memory/internal/debrief"
 )
@@ -89,6 +91,56 @@ func storeAgentMistakes(db *sql.DB, missionID, harness string) SyncStats {
 	return st
 }
 
+// mistakeAgentName normalises an agent name from a debrief row.
+// Rules applied in order:
+//  1. If raw contains an @-mention matching @([A-Za-z][A-Za-z0-9_-]*),
+//     return the mention's name lowercased.
+//  2. Otherwise, trim raw and take the leading token up to the first space,
+//     comma, paren, slash, semicolon, or colon. Lowercase it and strip trailing
+//     period. Return empty string if the result is empty or does not start with
+//     a letter.
+//
+// agent_raw is kept unchanged in agent_mistakes; this function is the
+// agent field's normalisation rule only.
+func mistakeAgentName(raw string) string {
+	// Rule 1: Extract @mention
+	re := regexp.MustCompile(`@([A-Za-z][A-Za-z0-9_-]*)`)
+	matches := re.FindStringSubmatch(raw)
+	if len(matches) > 1 {
+		return strings.ToLower(matches[1])
+	}
+
+	// Rule 2: Leading token before delimiter
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+
+	// Find the first occurrence of any delimiter
+	delimiters := []string{" ", ",", "(", "/", ";", ":"}
+	minIdx := len(raw)
+	for _, delim := range delimiters {
+		if idx := strings.Index(raw, delim); idx >= 0 && idx < minIdx {
+			minIdx = idx
+		}
+	}
+
+	token := raw[:minIdx]
+	token = strings.ToLower(token)
+	token = strings.TrimSuffix(token, ".")
+
+	// Return empty if empty or doesn't start with a letter
+	if token == "" || !isLetter(rune(token[0])) {
+		return ""
+	}
+	return token
+}
+
+// isLetter returns true if ch is an ASCII letter.
+func isLetter(ch rune) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
+}
+
 // replaceMistakes deletes every agent_mistakes row for missionID and inserts
 // rows as given, numbered from 1, in one transaction. A nil rows deletes only.
 // Nothing is changed when it returns an error.
@@ -103,7 +155,7 @@ func replaceMistakes(db *sql.DB, missionID string, rows []debrief.Mistake) error
 		return fmt.Errorf("delete: %w", err)
 	}
 	for i, row := range rows {
-		agent := CrewName(row.AgentRaw)
+		agent := mistakeAgentName(row.AgentRaw)
 		if _, err := tx.Exec(
 			`INSERT INTO agent_mistakes (mission_id, ord, agent, agent_raw, mistake, impact, impact_note, correction, prevention)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
