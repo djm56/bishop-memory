@@ -1,7 +1,7 @@
 # Memory Insight — Plan
 
 Status: phase 0 (data health) built on branch `fix/hud-data-health`;
-phase 1 slice 1 (mission_criteria) built on branch `feat/insight-criteria` (commit 3064a59); decision P1 settled yes (2026-10-14); remaining phase 1 tables (deliverables, lessons, agent_mistakes, step_reviews) planned; phases 2–4 planned, not started. Decisions in §7 are open.
+phase 1 slice 1 (mission_criteria) built on branch `feat/insight-criteria` (commit 3064a59); decision P1 settled yes (2026-10-14); remaining phase 1 tables (deliverables, lessons, agent_mistakes, step_reviews) planned; phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
 Date: 2026-10-14.
 
 The service captures missions well, and the HUD shows one mission well. What
@@ -155,7 +155,7 @@ returning nothing useful.
 
 ## 7. Decisions (open)
 
-- **P1. Un-defer debrief parsing (D3).** Recommended: yes. All 66 imported
+- **P1. Un-defer debrief parsing (D3).** Settled yes by the operator on 2026-10-14; `mission_criteria` built (feat/insight-criteria). All 66 imported
   debriefs, across ten harnesses, carry the Acceptance Criteria Outcome,
   Wrong Assumptions, Sub-Agent Mistakes and Deliverables Changed sections;
   65 carry Similar Future Missions.

@@ -29,7 +29,7 @@ across missions: data health (phase 0), structured debriefs and review
 verdicts, crew, library and activity pages with operator grade review, cost
 and usage from transcripts, and a retrieval log with a brief-prep tool that
 feeds past lessons into new briefs. Status: phase 0 complete (branch
-`fix/hud-data-health`); phase 1 slice 1 (`mission_criteria`, decision P1 settled yes) complete on branch `feat/insight-criteria` (commit 3064a59); remaining slice tables and phases 2–4 planned, with decisions P1–P5 open. Plan:
+`fix/hud-data-health`); phase 1 slice 1 (`mission_criteria`, decision P1 settled yes) complete on branch `feat/insight-criteria` (commit 3064a59); remaining slice tables and phases 2–4 planned, with decisions P2–P5 open. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
 
 **Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
