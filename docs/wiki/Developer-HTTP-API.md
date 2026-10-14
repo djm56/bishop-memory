@@ -99,6 +99,7 @@ Routes with no tool are the operator/reconciler surface. Keeping them off both `
 | `steps` | `mission_steps` in step order (`CAST(step AS INTEGER), step`), with `summary`, `started_at`, `ended_at` |
 | `events` | The mission's `flight_recorder` rows by id |
 | `documents` | `kind`, `title`, `body`, `source_path`, `updated_at` of its `brief`, `progress` and `debrief` documents (by `documents.mission_id`) |
+| `criteria` | Mission acceptance criteria in order (`ord`): `criterion` text, `result` (met/partial/unmet/unclear/null), `evidence`. Filled from the brief's Acceptance Criteria section and the debrief's Acceptance Criteria Outcome section. `result` is null until a debrief with an outcome is imported. Empty array when no criteria exist. |
 | `patterns` | Patterns whose `discovered_mission` is this mission |
 | `directives` | Accepted `directive_proposals` whose `evidence` includes one of the mission's findings, with the directive's `ratified_at` |
 | `crew` | `name`, `role`, `description` of each agent named on a step, matched through `importer.CrewName` |
@@ -112,7 +113,7 @@ These routes kept their request and response shapes; what changed is what they w
 
 | Route | Side effect |
 |---|---|
-| `POST /v1/documents/sync` | Body `root`: syncs that root, tagged with the harness registered on it if any; responds `{"synced":true,"root":…}`. Body `harness`: syncs that harness's registered `memory_root` (404 `harness not found` if none); responds with `root`. Neither: syncs every registered harness root (once per root; the most recently seen name wins when two share one) and responds `{"synced":true,"roots":[…]}`; with no harness registered it falls back to `MEMORY_ROOT` (then `testdata/memory`) and answers with `root`. For every root that has a harness, it also imports the `agents/` directory beside the root into `crew`; a crew failure is logged, never returned. The walker now skips hidden directories |
+| `POST /v1/documents/sync` | Body `root`: syncs that root, tagged with the harness registered on it if any; responds `{"synced":true,"root":…,"criteria_skipped":N,"criteria_errors":N}`. Body `harness`: syncs that harness's registered `memory_root` (404 `harness not found` if none); responds with `root` and criteria counts. Neither: syncs every registered harness root (once per root; the most recently seen name wins when two share one) and responds with `roots` array and totalled criteria counts; with no harness registered it falls back to `MEMORY_ROOT` (then `testdata/memory`) and answers with `root` and counts. For every root that has a harness, it also imports the `agents/` directory beside the root into `crew`; a crew failure is logged, never returned. The walker now skips hidden directories. Criteria counts: `criteria_skipped` is the number of Acceptance Criteria sections read from briefs or debriefs that contained no bullet-point lines; `criteria_errors` is the number of errors during parsing (logged, never failed) |
 | `POST /v1/missions` | Stores the optional body `harness` on the mission. `mcpd`'s `mission_create` sends its `BISHOP_HARNESS`, and the reconciler sends its `--harness` |
 | `PATCH /v1/missions/:missionID` | Body `harness` fills `missions.harness` only while it is NULL; it never moves a mission to another harness. The `mission.updated` journal row's note names each changed field, `field: "old" → "new"` (values cut at 80 characters), or says `Mission updated (no change)`. After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness, no root, or a root that is not a directory on this machine (a remote server, where the client pushes instead): skipped. A failure is logged and never fails the update |
 | `POST /v1/missions/:missionID/steps` | `stampStepTiming`: sets `started_at` the first time the step is stored `in-progress`, and `ended_at` each time it moves into `done` or `failed` from another status, unless the request carried that field. Only for a mission that is not `complete`, since a completed mission's steps arrive from a replayed `PROGRESS.md` |
@@ -166,7 +167,7 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 
 ### Document push
 
-`internal/api/documents_push.go`. A memory tree lives on the harness machine; when `memoryd` runs elsewhere the client sends the files. `scripts/push-memory.py` and the reconciler drive these routes, and a pushed file is imported exactly as a local sync would import it (`importer.ImportMarkdown`: same upsert, hashing, kind, mission id and FTS handling).
+`internal/api/documents_push.go`. A memory tree lives on the harness machine; when `memoryd` runs elsewhere the client sends the files. `scripts/push-memory.py` and the reconciler drive these routes, and a pushed file is imported exactly as a local sync would import it (`importer.ImportMarkdownStats`: same upsert, hashing, kind, mission id and FTS handling).
 
 **`POST /v1/documents/push`**
 
@@ -180,7 +181,7 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 }
 ```
 
-`path` is the file's absolute path on the client and becomes `source_path`, so rows match those a local sync of the same file made. `rel_path` is relative to the memory root and decides the kind and mission id, as the walker does. `agents` become `crew` rows (`importer.ImportAgent`). Response `{"harness","files":N,"agents":M}`.
+`path` is the file's absolute path on the client and becomes `source_path`, so rows match those a local sync of the same file made. `rel_path` is relative to the memory root and decides the kind and mission id, as the walker does. `agents` become `crew` rows (`importer.ImportAgent`). Response `{"harness","files":N,"agents":M,"criteria_skipped":N,"criteria_errors":N}`. Criteria counts: `criteria_skipped` is sections with no bullet-point lines; `criteria_errors` is parsing failures (logged, never failed).
 
 Limits and refusals: 413 `request too large` over 8 MiB per request; 400 over 500 files and agents together, for a file over 1 MiB, for a `path` not ending `.md` (Markdown only; JSONL is not pushed), and for a `rel_path` that is empty, absolute, contains a backslash, is not already clean (`path.Clean`), or has an empty, `..` or hidden (leading `.`) segment. `harness` is required (up to 128 characters), `path` up to 1024, `rel_path` up to 512. A bad agent definition is a 400.
 

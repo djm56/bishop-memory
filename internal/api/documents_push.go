@@ -8,7 +8,7 @@
 //	POST /v1/documents/delete  remove documents by source_path
 //
 // scripts/push-memory.py and the reconciler drive these. A pushed file is
-// imported exactly as a local sync would import it (importer.ImportMarkdown).
+// imported exactly as a local sync would import it (importer.ImportMarkdownStats).
 package api
 
 import (
@@ -85,11 +85,15 @@ func pushDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		imported := 0
+		var criteriaSkipped, criteriaErrors int
 		for _, f := range request.Files {
-			if err := importer.ImportMarkdown(db, f.Path, f.RelPath, harness, []byte(f.Content)); err != nil {
+			stats, err := importer.ImportMarkdownStats(db, f.Path, f.RelPath, harness, []byte(f.Content))
+			if err != nil {
 				internalError(c, err)
 				return
 			}
+			criteriaSkipped += stats.CriteriaSkipped
+			criteriaErrors += stats.CriteriaErrors
 			imported++
 		}
 		agents := 0
@@ -100,7 +104,13 @@ func pushDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			}
 			agents++
 		}
-		c.JSON(http.StatusOK, gin.H{"harness": harness, "files": imported, "agents": agents})
+		c.JSON(http.StatusOK, gin.H{
+			"harness":          harness,
+			"files":            imported,
+			"agents":           agents,
+			"criteria_skipped": criteriaSkipped,
+			"criteria_errors":  criteriaErrors,
+		})
 	}
 }
 

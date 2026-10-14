@@ -307,6 +307,7 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 		}
 
 		roots := make([]string, 0, len(targets))
+		totalStats := importer.SyncStats{}
 		for _, target := range targets {
 			// Step 4 review fix (minimal, sanctioned scope — see README.md
 			// "Root `'/'` edge case"): reject a root that is (or resolves
@@ -321,7 +322,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 				return
 			}
 
-			if err := importer.SyncHarness(db, target.Root, target.Name); err != nil {
+			stats, err := importer.SyncHarnessStats(db, target.Root, target.Name)
+			if err != nil {
 				// CONV-033 (task-20260821-02 step 7a class sweep): importer.Sync's
 				// own error text (see internal/importer/importer.go) wraps the
 				// caller-supplied root and paths derived from walking it —
@@ -338,6 +340,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 				})
 				return
 			}
+			totalStats.CriteriaSkipped += stats.CriteriaSkipped
+			totalStats.CriteriaErrors += stats.CriteriaErrors
 			// A registered harness keeps its agent definitions beside its
 			// memory root; they fill the crew table.
 			if target.Name != "" {
@@ -350,14 +354,18 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 
 		if request.Root != "" || harness != "" {
 			c.JSON(http.StatusOK, gin.H{
-				"synced": true,
-				"root":   roots[0],
+				"synced":           true,
+				"root":             roots[0],
+				"criteria_skipped": totalStats.CriteriaSkipped,
+				"criteria_errors":  totalStats.CriteriaErrors,
 			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"synced": true,
-			"roots":  roots,
+			"synced":           true,
+			"roots":            roots,
+			"criteria_skipped": totalStats.CriteriaSkipped,
+			"criteria_errors":  totalStats.CriteriaErrors,
 		})
 	}
 }

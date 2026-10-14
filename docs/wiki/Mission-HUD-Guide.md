@@ -110,7 +110,7 @@ The reconciler does the same on every run with `--harness`, so a harness that ha
 
 Then, three things keep the documents current:
 
-- **Sync every harness.** `POST /v1/documents/sync` with an empty body imports the memory tree of every registered harness, tags each document with its harness and, for `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md`, its mission. The same call reads each harness's agent definitions (the `agents/` directory beside the memory root, such as `.claude/agents/`) into the crew list. Run it by hand; it reads the server's own disk, so it works only when the service runs on the harness machine. A reconcile with `--harness` does the same for its own harness by pushing the files, which also works against a server on another machine.
+- **Sync every harness.** `POST /v1/documents/sync` with an empty body imports the memory tree of every registered harness, tags each document with its harness and, for `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md`, its mission. The response includes `criteria_skipped` and `criteria_errors` counts. The same call reads each harness's agent definitions (the `agents/` directory beside the memory root, such as `.claude/agents/`) into the crew list. Run it by hand; it reads the server's own disk, so it works only when the service runs on the harness machine. A reconcile with `--harness` does the same for its own harness by pushing the files, which also works against a server on another machine.
 
   ```bash
   curl -X POST http://127.0.0.1:8787/v1/documents/sync                    # every registered harness

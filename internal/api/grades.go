@@ -35,6 +35,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"bishop-memory/internal/criteria"
 	"bishop-memory/internal/importer"
 	"bishop-memory/internal/model"
 )
@@ -237,39 +238,26 @@ var debriefSections = []string{
 
 var (
 	injectedStep = regexp.MustCompile(`^\d+[a-z]+$`)
-	bulletLine   = regexp.MustCompile(`(?m)^\s*[-*]\s+\S.*$`)
-	// criterionVerdict finds the result a debrief writes after a dash on a
-	// criterion line: "… — pass", "… — partial. Step 10 …", "… – not met".
-	criterionVerdict = regexp.MustCompile(`(?i)[—–-]\s*\**\s*(not met|not done|unmet|partially met|partial|pass(?:ed)?|met|fail(?:ed)?|deferred|done)\b`)
-	criterionBox     = regexp.MustCompile(`^\s*[-*]\s*\[([ xX])\]`)
 )
 
 // criteriaOutcome counts the debrief's "Acceptance Criteria Outcome" lines by
 // result. Debriefs write the result as a word after a dash and often leave
 // the checkbox unticked even on a pass, so the word wins; the checkbox
 // decides only a line that carries no word. A line with neither is unclear.
+// This function delegates to the criteria package's shared parsing logic.
 func criteriaOutcome(section string) (met, partial, unmet, unclear int) {
-	for _, line := range bulletLine.FindAllString(section, -1) {
-		if m := criterionVerdict.FindStringSubmatch(line); m != nil {
-			switch strings.ToLower(m[1]) {
-			case "pass", "passed", "met", "done":
-				met++
-			case "partial", "partially met":
-				partial++
-			default:
-				unmet++
-			}
-			continue
+	parsed := criteria.ParseDebriefOutcome(section)
+	for _, c := range parsed {
+		switch c.Result {
+		case "met":
+			met++
+		case "partial":
+			partial++
+		case "unmet":
+			unmet++
+		case "unclear":
+			unclear++
 		}
-		if box := criterionBox.FindStringSubmatch(line); box != nil {
-			if box[1] == " " {
-				unmet++
-			} else {
-				met++
-			}
-			continue
-		}
-		unclear++
 	}
 	return met, partial, unmet, unclear
 }
@@ -439,7 +427,7 @@ func gradeSignals(ctx context.Context, db *sql.DB, id string, brief, debrief map
 		return nil, err
 	}
 	return gin.H{
-		"criteria_planned":   len(bulletLine.FindAllString(brief["Acceptance Criteria"], -1)),
+		"criteria_planned":   len(criteria.ParseBriefCriteria(brief["Acceptance Criteria"])),
 		"criteria_met":       met,
 		"criteria_partial":   partial,
 		"criteria_unmet":     unmet,

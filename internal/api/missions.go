@@ -869,7 +869,11 @@ func syncMissionDocuments(c *gin.Context, db *sql.DB, missionID string) {
 	if info, statErr := os.Stat(root.String); statErr != nil || !info.IsDir() {
 		return
 	}
-	if err := importer.SyncMission(db, root.String, harness.String, missionID); err != nil {
+	stats, err := importer.SyncMissionStats(db, root.String, harness.String, missionID)
+	if err != nil {
 		log.Printf("request_id=%v mission=%s document sync error=%v", requestID(c), missionID, err)
+	}
+	if stats.CriteriaSkipped > 0 || stats.CriteriaErrors > 0 {
+		log.Printf("request_id=%v mission=%s criteria skipped=%d errors=%d", requestID(c), missionID, stats.CriteriaSkipped, stats.CriteriaErrors)
 	}
 }

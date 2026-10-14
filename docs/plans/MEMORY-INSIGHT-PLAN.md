@@ -1,7 +1,7 @@
 # Memory Insight — Plan
 
 Status: phase 0 (data health) built on branch `fix/hud-data-health`;
-phases 1 to 4 planned, not started. Decisions in §7 are open.
+phase 1 slice 1 (mission_criteria) built on branch `feat/insight-criteria` (commit 3064a59); decision P1 settled yes (2026-10-14); remaining phase 1 tables (deliverables, lessons, agent_mistakes, step_reviews) planned; phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
 Date: 2026-10-14.
 
 The service captures missions well, and the HUD shows one mission well. What
@@ -68,6 +68,8 @@ never a sync failure.
 | `mission_deliverables` | `mission_id, path, note` | Deliverables Changed |
 | `mission_lessons` | `mission_id, kind ('wrong-assumption','similar-mission','reuse-step'), text, correction` | Wrong Assumptions; Similar Future Missions |
 | `agent_mistakes` | `mission_id, agent, mistake, impact ('low','med','high'), correction, prevention` | Sub-Agent Mistakes and Corrections |
+
+Criteria are read only from `-` and `*` bullet lines; numbered lists (`1.`, `2.`) are not read and their section counts as skipped. The table is created via `db/schema.sql` `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot (not a separate migrate.go change).
 
 Review outcomes are parsed when a step is written (and backfilled), into
 `step_reviews(mission_id, step, reviewer, verdict ('approved','not-approved'),
@@ -153,7 +155,7 @@ returning nothing useful.
 
 ## 7. Decisions (open)
 
-- **P1. Un-defer debrief parsing (D3).** Recommended: yes. All 66 imported
+- **P1. Un-defer debrief parsing (D3).** Settled yes by the operator on 2026-10-14; `mission_criteria` built (feat/insight-criteria). All 66 imported
   debriefs, across ten harnesses, carry the Acceptance Criteria Outcome,
   Wrong Assumptions, Sub-Agent Mistakes and Deliverables Changed sections;
   65 carry Similar Future Missions.
