@@ -99,7 +99,7 @@ Routes with no tool are the operator/reconciler surface. Keeping them off both `
 | `steps` | `mission_steps` in step order (`CAST(step AS INTEGER), step`), with `summary`, `started_at`, `ended_at` |
 | `events` | The mission's `flight_recorder` rows by id |
 | `documents` | `kind`, `title`, `body`, `source_path`, `updated_at` of its `brief`, `progress` and `debrief` documents (by `documents.mission_id`) |
-| `criteria` | Mission acceptance criteria in order (`ord`): `criterion` text, `result` (met/partial/unmet/unclear/null), `evidence`. Filled from the brief's Acceptance Criteria section and the debrief's Acceptance Criteria Outcome section. Null before a debrief is imported. Empty array when no criteria exist. |
+| `criteria` | Mission acceptance criteria in order (`ord`): `criterion` text, `result` (met/partial/unmet/unclear/null), `evidence`. Filled from the brief's Acceptance Criteria section and the debrief's Acceptance Criteria Outcome section. `result` is null until a debrief with an outcome is imported. Empty array when no criteria exist. |
 | `patterns` | Patterns whose `discovered_mission` is this mission |
 | `directives` | Accepted `directive_proposals` whose `evidence` includes one of the mission's findings, with the directive's `ratified_at` |
 | `crew` | `name`, `role`, `description` of each agent named on a step, matched through `importer.CrewName` |

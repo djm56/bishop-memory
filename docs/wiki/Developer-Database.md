@@ -30,7 +30,7 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 | `directives` | `directive_id` unique (`DIR-NNN`) | written by the reconciler and the proposal decision route |
 | `documents` | `source_path` unique | `sha256` for incremental sync; `mission_id` (indexed) and `harness` additive, set by the importer |
 | `documents_fts` | FTS5 virtual, standalone | `tokenize='porter unicode61'`; the importer writes both tables in one transaction; no triggers |
-| `mission_criteria` | `(mission_id, ord)` PK | Acceptance criteria from a mission's `BRIEF.md` and debrief outcomes from `DEBRIEF.md`. Filled by the importer when it imports those files. Criteria are read only from `-` and `*` bullet lines; numbered lists count as skipped (criteria_skipped). On re-import, rows are replaced wholesale when both sections are read; a debrief takes precedence. Created via schema.sql `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot. FK cascade on delete. |
+| `mission_criteria` | `(mission_id, ord)` PK | Acceptance criteria from a mission's `BRIEF.md` and debrief outcomes from `DEBRIEF.md`. Filled by the importer when it imports those files. Criteria are read only from `-` and `*` bullet lines; numbered lists count as skipped (criteria_skipped). Rows are replaced when a criteria section with bullets is read (debrief if available, else brief); headings without bullets or failed reads preserve existing rows. Deleted when neither document has a criteria heading. Created via schema.sql `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot. FK cascade on delete. |
 
 ### Findings triage
 
