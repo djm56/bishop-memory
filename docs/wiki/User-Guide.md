@@ -128,7 +128,7 @@ Markdown under `.claude/memory/` is the record. The service is a derived copy, k
 - **At close**: step H of the closing checklist runs the reconciler.
 - **By hand**: `scripts/reconcile-memory.py --root … --harness …` any time, idempotent. `--dry-run` shows what would change.
 
-One flow runs the other way: your decisions on the review page go back into the Markdown through `make triage-export`. The exporter changes only the three status lines of an entry and appends ratified directives, backs the file up first, and refuses when the file already disagrees. A status you set by hand in `FINDINGS.md` is mirrored into the service by the next reconcile.
+One flow runs the other way: your decisions on the review page go back into the Markdown through `make triage-export`. The exporter updates the three status lines of an entry (`Status`, `Approver`, `Date approved`), appends ratified directives, amends existing `DIR-NNN` entries in `DIRECTIVES.md` when a reopened proposal is ratified as an amendment, and retires directives when a proposal is declined. It only touches service-owned entries (those with `**Source:** bishop-memory triage`); hand-authored entries are byte-preserved. It backs the file up first and refuses when the file already disagrees. A status you set by hand in `FINDINGS.md` is mirrored into the service by the next reconcile.
 
 ## 8. Day-to-day checks
 

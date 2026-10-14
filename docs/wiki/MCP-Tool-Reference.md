@@ -169,7 +169,7 @@ Use this, not `mission_create`, in central mode. The sequence is global across e
 
 **Route:** `POST /v1/missions`
 
-Create a new mission. Returns {"id":...,"created":true}.
+Create a new mission, owned by the harness this server runs for (BISHOP_HARNESS). Returns {"id":...,"created":true}.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
@@ -810,7 +810,7 @@ Pass the returned id as `run_id` on every write.
 
 **Route:** `PATCH /v1/triage/runs/:id`
 
-Close a triage run with its counts. A finished process run advances the category rotation.
+Close a triage run with its counts. A finished process run advances the category rotation. Refused with 409 if the run is no longer running (for example it was closed by the operator): do not retry, the run is final.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

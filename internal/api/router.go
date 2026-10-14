@@ -105,6 +105,7 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 		v1.GET("/directive-proposals", listDirectiveProposalsHandler(db))
 		v1.POST("/directive-proposals", createDirectiveProposalHandler(db))
 		v1.POST("/directive-proposals/:proposalID/decision", decideDirectiveProposalHandler(db))
+		v1.POST("/directive-proposals/:proposalID/reopen", reopenDirectiveProposalHandler(db))
 		v1.GET("/harnesses", listHarnessesHandler(db))
 		v1.PUT("/harnesses/:name", upsertHarnessHandler(db))
 		triage := v1.Group("/triage")
@@ -116,6 +117,7 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 			triage.GET("/runs", listTriageRunsHandler(db))
 			triage.POST("/runs", startTriageRunHandler(db))
 			triage.PATCH("/runs/:runID", finishTriageRunHandler(db))
+			triage.POST("/runs/:runID/operator-close", operatorCloseTriageRunHandler(db))
 		}
 
 		// Mission grading (grades.go). The grader claims and writes through

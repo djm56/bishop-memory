@@ -113,10 +113,11 @@
   .rec, .pill { flex:none; font:600 10.5px/1 var(--mono); letter-spacing:.08em; text-transform:uppercase; padding:4px 6px; border:1px solid currentColor; background:none; color:var(--muted); white-space:nowrap }
   .rec { margin-top:1px }
   .rec.approve { color:var(--ok) } .rec.reject { color:var(--bad) } .rec.defer { color:var(--warn) } .rec.supersede { color:var(--faint) }
-  .pill.approved, .pill.applied, .pill.accepted, .pill.finished, .pill.done, .pill.complete { color:var(--ok) }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.active, .pill.finished, .pill.done, .pill.complete { color:var(--ok) }
   .pill.rejected, .pill.declined, .pill.failed, .pill.blocked { color:var(--bad) }
-  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress { color:var(--accent) }
+  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress, .pill.under-review { color:var(--accent) }
   .pill.not-started, .pill.retired, .pill.superseded { color:var(--faint) }
+  .pill.stale { color:var(--warn) }
   pre { font-size:12px; line-height:1.5; background:var(--soft); border-left:2px solid var(--line2); padding:10px 12px; white-space:pre-wrap; max-height:280px; overflow:auto; margin:8px 0 }
   .status { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; font-size:12px; color:var(--muted) }
   .btns { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:14px }
@@ -259,7 +260,7 @@
       <input id="q" type="search" placeholder="Search missions, briefs, debriefs">
       <div class="row">
         <select id="harness"><option value="">All harnesses</option></select>
-        <select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option></select>
+        <select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option><option value="stale">stale (idle 2 days)</option></select>
       </div>
       <select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option></select>
     </div>
@@ -303,13 +304,18 @@
   };
   const label = s => String(s || '').replace(/-/g, ' ');
   const crewName = a => String(a || '').split(':').pop().replace(/^@/, '').trim().toLowerCase();
+  // The role shown beside a step's agent: the crew row's, "human" for the
+  // operator, or a marker that the harness wrote a name no agent definition
+  // has (such as "senior (general-purpose)"), rather than leaving it blank.
+  const roleFor = (agent, who) => who?.role || (crewName(agent) === 'operator' ? 'human operator' : agent ? 'not in crew' : '');
   // Mission grades: A=5 … F=0 for averages, as GET /v1/mission-grades/performance computes them.
   const GRADE_POINTS = { A:5, B:4, C:3, D:2, E:1, F:0 };
   const pointsToGrade = p => p >= 4.5 ? 'A' : p >= 3.5 ? 'B' : p >= 2.5 ? 'C' : p >= 1.5 ? 'D' : p >= 0.5 ? 'E' : 'F';
   const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
 
-  // SQLite CURRENT_TIMESTAMP values are UTC "YYYY-MM-DD HH:MM:SS".
-  const toDate = s => { if (!s) return null; const d = new Date(String(s).replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z')); return isNaN(d) ? null : d; };
+  // SQLite CURRENT_TIMESTAMP values are UTC "YYYY-MM-DD HH:MM:SS"; the
+  // journal's occurred_at is the harness's "YYYY-MM-DD HH:MM UTC".
+  const toDate = s => { if (!s) return null; s = String(s).trim().replace(/\s*UTC$/i, 'Z'); const d = new Date(s.replace(' ', 'T') + (/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? '' : 'Z')); return isNaN(d) ? null : d; };
   const fmtWhen = s => { const d = toDate(s); return d ? d.toLocaleString(undefined, { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : ''; };
   const fmtDay = s => { const d = toDate(s); return d ? d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) : ''; };
   const dur = (a, b) => {
@@ -363,6 +369,8 @@
   async function loadList() {
     const f = state.filters, q = new URLSearchParams();
     ['q','harness','status','grade'].forEach(k => { if (f[k]) q.set(k, f[k]); });
+    // "stale" sits in the status menu but is its own server filter: any unfinished mission idle for two days.
+    if (f.status === 'stale') { q.delete('status'); q.set('stale', '1'); }
     const d = await api('/v1/hud/missions?' + q);
     state.missions = d.missions;
     const sel = $('#harness'), cur = f.harness;
@@ -372,7 +380,8 @@
     const total = d.missions.reduce((n, m) => n + m.findings, 0);
     const graded = d.missions.filter(m => m.grade);
     const avg = graded.length ? graded.reduce((n, m) => n + GRADE_POINTS[m.grade], 0) / graded.length : null;
-    $('#stats').innerHTML = `<b>${d.missions.length}</b> missions · <b>${total}</b> linked findings${avg !== null ? ` · average <b>${pointsToGrade(avg)}</b>` : ''}`;
+    const stale = d.missions.filter(m => m.stale).length;
+    $('#stats').innerHTML = `<b>${d.missions.length}</b> missions · <b>${total}</b> linked findings${avg !== null ? ` · average <b>${pointsToGrade(avg)}</b>` : ''}${stale ? ` · <b style="color:var(--warn)">${stale}</b> stale` : ''}`;
     renderList();
     if (!state.current && d.missions.length && !location.hash) location.hash = d.missions[0].id;
   }
@@ -380,7 +389,7 @@
     $('#mlist').innerHTML = state.missions.length ? state.missions.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''}" href="#${esc(m.id)}">
         <span class="id">${m.grade ? gradeBadge(m.grade) + ' ' : ''}${esc(m.id)}</span>
         <span class="t">${esc(m.title)}</span>
-        <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>
+        <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>${m.stale ? `<span class="pill stale" title="No activity since ${esc(fmtWhen(m.last_activity))}">stale</span>` : ''}
           <span>${esc(m.harness || '—')}</span><span>${m.steps_done}/${m.steps} steps</span>${m.findings ? `<span>${m.findings} finding${m.findings === 1 ? '' : 's'}</span>` : ''}<span>${fmtDay(m.opened_at)}</span></span>
       </a>`).join('') : '<div class="none" style="padding:10px">No missions match.</div>';
   }
@@ -414,6 +423,7 @@
     const criteria = bullets(brief['Acceptance Criteria']).map((t, i) => { const o = outcome[i]; const ev = o ? (o.text.split(/\s+—\s+/).slice(1).join(' — ')) : ''; return { text:t, met: o ? o.met : null, ev }; });
 
     const pillFor = s => `<span class="pill ${esc(s)}">${esc(label(s))}</span>`;
+    const board = state.missions.find(x => x.id === m.id);
     const tile = (k, v, s, frac) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}${frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : ''}</div>`;
     const evFor = step => d.events.filter(e => e.step === step.step);
 
@@ -422,7 +432,7 @@
         <div class="ids"><span class="id">${esc(m.id)}</span><span>${esc(m.harness || 'no harness')}</span>${m.owner ? `<span>owner ${esc(m.owner)}</span>` : ''}${m.priority && m.priority !== 'normal' ? `<span class="tag">${esc(m.priority)}</span>` : ''}
           ${pillFor(m.status)}${m.outcome ? pillFor(m.outcome) : ''}${d.grade?.grade ? gradeBadge(d.grade.grade) : ''}</div>
         <h2>${esc(m.title)}</h2>
-        <div class="when">Opened ${esc(fmtWhen(m.opened_at))}${m.closed_at ? ` · closed ${esc(fmtWhen(m.closed_at))}` : ''}${m.next_action ? ` · next: ${esc(m.next_action)}` : ''}${m.blockers ? ` · <span style="color:var(--bad)">blocked: ${esc(m.blockers)}</span>` : ''}</div>
+        <div class="when">Opened ${esc(fmtWhen(m.opened_at))}${m.closed_at ? ` · closed ${esc(fmtWhen(m.closed_at))}` : ''}${m.next_action ? ` · next: ${esc(m.next_action)}` : ''}${m.blockers ? ` · <span style="color:var(--bad)">blocked: ${esc(m.blockers)}</span>` : ''}${board?.stale ? ` · <span style="color:var(--warn)">stale: no activity since ${esc(fmtWhen(board.last_activity))}</span>` : ''}</div>
       </div>
       <div class="tiles">
         ${tile('Steps', `${done}/${steps.length}`, steps.length ? '' : 'none recorded', steps.length ? done / steps.length : null)}
@@ -430,7 +440,7 @@
         ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${v} ${k}`).join(' · '))}
         ${criteria.length ? tile('Criteria met', `${criteria.filter(c => c.met).length}/${criteria.length}`, criteria.some(c => c.met === null) ? 'no debrief yet' : '', criteria.length ? criteria.filter(c => c.met).length / criteria.length : null) : ''}
         ${tile('Patterns', d.patterns.length)}
-        ${tile('Directives', d.directives.length)}
+        ${tile('Directives', d.directives.filter(x => x.status !== 'under-review').length, d.directives.some(x => x.status === 'under-review') ? `${d.directives.filter(x => x.status === 'under-review').length} under review` : '')}
       </div>
 
       ${gradeSection(d.grade, m)}
@@ -444,10 +454,10 @@
       <section class="sec"><h3>Steps <span class="n">${steps.length}</span></h3>${steps.length ? `<div class="card"><div class="steps">${steps.map(s => {
         const who = crew[crewName(s.agent)], events = evFor(s);
         return `<div class="step"><div class="rail"><span class="dot ${esc(s.status)}">${esc(s.step)}</span><span class="line"></span></div><div class="body">
-          <div class="top"><span class="agent" title="${esc(who?.description || '')}">${esc(s.agent || '—')}</span>${who?.role ? `<span>${esc(who.role)}</span>` : ''}${s.phase ? `<span class="tag">${esc(s.phase)}</span>` : ''}${pillFor(s.status || 'pending')}
+          <div class="top"><span class="agent" title="${esc(who?.description || '')}">${esc(s.agent || '—')}</span>${roleFor(s.agent, who) ? `<span${roleFor(s.agent, who) === 'not in crew' ? ' class="tag" title="No agent definition by this name in any registered harness"' : ''}>${esc(roleFor(s.agent, who))}</span>` : ''}${s.phase ? `<span class="tag">${esc(s.phase)}</span>` : ''}${pillFor(s.status || 'pending')}
             ${s.started_at || s.ended_at ? `<span>${esc(fmtWhen(s.started_at || s.ended_at))}${s.started_at && s.ended_at ? ' · ' + esc(dur(s.started_at, s.ended_at)) : ''}</span>` : ''}</div>
           ${s.summary ? `<div class="sum">${esc(s.summary)}</div>` : ''}
-          ${s.notes || events.length ? `<details><summary>Notes${events.length ? ` and ${events.length} journal events` : ''}</summary>${s.notes ? `<div class="detail">${esc(s.notes)}</div>` : ''}${events.length ? `<ul class="ev">${events.map(e => `<li><span class="ts">${esc(fmtWhen(e.created_at))}</span>${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul>` : ''}</details>` : ''}
+          ${s.notes || events.length ? `<details><summary>Notes${events.length ? ` and ${events.length} journal events` : ''}</summary>${s.notes ? `<div class="detail">${esc(s.notes)}</div>` : ''}${events.length ? `<ul class="ev">${events.map(e => `<li><span class="ts">${esc(fmtWhen(e.occurred_at || e.created_at))}</span>${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul>` : ''}</details>` : ''}
         </div></div>`; }).join('')}</div></div>` : '<div class="none">No steps recorded.</div>'}</section>
 
       <section class="sec"><h3>Findings <span class="n">${findings.length}</span></h3>${findings.length ? `<div class="list">${findings.map(x => { const t = x.triage, r = x.recommendation; return `<div class="card">
@@ -462,13 +472,13 @@
 
       ${d.patterns.length ? `<section class="sec"><h3>Patterns <span class="n">${d.patterns.length}</span></h3><div class="list">${d.patterns.map(p => `<div class="card"><b>${esc(p.name)}</b>${p.context ? `<div class="sugg" style="color:var(--muted)">${esc(p.context)}</div>` : ''}<details><summary>Solution and example</summary><div class="md" style="margin-top:8px">${md(p.solution)}${p.example ? md(p.example) : ''}</div></details></div>`).join('')}</div></section>` : ''}
 
-      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span></div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
+      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span>${pillFor(x.status || 'active')}</div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
 
       ${d.crew.length ? `<section class="sec"><h3>Crew <span class="n">${d.crew.length}</span></h3><div class="two">${d.crew.map(c => `<div class="card crew-card"><b>@${esc(c.name)}</b><span>${esc(c.description || c.role || '')}</span></div>`).join('')}</div></section>` : ''}
 
       ${d.service_records.length ? `<section class="sec"><h3>Service records <span class="n">${d.service_records.length}</span></h3><div class="list">${d.service_records.map(s => `<div class="card"><div class="meta-row"><span class="id">@${esc(crewName(s.agent))}</span><span>${esc(s.record_date)}</span>${s.source ? `<span class="tag">${esc(s.source)}</span>` : ''}</div>${s.title ? `<div class="target">${esc(s.title)}</div>` : ''}<div class="sugg">${esc(s.note)}</div>${s.adjustment ? `<div class="rec-row"><span class="rec defer">adjust</span><p>${esc(s.adjustment)}</p></div>` : ''}</div>`).join('')}</div></section>` : ''}
 
-      <section class="sec"><h3>Journal <span class="n">${d.events.length}</span></h3>${d.events.length ? `<details><summary>Show every flight-recorder event</summary><div class="table-wrap" style="margin-top:10px"><table><tr><th>When</th><th>Step</th><th>Agent</th><th>Event</th><th>Note</th></tr>${d.events.map(e => `<tr><td class="mono">${esc(fmtWhen(e.created_at))}</td><td>${esc(e.step || '')}</td><td>${esc(e.agent || '')}</td><td>${esc(e.event)}</td><td>${esc(e.note)}</td></tr>`).join('')}</table></div></details>` : '<div class="none">No events.</div>'}
+      <section class="sec"><h3>Journal <span class="n">${d.events.length}</span></h3>${d.events.length ? `<details><summary>Show every flight-recorder event</summary><div class="table-wrap" style="margin-top:10px"><table><tr><th>When</th><th>Step</th><th>Agent</th><th>Event</th><th>Note</th></tr>${d.events.map(e => `<tr><td class="mono" title="${e.occurred_at && e.occurred_at !== e.created_at ? 'recorded ' + esc(fmtWhen(e.created_at)) : ''}">${esc(fmtWhen(e.occurred_at || e.created_at))}</td><td>${esc(e.step || '')}</td><td>${esc(e.agent || '')}</td><td>${esc(e.event)}</td><td>${esc(e.note)}</td></tr>`).join('')}</table></div></details>` : '<div class="none">No events.</div>'}
         ${docs.progress ? `<details><summary>PROGRESS.md as written</summary><div class="card md" style="margin-top:10px">${md(docs.progress.body)}</div></details>` : ''}</section>`;
   }
 

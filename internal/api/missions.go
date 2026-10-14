@@ -57,7 +57,7 @@ func listMissionsHandler(db *sql.DB) gin.HandlerFunc {
 
 		query := `
 			SELECT id, title, status, outcome, owner, priority, next_action, blockers,
-			       opened_at, closed_at, created_at, updated_at
+			       harness, opened_at, closed_at, created_at, updated_at
 			FROM missions
 		`
 		args := []any{}
@@ -103,7 +103,7 @@ func getMissionHandler(db *sql.DB) gin.HandlerFunc {
 		row := db.QueryRowContext(
 			c.Request.Context(),
 			`SELECT id, title, status, outcome, owner, priority, next_action, blockers,
-			        opened_at, closed_at, created_at, updated_at
+			        harness, opened_at, closed_at, created_at, updated_at
 			 FROM missions
 			 WHERE id = ?`,
 			missionID,
@@ -154,8 +154,8 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO missions (
-				id, title, status, owner, priority, next_action, blockers
-			) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				id, title, status, owner, priority, next_action, blockers, harness
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			request.ID,
 			request.Title,
 			request.Status,
@@ -163,6 +163,7 @@ func createMissionHandler(db *sql.DB) gin.HandlerFunc {
 			request.Priority,
 			nullIfEmpty(request.NextAction),
 			nullIfEmpty(request.Blockers),
+			nullIfEmpty(strings.TrimSpace(request.Harness)),
 		)
 		if err != nil {
 			// Step 4 review fix (Review B, CRITICAL C2): only a genuine
@@ -261,12 +262,26 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 			request.Blockers = &trimmed
 		}
 
+		if request.Harness != nil {
+			trimmed := strings.TrimSpace(*request.Harness)
+			request.Harness = &trimmed
+		}
+
 		tx, err := db.BeginTx(c.Request.Context(), nil)
 		if err != nil {
 			internalError(c, err)
 			return
 		}
 		defer tx.Rollback()
+
+		// The row as it was, so the audit note can say what this PATCH
+		// changed. A missing row is answered by the UPDATE's RowsAffected
+		// check below, not here.
+		before, err := missionAuditFields(c.Request.Context(), tx, missionID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			internalError(c, err)
+			return
+		}
 
 		result, err := tx.ExecContext(
 			c.Request.Context(),
@@ -278,6 +293,9 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 				priority = COALESCE(?, priority),
 				next_action = COALESCE(?, next_action),
 				blockers = COALESCE(?, blockers),
+				-- harness is filled once, never reassigned: COALESCE keeps
+				-- an existing value, NULLIF ignores an empty string.
+				harness = COALESCE(harness, NULLIF(?, '')),
 				closed_at = CASE
 					WHEN ? = 'complete' THEN CURRENT_TIMESTAMP
 					ELSE closed_at
@@ -290,6 +308,7 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 			request.Priority,
 			request.NextAction,
 			request.Blockers,
+			request.Harness,
 			request.Status,
 			missionID,
 		)
@@ -310,12 +329,19 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		after, err := missionAuditFields(c.Request.Context(), tx, missionID)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+
 		_, err = tx.ExecContext(
 			c.Request.Context(),
 			`INSERT INTO flight_recorder (
 				mission_id, event, note
-			) VALUES (?, 'mission.updated', 'Mission updated')`,
+			) VALUES (?, 'mission.updated', ?)`,
 			missionID,
+			missionChangeNote(before, after),
 		)
 		if err != nil {
 			internalError(c, err)
@@ -336,6 +362,56 @@ func updateMissionHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// missionAuditOrder is the order missionChangeNote reports fields in.
+var missionAuditOrder = []string{"status", "outcome", "harness", "owner", "priority", "next_action", "blockers"}
+
+// missionAuditFields reads the fields a PATCH can change, with NULL as "".
+// It returns sql.ErrNoRows for a mission that does not exist.
+func missionAuditFields(ctx context.Context, tx *sql.Tx, missionID string) (map[string]string, error) {
+	var status, outcome, harness, owner, priority, nextAction, blockers sql.NullString
+	err := tx.QueryRowContext(ctx,
+		`SELECT status, outcome, harness, owner, priority, next_action, blockers
+		   FROM missions WHERE id = ?`, missionID).
+		Scan(&status, &outcome, &harness, &owner, &priority, &nextAction, &blockers)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]string{
+		"status": status.String, "outcome": outcome.String, "harness": harness.String,
+		"owner": owner.String, "priority": priority.String,
+		"next_action": nextAction.String, "blockers": blockers.String,
+	}, nil
+}
+
+// missionChangeNote is the flight-recorder note for a mission.updated row:
+// each changed field as `field: old → new`, so the journal records what a
+// PATCH did rather than only that one happened (before this, all 1,025
+// mission.updated rows on the live database read "Mission updated").
+// Long values are cut to keep the journal readable; the mission row holds
+// the full text. A PATCH that changed nothing says so.
+func missionChangeNote(before, after map[string]string) string {
+	const maxValue = 80
+	show := func(v string) string {
+		if v == "" {
+			return "(none)"
+		}
+		if r := []rune(v); len(r) > maxValue {
+			return `"` + string(r[:maxValue]) + `…"`
+		}
+		return `"` + v + `"`
+	}
+	changes := []string{}
+	for _, field := range missionAuditOrder {
+		if before[field] != after[field] {
+			changes = append(changes, field+": "+show(before[field])+" → "+show(after[field]))
+		}
+	}
+	if len(changes) == 0 {
+		return "Mission updated (no change)"
+	}
+	return "Mission updated: " + strings.Join(changes, "; ")
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -352,6 +428,7 @@ func scanMission(row scanner) (model.Mission, error) {
 		&mission.Priority,
 		&mission.NextAction,
 		&mission.Blockers,
+		&mission.Harness,
 		&mission.OpenedAt,
 		&mission.ClosedAt,
 		&mission.CreatedAt,

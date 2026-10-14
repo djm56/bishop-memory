@@ -14,4 +14,5 @@ type Directive struct {
 	Rationale   *string `json:"rationale,omitempty"`
 	RatifiedAt  *string `json:"ratified_at,omitempty"`
 	CreatedAt   string  `json:"created_at"`
+	Status      string  `json:"status"`
 }

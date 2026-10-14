@@ -9,7 +9,7 @@ Status words: **in progress**, **planned** (a plan exists, not started),
 **decision** (waiting on the operator), **check** (may already be done;
 confirm before working on it).
 
-Last checked against the code: 2026-10-08.
+Last checked against the code: 2026-10-14.
 
 ## Planned work
 
@@ -24,10 +24,19 @@ one-step installer. Status: in progress (phase 1). Plan:
 or PostgreSQL with the same API, pages, tools and behaviour. Status: planned.
 Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 
+**Memory insight.** Take the HUD from one mission at a time to questions
+across missions: data health (phase 0), structured debriefs and review
+verdicts, crew, library and activity pages with operator grade review, cost
+and usage from transcripts, and a retrieval log with a brief-prep tool that
+feeds past lessons into new briefs. Status: phase 0 in progress (branch
+`fix/hud-data-health`); the rest planned, with decisions P1–P5 open. Plan:
+[plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
+
 **Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
 `mission_criteria`, `mission_deliverables` and `mission_lessons`, so the HUD
 can filter on unmet criteria, wrong assumptions and files that change often.
-Status: deferred (decision D3) until the debrief format settles. Plan:
+Status: deferred (decision D3) until the debrief format settles; the memory
+insight plan proposes un-deferring it as its phase 1 (decision P1). Plan:
 [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md) §3.
 
 ## Findings triage

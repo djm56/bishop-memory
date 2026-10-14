@@ -103,7 +103,7 @@ func registerTriageTools(s *server.MCPServer, c *client) {
 	)
 	s.AddTool(
 		mcp.NewTool("triage_run_finish",
-			mcp.WithDescription("Close a triage run with its counts. A finished process run advances the category rotation."),
+			mcp.WithDescription("Close a triage run with its counts. A finished process run advances the category rotation. Refused with 409 if the run is no longer running (for example it was closed by the operator): do not retry, the run is final."),
 			mcp.WithInteger("id", mcp.Required(), mcp.Description("Run id from triage_run_start. Required.")),
 			mcp.WithString("status", mcp.Required(), mcp.Description("done or failed. Required.")),
 			mcp.WithInteger("considered", mcp.Description("How many findings were read.")),

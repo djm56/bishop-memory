@@ -329,6 +329,44 @@ func TestSearchMemoryHandler_HyphenatedQueriesReturnResults(t *testing.T) {
 	}
 }
 
+// TestSearchMemoryHandler_WorkspaceScratchRanksBelowCuratedMemory checks
+// the scratch weighting in searchMemoryHandler: with the same text in a
+// workspace note and a pattern, the pattern comes first, and the scratch
+// note is still returned.
+func TestSearchMemoryHandler_WorkspaceScratchRanksBelowCuratedMemory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := openSearchTestDB(t)
+	body := "Mutation calibration harness with immutable predictions."
+	// The scratch note is seeded first, so on an equal score it would
+	// come first without the weighting.
+	seedDocument(t, db, "/fake/workspace/step10-cal/NOTES.md", "Notes", "workspace", body)
+	seedDocument(t, db, "/fake/findings/PATTERNS.md", "Patterns", "patterns", body)
+
+	router := gin.New()
+	router.GET("/v1/memory/search", searchMemoryHandler(db))
+	req := httptest.NewRequest(http.MethodGet, "/v1/memory/search?q=calibration", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var decoded struct {
+		Results []searchHit `json:"results"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("response body is not valid JSON: %v", err)
+	}
+	if len(decoded.Results) != 2 {
+		t.Fatalf("got %d results, want 2: %+v", len(decoded.Results), decoded.Results)
+	}
+	if decoded.Results[0].Kind != "patterns" || decoded.Results[1].Kind != "workspace" {
+		t.Fatalf("result kinds = %s, %s; want patterns before workspace",
+			decoded.Results[0].Kind, decoded.Results[1].Kind)
+	}
+}
+
 // TestSearchMemoryHandler_HostileInputsNeverReturn500 is the
 // requirement-3 acceptance test: every input in this table — the
 // hyphen defect's own reproduction shapes plus a set of adversarial
@@ -496,11 +534,11 @@ func openRawTestDB(t *testing.T) *sql.DB {
 const searchQuerySQL = `
 	SELECT d.id, d.source_path, d.title, d.kind,
 	       snippet(documents_fts, 1, '<mark>', '</mark>', '…', 24) AS snippet,
-	       rank
+	       CASE WHEN d.kind = 'workspace' THEN rank * 0.5 ELSE rank END AS weighted
 	FROM documents_fts
 	JOIN documents d ON d.id = documents_fts.rowid
 	WHERE documents_fts MATCH ?
-	ORDER BY rank
+	ORDER BY weighted
 	LIMIT 20
 `
 

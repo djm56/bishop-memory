@@ -49,13 +49,25 @@ func upsertDirectiveHandler(db *sql.DB) gin.HandlerFunc {
 
 // listDirectivesHandler handles GET /v1/directives.
 // Returns directives in order (ORDER BY id ASC). Directives are a rulebook,
-// read in rule order, not a feed.
+// read in rule order, not a feed. Each directive includes a derived status:
+// - "under-review" when a proposal with this directive_id has state='pending'
+// - "retired" when otherwise a proposal with this directive_id has state='declined'
+// - "active" otherwise
 func listDirectivesHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		query := `
-			SELECT id, directive_id, title, rule, rationale, ratified_at, created_at
-			FROM directives
-			ORDER BY id ASC
+			SELECT d.id, d.directive_id, d.title, d.rule, d.rationale, d.ratified_at, d.created_at,
+			       CASE WHEN EXISTS(
+			         SELECT 1 FROM directive_proposals p
+			         WHERE p.directive_id = d.directive_id AND p.state = 'pending'
+			       ) THEN 'under-review'
+			       WHEN EXISTS(
+			         SELECT 1 FROM directive_proposals p
+			         WHERE p.directive_id = d.directive_id AND p.state = 'declined'
+			       ) THEN 'retired'
+			       ELSE 'active' END AS status
+			FROM directives d
+			ORDER BY d.id ASC
 		`
 
 		rows, err := db.QueryContext(c.Request.Context(), query)
@@ -85,6 +97,7 @@ func listDirectivesHandler(db *sql.DB) gin.HandlerFunc {
 	}
 }
 
+// scanDirective scans a directive row that includes a derived status field.
 func scanDirective(row scanner) (model.Directive, error) {
 	var directive model.Directive
 	var directiveID sql.NullString
@@ -92,6 +105,7 @@ func scanDirective(row scanner) (model.Directive, error) {
 	var rule sql.NullString
 	var rationale sql.NullString
 	var ratifiedAt sql.NullString
+	var status string
 
 	err := row.Scan(
 		&directive.ID,
@@ -101,6 +115,7 @@ func scanDirective(row scanner) (model.Directive, error) {
 		&rationale,
 		&ratifiedAt,
 		&directive.CreatedAt,
+		&status,
 	)
 
 	if directiveID.Valid {
@@ -119,5 +134,6 @@ func scanDirective(row scanner) (model.Directive, error) {
 		directive.RatifiedAt = &ratifiedAt.String
 	}
 
+	directive.Status = status
 	return directive, err
 }

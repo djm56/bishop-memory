@@ -14,4 +14,5 @@ it.
 | [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) | Install on any Unix server, network access, API keys |
 | [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md) | An optional PostgreSQL backend beside SQLite |
 | [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md) | The mission HUD; phases 1 and 3 shipped, phase 2 (structured debriefs) deferred |
+| [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) | Cross-mission insight: data health, structured debriefs and reviews, crew and library pages, cost, and feeding memory forward |
 | [wiki/](wiki/) | Source of the GitHub wiki |

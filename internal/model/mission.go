@@ -29,6 +29,10 @@ type Mission struct {
 	// Blockers is the free-form blockers note.
 	Blockers *string `json:"blockers,omitempty"`
 
+	// Harness is the harness that owns the mission; nil when it was created
+	// without one (see CreateMissionRequest.Harness).
+	Harness *string `json:"harness,omitempty"`
+
 	// OpenedAt is the row creation timestamp (UTC ISO-8601).
 	OpenedAt string `json:"opened_at"`
 
@@ -50,6 +54,10 @@ type CreateMissionRequest struct {
 	Priority   string `json:"priority" binding:"omitempty,oneof=low normal high urgent"`
 	NextAction string `json:"next_action" binding:"omitempty,max=2000"`
 	Blockers   string `json:"blockers" binding:"omitempty,max=2000"`
+	// Harness names the harness that owns the mission. Optional; without it
+	// the mission has no harness until a PATCH supplies one, and the HUD and
+	// performance page cannot place it.
+	Harness string `json:"harness" binding:"omitempty,max=128"`
 }
 
 type UpdateMissionRequest struct {
@@ -59,4 +67,8 @@ type UpdateMissionRequest struct {
 	Priority   *string `json:"priority" binding:"omitempty,oneof=low normal high urgent"`
 	NextAction *string `json:"next_action" binding:"omitempty,max=2000"`
 	Blockers   *string `json:"blockers" binding:"omitempty,max=2000"`
+	// Harness fills missions.harness only while it is NULL: a mission
+	// created without a harness can be claimed once, but never moved from
+	// one harness to another by a PATCH.
+	Harness *string `json:"harness" binding:"omitempty,max=128"`
 }

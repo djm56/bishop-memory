@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -257,4 +260,31 @@ func resultText(t *testing.T, result *mcp.CallToolResult) string {
 		t.Fatalf("result.Content[0] is %T, want mcp.TextContent", result.Content[0])
 	}
 	return tc.Text
+}
+
+// TestMissionCreateHandler_SendsHarness checks that mission_create creates
+// the mission as the harness this mcpd serves, so the service never stores
+// a harness-less mission from an agent call.
+func TestMissionCreateHandler_SendsHarness(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"m-1","created":true}`))
+	}))
+	defer server.Close()
+
+	c := &client{httpClient: server.Client(), baseURL: server.URL, harness: "kirsch"}
+	req := mcp.CallToolRequest{Params: mcp.CallToolParams{
+		Arguments: map[string]any{"id": "m-1", "title": "A mission"},
+	}}
+	result, err := makeMissionCreateHandler(c)(context.Background(), req)
+	if err != nil || result.IsError {
+		t.Fatalf("mission_create: err=%v result=%v", err, result)
+	}
+	if got["harness"] != "kirsch" {
+		t.Fatalf("request harness = %v, want kirsch (body %v)", got["harness"], got)
+	}
 }

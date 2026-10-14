@@ -63,6 +63,7 @@ dist:
 
 test:
 	go test ./...
+	python3 -m unittest discover -s scripts -p 'test_*.py'
 
 fmt:
 	go fmt ./...
@@ -111,7 +112,7 @@ triage-backfill:
 # unless APPLY=1; RENAME="old=new ..." merges stray harness names. Sync
 # documents first (POST /v1/documents/sync) so debriefs carry their mission.
 mission-links:
-	scripts/backfill-mission-links.py --db $(DB) $(foreach r,$(RENAME),--rename-harness $(r)) $(if $(APPLY),--apply) --verbose
+	scripts/backfill-mission-links.py --db $(DB) $(foreach r,$(RENAME),--rename-harness $(r)) $(if $(ONLY),--only $(ONLY)) $(if $(APPLY),--apply) --verbose
 
 # Clear harness workspace scratch older than DAYS (default 30) into the Trash
 # and drop it from search. Runs on the machine that holds the harness checkouts. Dry run unless APPLY=1; HARNESS=<name> limits it.

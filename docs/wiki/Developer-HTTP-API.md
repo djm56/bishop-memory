@@ -37,6 +37,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | POST | `/v1/finding-recommendations` | `recommendFindingsHandler` | `triage_recommend` (triage) |
 | GET / POST | `/v1/directive-proposals` | list / create | — / `directive_propose` (triage) |
 | POST | `/v1/directive-proposals/:proposalID/decision` | `decideDirectiveProposalHandler` | — (operator) |
+| POST | `/v1/directive-proposals/:proposalID/reopen` | `reopenDirectiveProposalHandler` | — (operator) |
 | GET / PUT | `/v1/harnesses[/:name]` | list / upsert | — (reconciler, backfill) |
 | GET | `/v1/triage/pending` | `pendingTriageHandler` | — (review page) |
 | GET | `/v1/triage/decisions` | `recentDecisionsHandler` | `triage_recent_decisions` (triage) |
@@ -44,6 +45,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | PUT | `/v1/triage/classifications` | `classifyFindingsHandler` | `triage_classify` (triage) |
 | GET / POST | `/v1/triage/runs` | list / start | — / `triage_run_start` (triage) |
 | PATCH | `/v1/triage/runs/:runID` | `finishTriageRunHandler` | `triage_run_finish` (triage) |
+| POST | `/v1/triage/runs/:runID/operator-close` | `operatorCloseTriageRunHandler` | — (operator) |
 | GET | `/v1/mission-grades/waiting` | `waitingGradesHandler` | — (runner) |
 | POST | `/v1/mission-grades/claim` | `claimGradesHandler` | `grade_claim` (triage) |
 | GET / POST | `/v1/mission-grades` | list / write | — (performance page) / `grade_write` (triage) |
@@ -73,18 +75,21 @@ Routes with no tool are the operator/reconciler surface. Keeping them off both `
 
 `internal/api/hud.go`. Read-only, under `/v1/hud` so nothing the harnesses, `mcpd` or the triage agents call changed shape. Rows come back as maps keyed by column name (`queryMaps`), so the page can show a new column without a model change.
 
-**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
+**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match), `grade` (a letter, or `ungraded`), `stale` (any value: only stale missions) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
 
 ```json
 {
   "missions":  [{"id", "title", "status", "outcome", "harness", "owner", "priority",
-                 "opened_at", "closed_at", "updated_at",
+                 "grade", "grade_state", "opened_at", "closed_at", "updated_at",
+                 "last_activity", "stale",
                  "steps", "steps_done", "findings", "patterns", "has_brief", "has_debrief"}],
   "harnesses": [{"name", "missions"}]
 }
 ```
 
 `harnesses` counts missions per non-NULL `missions.harness` and ignores the filters.
+
+`last_activity` is the later of the mission's `updated_at` and its newest flight-recorder event, since step writes and journal appends do not touch `updated_at`. `stale` is 1 for a mission that is not `complete` and has had no activity for 48 hours (`staleAfter` in `hud.go`).
 
 **`GET /v1/hud/missions/:missionID`** — one mission; 404 `mission not found`. Keys:
 
@@ -108,10 +113,15 @@ These routes kept their request and response shapes; what changed is what they w
 | Route | Side effect |
 |---|---|
 | `POST /v1/documents/sync` | Body `root`: syncs that root, tagged with the harness registered on it if any; responds `{"synced":true,"root":…}`. Body `harness`: syncs that harness's registered `memory_root` (404 `harness not found` if none); responds with `root`. Neither: syncs every registered harness root (once per root; the most recently seen name wins when two share one) and responds `{"synced":true,"roots":[…]}`; with no harness registered it falls back to `MEMORY_ROOT` (then `testdata/memory`) and answers with `root`. For every root that has a harness, it also imports the `agents/` directory beside the root into `crew`; a crew failure is logged, never returned. The walker now skips hidden directories |
-| `PATCH /v1/missions/:missionID` | After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness, no root, or a root that is not a directory on this machine (a remote server, where the client pushes instead): skipped. A failure is logged and never fails the update |
+| `POST /v1/missions` | Stores the optional body `harness` on the mission. `mcpd`'s `mission_create` sends its `BISHOP_HARNESS`, and the reconciler sends its `--harness` |
+| `PATCH /v1/missions/:missionID` | Body `harness` fills `missions.harness` only while it is NULL; it never moves a mission to another harness. The `mission.updated` journal row's note names each changed field, `field: "old" → "new"` (values cut at 80 characters), or says `Mission updated (no change)`. After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness, no root, or a root that is not a directory on this machine (a remote server, where the client pushes instead): skipped. A failure is logged and never fails the update |
 | `POST /v1/missions/:missionID/steps` | `stampStepTiming`: sets `started_at` the first time the step is stored `in-progress`, and `ended_at` each time it moves into `done` or `failed` from another status, unless the request carried that field. Only for a mission that is not `complete`, since a completed mission's steps arrive from a replayed `PROGRESS.md` |
 | `POST /v1/flight-recorder` | Event `step-sync` with a `mission_id` and `step` copies `note` into that step's `summary`, in the same transaction. A step the mission does not have is left alone |
 | `POST /v1/findings` | No `mission_id` but a `harness`: `openMissionFor` takes that harness's open mission (`in-progress` or `blocked`, most recently updated), unless `finding_date` is before the day it opened, so a replayed backlog is not pinned to whatever is open now |
+
+## Search ranking
+
+`GET /v1/memory/search` orders hits by FTS5 `bm25` with one adjustment: documents of kind `workspace` (a harness's scratch notes under `<memory root>/workspace/`) count at half their score, and `rank` in the response is that weighted value. Scratch is still returned, and a strong scratch match can still beat a weak one elsewhere, but for the same match findings, patterns, directives, briefs and debriefs come first. `make scratch-clean` removes old scratch altogether.
 
 ## The error contract
 
@@ -144,7 +154,7 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 
 `GET /v1/flight-recorder?mission_id=&limit=` — default 50, hard cap 100, and no offset. That cap is why the reconciler's `--include-journal` enumerates per mission and skips a mission at exactly 100 rows.
 
-`GET /v1/directives` — the rulebook in rule order (`ORDER BY id`), not as a feed. No route creates one except the reconciler's `PUT /v1/directives/:directiveID` and the proposal decision below.
+`GET /v1/directives` — the rulebook in rule order (`ORDER BY id`), not as a feed. Each directive carries a derived `status` field: `active` (ratified and not retired), `retired` (declined via proposal or directly retired), or `under-review` (has a pending proposal). No route creates one except the reconciler's `PUT /v1/directives/:directiveID` and the proposal decision below.
 
 ### Search query handling
 
@@ -187,8 +197,9 @@ The mission update's re-import (`syncMissionDocuments`) stays, but returns silen
 | `GET /v1/finding-categories?include_inactive=1` | | `{"categories":[…],"uncategorised_count":N}`; each category has `slug`, `name`, `description`, `examples`, `sort_order`, `active`, `last_processed_at`, `proposed_count`, `pending_count` |
 | `PUT /v1/finding-categories/:slug` | `{"name","description","examples","sort_order","active"}` | Slug must be lower-case kebab-case and not `uncategorised` |
 | `POST /v1/triage/runs` | `{"kind":"classify"\|"process","category","model"}` | 201 `{"id"}` |
-| `PATCH /v1/triage/runs/:runID` | `{"status":"done"\|"failed","considered","written","notes"}` | A finished `process` run stamps its category's `last_processed_at` |
-| `GET /v1/triage/runs?limit=50` | | Each run with `accepted` and `declined` counts from the recommendations it wrote |
+| `PATCH /v1/triage/runs/:runID` | `{"status":"done"\|"failed","considered","written","notes"}` | A finished `process` run stamps its category's `last_processed_at`. 409 `run is already <status>` or `run is no longer running` (nothing changed) if the run has finished or an operator-close has moved it, preventing overwrites after an operator-close |
+| `GET /v1/triage/runs?limit=50` | | Each run with `accepted`, `declined`, `last_activity_at`, and `stale` fields; stale means running with no activity ≥30 minutes |
+| `POST /v1/triage/runs/:runID/operator-close` | `{"status":"done"\|"failed","decided_by","note"}` | Closes a stale run. 409 if already finished or not stale, 404 if unknown. Appends operator note and writes `triage_run.operator_closed` flight row. `{"id","status"}` |
 | `GET /v1/triage/next-category` | | `{"category","waiting"}`, or 404 when nothing waits |
 | `PUT /v1/triage/classifications` | `{"classified_by","run_id","items":[{"finding_id","category","secondary_category","directive_candidate","confidence","summary"}]}` | 1–200 items, upsert (re-classifying replaces). The whole batch is refused, naming the item, if a slug is not active or a finding id is unknown. `{"classified":N}` |
 | `GET` / `POST /v1/finding-groups` | `?category=` / `{"category","title","summary","target","run_id"}` | 201 `{"id"}` |
@@ -197,7 +208,8 @@ The mission update's re-import (`syncMissionDocuments`) stays, but returns silen
 | `GET /v1/triage/pending` | | `{"categories":[{"slug","groups":[…],"ungrouped":[…]}],"directive_proposals":[…],"pending_findings":N,"decided_findings":N}` |
 | `GET /v1/directive-proposals?state=` | | `pending`, `accepted`, `declined` or `expired` |
 | `POST /v1/directive-proposals` | `{"title" (≤60),"applies_when","rule","rationale","reviewer_check","example","evidence":[ids],"group_id","harness","run_id"}` | Rendered with an 80-character Evidence placeholder and refused over 1,510 characters. 201 `{"id","rendered_length"}` |
-| `POST /v1/directive-proposals/:proposalID/decision` | `{"state":"accepted"\|"declined","decided_by","note", …edited fields}` | Declining needs a note. Accepting allocates the next `DIR-NNN` across `directives` and every accepted proposal, stores the possibly edited text, upserts `directives`, marks every evidence finding `applied` and appends `directive.ratified`. `{"id","state","directive_id","rendered"}` |
+| `POST /v1/directive-proposals/:proposalID/decision` | `{"state":"accepted"\|"declined","decided_by","note", …edited fields}` | Declining needs a note. Accepting a pending proposal allocates the next `DIR-NNN` across `directives` and every accepted proposal, stores the possibly edited text, upserts `directives`, marks every evidence finding `applied` and appends `directive.ratified`. Accepting an accepted proposal (carrying a `directive_id`) amends the directive — its text is updated and `directive_id` is kept, but the original `ratified_at` is preserved and `directive.amended` is appended. Declining a proposal retires its directive if it has one. `{"id","state","directive_id","rendered"}` |
+| `POST /v1/directive-proposals/:proposalID/reopen` | `{"decided_by","note"}` | Moves an accepted, declined or expired proposal back to pending. Prior state, decider and time are recorded in a `directive.reopened` flight row. 400 if already pending, 404 if unknown. `{"id","state"}` |
 | `GET /v1/harnesses`, `PUT /v1/harnesses/:name` | `{"memory_root":"/abs/path/.claude/memory"}` | `memory_root` must be absolute |
 
 The pages and their icons (`/triage`, `/missions`, `/favicon.svg`, `/favicon.ico`) are embedded in the binary from `internal/ui/`; the icons are cached for a day, and `.ico` is a 32-pixel PNG so a browser's automatic request is not logged as a 404.
