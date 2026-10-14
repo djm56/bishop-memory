@@ -9,7 +9,7 @@ Status words: **in progress**, **planned** (a plan exists, not started),
 **decision** (waiting on the operator), **check** (may already be done;
 confirm before working on it).
 
-Last checked against the code: 2026-10-14 (mission_criteria and criteria sync counts).
+Last checked against the code: 2026-10-14 (plans updated after mission_criteria shipped).
 
 ## Planned work
 
@@ -28,16 +28,15 @@ Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 across missions: data health (phase 0), structured debriefs and review
 verdicts, crew, library and activity pages with operator grade review, cost
 and usage from transcripts, and a retrieval log with a brief-prep tool that
-feeds past lessons into new briefs. Status: phase 0 complete (branch
-`fix/hud-data-health`); phase 1 slice 1 (`mission_criteria`, decision P1 settled yes) complete on branch `feat/insight-criteria` (commit 3064a59); remaining slice tables and phases 2–4 planned, with decisions P2–P5 open. Plan:
+feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); remaining slice tables and phases 2–4 planned, with decisions P2–P5 open. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
 
 **Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
 `mission_deliverables` and `mission_lessons`, so the HUD can filter on wrong
-assumptions and files that change often. `mission_criteria` parsing is now
-complete under the memory insight plan (decision P1, branch `feat/insight-criteria`).
-Status: `mission_criteria` complete; `mission_deliverables` and `mission_lessons`
-planned. Plan: [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md) §3.
+assumptions and files that change often. Tracked under the memory insight plan:
+`mission_criteria` shipped (c325080); remaining debrief tables (deliverables,
+lessons, agent_mistakes, step_reviews) planned there. Status: criteria shipped;
+remaining tables planned. Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) §3.
 
 ## Findings triage
 

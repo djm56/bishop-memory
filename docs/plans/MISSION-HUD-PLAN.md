@@ -1,10 +1,10 @@
 # Mission HUD — Plan
 
-Status: phases 1 and 3 shipped (merged to `main`); phase 2 deferred
-(decision D3) and tracked in `../ROADMAP.md`. The live database still needs
-the sync and backfill in §2.4. How the shipped pages work is in the wiki:
-`../wiki/Mission-HUD-Guide.md`.
-Date: 2026-10-08.
+Status: phases 1 and 3 shipped (merged to `main`); phase 2 un-deferred by
+memory insight decision P1 — `mission_criteria` shipped (c325080), the remaining
+debrief tables are planned. §2.4 sync and backfill run on the live database.
+How the shipped pages work is in the wiki: `../wiki/Mission-HUD-Guide.md`.
+Date: 2026-10-14.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each
@@ -115,16 +115,11 @@ fills `documents.mission_id`), then the backfill.
 
 ## 3. Phase 2 — structure the debrief (optional)
 
-`mission_criteria` parsing is complete on branch `feat/insight-criteria` under the memory insight plan, under decision P1. The remaining tables below are planned.
-
-The debrief template has fixed sections. The importer parses them into small
-tables when it imports a `DEBRIEF.md`. Each table is replaced wholesale on
-re-import, keyed by `mission_id`.
-
-| Table | Columns | From section |
-|---|---|---|
-| `mission_deliverables` | `mission_id, path, note` | Deliverables Changed |
-| `mission_lessons` | `mission_id, kind ('wrong-assumption', 'agent-mistake', 'similar-mission'), text` | Wrong Assumptions; Sub-Agent Mistakes and Corrections; Similar Future Missions |
+`mission_criteria` shipped under the memory insight plan; the remaining
+tables (deliverables, lessons, agent_mistakes, step_reviews) are defined in
+`../plans/MEMORY-INSIGHT-PLAN.md` §3, which supersedes this section's earlier
+table. Their current shapes — including `agent_mistakes` as its own table —
+are tracked there.
 
 What this buys: questions the page can filter on, not only text to read —
 "missions with an unmet criterion", "every wrong assumption about the
@@ -210,7 +205,8 @@ only when the operator runs it.
    mission; most finished steps have `ended_at`.
 2. Phase 3 endpoints and page against phase 1 data. The page is useful
    without phase 2.
-3. Phase 2 parsing, if and when the debrief format settles (D3).
+3. Phase 2 — criteria parsing shipped (c325080, live); remaining tables
+   follow the memory insight plan.
 
 ## 6. Decisions (settled 2026-10-08)
 
@@ -219,7 +215,8 @@ only when the operator runs it.
 - **D2. `workspace/` documents.** Kept and searchable. Old scratch is cleared
   by a manual command with a day threshold, default 30 (§4.4).
 - **D3. Phase 2.** Not now. Debriefs stay plain Markdown while their format
-  may still change; the HUD reads the criteria lines directly.
+  may still change; the HUD reads the criteria lines directly. Superseded
+  2026-10-14 by memory insight decision P1.
 - **D4. Where the HUD lives.** A separate page, `/missions`, on the same
   memoryd as `/triage`, with links between them (§4.2).
 
