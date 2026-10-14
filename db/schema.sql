@@ -444,6 +444,38 @@ CREATE TABLE IF NOT EXISTS mission_grades (
     CHECK (state <> 'graded' OR grade IS NOT NULL)
 );
 
+-- mission_criteria — acceptance criteria and outcomes from mission briefs and debriefs.
+-- Populated by the importer when a BRIEF.md or DEBRIEF.md is imported.
+--
+-- From the brief: criterion text with result=NULL (pre-debrief).
+-- From the debrief: criterion text with result matched from "Acceptance Criteria Outcome".
+-- On re-import: rows for this mission are replaced wholesale when a section with criterion
+-- bullets is read, and deleted when neither heading is present in the brief or debrief.
+-- A heading with no criterion bullets, or a failed read, leaves the rows as they are,
+-- except that an unreadable debrief with no graded rows follows the brief when the
+-- brief has bullets.
+-- The debrief takes precedence over the brief: if both have criteria sections,
+-- debrief rows replace the brief's. If the brief is re-imported after the debrief,
+-- the debrief's outcomes persist (both documents are parsed but debrief's result is used).
+-- A debrief whose criteria heading has no criterion bullets leaves graded rows
+-- (result NOT NULL) in place; a brief whose heading has none leaves the rows alone.
+--
+-- ord is the line order within the criteria section (starts at 1).
+-- result is NULL on import of the brief only (no debrief yet), populated when
+-- a debrief is imported with outcomes.
+-- evidence is optional text after the result verdict (if parsed from debrief).
+CREATE TABLE IF NOT EXISTS mission_criteria (
+    mission_id TEXT    NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    ord        INTEGER NOT NULL,
+    criterion  TEXT    NOT NULL,
+    result     TEXT,
+    evidence   TEXT,
+
+    PRIMARY KEY (mission_id, ord),
+    CHECK (result IS NULL OR result IN ('met', 'partial', 'unmet', 'unclear'))
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_mission_grades_state ON mission_grades(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_pending

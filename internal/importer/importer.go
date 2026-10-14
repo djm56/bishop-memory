@@ -4,7 +4,8 @@
 // Sync is the entry point invoked by the /v1/documents/sync handler. It
 // is the only writer to those two tables (the importer controls the
 // documents lifecycle; there are no AFTER INSERT/UPDATE/DELETE triggers
-// on documents_fts — see db/schema.sql for the rationale).
+// on documents_fts — see db/schema.sql for the rationale). Importing a
+// BRIEF.md or DEBRIEF.md also refreshes mission_criteria (see criteria.go).
 //
 // What gets imported:
 //
@@ -56,10 +57,15 @@
 //
 // What does NOT get imported:
 //
-//   - The flight_recorder, missions, mission_steps, crew, findings, patterns,
+//   - The flight_recorder, missions, mission_steps, findings, patterns,
 //     service_records, and directives tables are owned by the live HTTP API
-//     (POST /v1/flight-recorder, /v1/missions, etc.). The importer only
-//     populates documents and documents_fts — it never writes to those tables.
+//     (POST /v1/flight-recorder, /v1/missions, etc.); the importer never
+//     writes to them.
+//
+//   - Besides documents and documents_fts, the importer package does write two
+//     tables: mission_criteria, refreshed when a BRIEF.md or DEBRIEF.md is
+//     imported (criteria.go), and crew, upserted by SyncAgents and ImportAgent
+//     (agents.go).
 //
 // Idempotency:
 //
@@ -112,6 +118,23 @@ import (
 // default maximum plus headroom for large notes.
 const MaxJSONLLineBytes = 16 * 1024 * 1024
 
+// SyncStats counts what the criteria import did during one sync or import.
+type SyncStats struct {
+	// CriteriaSkipped counts brief or debrief imports whose criteria were not
+	// read: the mission has no missions row yet, or the criteria heading is
+	// present with no criterion bullets. See storeMissionCriteria.
+	CriteriaSkipped int
+	// CriteriaErrors counts database failures while refreshing mission_criteria.
+	// They are logged and counted; they never fail the import.
+	CriteriaErrors int
+}
+
+// add accumulates o into s.
+func (s *SyncStats) add(o SyncStats) {
+	s.CriteriaSkipped += o.CriteriaSkipped
+	s.CriteriaErrors += o.CriteriaErrors
+}
+
 // Sync walks the memory tree at root and imports its contents into the
 // documents + documents_fts tables via db. See the package docblock for
 // the full design (kind mapping, idempotency, FTS5 rowid contract,
@@ -127,17 +150,27 @@ const MaxJSONLLineBytes = 16 * 1024 * 1024
 // directory. Relative paths are accepted (the handler defaults to
 // "testdata/memory" when MEMORY_ROOT is unset).
 func Sync(db *sql.DB, root string) error {
-	return SyncHarness(db, root, "")
+	_, err := SyncHarnessStats(db, root, "")
+	return err
 }
 
 // SyncHarness is Sync with every imported document tagged with the harness
 // whose memory root this is. An empty harness leaves documents.harness as it
 // was (NULL for a new row).
 func SyncHarness(db *sql.DB, root, harness string) error {
+	_, err := SyncHarnessStats(db, root, harness)
+	return err
+}
+
+// SyncHarnessStats is SyncHarness that also accumulates and returns
+// criteria import statistics (skipped sections and database errors).
+func SyncHarnessStats(db *sql.DB, root, harness string) (SyncStats, error) {
 	resolvedRoot, cleanRoot, err := resolveRoot(root)
 	if err != nil {
-		return err
+		return SyncStats{}, err
 	}
+
+	stats := SyncStats{}
 
 	// Walk the RESOLVED root (not absRoot). Walking the unresolved path
 	// when root is a symlink would make filepath.Rel(absRoot, cleanPath)
@@ -149,10 +182,10 @@ func SyncHarness(db *sql.DB, root, harness string) error {
 		if err != nil {
 			return err
 		}
-		return visit(db, resolvedRoot, cleanRoot, harness, path, d)
+		return visit(db, resolvedRoot, cleanRoot, harness, path, d, &stats)
 	})
 
-	return walkErr
+	return stats, walkErr
 }
 
 // missionFiles are the per-mission documents SyncMission re-imports.
@@ -161,14 +194,22 @@ var missionFiles = []string{"BRIEF.md", "PROGRESS.md", "DEBRIEF.md"}
 // SyncMission imports only missions/<missionID>/BRIEF.md, PROGRESS.md and
 // DEBRIEF.md under root — the cheap, targeted re-import run after a mission
 // update. Files that do not exist yet are skipped. missionID must be a single
-// path segment.
+// path segment. It discards the criteria statistics; see SyncMissionStats.
 func SyncMission(db *sql.DB, root, harness, missionID string) error {
+	_, err := SyncMissionStats(db, root, harness, missionID)
+	return err
+}
+
+// SyncMissionStats is SyncMission that also returns the criteria statistics
+// accumulated over the files it imported.
+func SyncMissionStats(db *sql.DB, root, harness, missionID string) (SyncStats, error) {
+	var stats SyncStats
 	if missionID == "" || missionID != filepath.Base(missionID) || strings.HasPrefix(missionID, ".") {
-		return fmt.Errorf("invalid mission id %q", missionID)
+		return stats, fmt.Errorf("invalid mission id %q", missionID)
 	}
 	resolvedRoot, cleanRoot, err := resolveRoot(root)
 	if err != nil {
-		return err
+		return stats, err
 	}
 	for _, name := range missionFiles {
 		path := filepath.Join(resolvedRoot, "missions", missionID, name)
@@ -177,13 +218,13 @@ func SyncMission(db *sql.DB, root, harness, missionID string) error {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("stat %s: %w", path, err)
+			return stats, fmt.Errorf("stat %s: %w", path, err)
 		}
-		if err := visit(db, resolvedRoot, cleanRoot, harness, path, fs.FileInfoToDirEntry(info)); err != nil {
-			return err
+		if err := visit(db, resolvedRoot, cleanRoot, harness, path, fs.FileInfoToDirEntry(info), &stats); err != nil {
+			return stats, err
 		}
 	}
-	return nil
+	return stats, nil
 }
 
 // resolveRoot makes root absolute, checks it is a directory and resolves its
@@ -218,8 +259,8 @@ func resolveRoot(root string) (resolvedRoot, cleanRoot string, err error) {
 }
 
 // visit applies the path-safety checks to one walked entry and imports it if
-// it is a Markdown or JSONL file.
-func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEntry) error {
+// it is a Markdown or JSONL file, accumulating criteria statistics in stats.
+func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEntry, stats *SyncStats) error {
 	cleanPath := filepath.Clean(path)
 
 	// (a) Path safety: every visited path must be a lexical child
@@ -280,7 +321,7 @@ func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEn
 
 	switch strings.ToLower(filepath.Ext(cleanPath)) {
 	case ".md":
-		return importMarkdown(db, cleanPath, relPath, harness)
+		return importMarkdown(db, cleanPath, relPath, harness, stats)
 	case ".jsonl":
 		return importJSONL(db, cleanPath, relPath, harness)
 	default:
@@ -291,21 +332,40 @@ func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEn
 // importMarkdown reads one Markdown file, classifies it by its path,
 // and upserts it as a single document. CURRENT-MISSION.md gets a
 // structured-field prefix prepended to its body (see package docblock).
-func importMarkdown(db *sql.DB, absPath, relPath, harness string) error {
+func importMarkdown(db *sql.DB, absPath, relPath, harness string, stats *SyncStats) error {
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", absPath, err)
 	}
-	return ImportMarkdown(db, absPath, relPath, harness, content)
+	return importMarkdownContent(db, absPath, relPath, harness, content, stats)
 }
 
 // ImportMarkdown imports one Markdown file's content as if the walker had
 // found it at relPath under a memory root: the same kind, title, mission id,
 // structured-field prefixes and upsert. sourcePath is stored as the document's
-// unique key — the file's absolute path on the machine it lives on. The
-// document push route (POST /v1/documents/push) uses it for files a client
-// sends over the network.
+// unique key — the file's absolute path on the machine it lives on. It
+// discards the criteria statistics. No production code calls it: the document
+// push route (POST /v1/documents/push) calls ImportMarkdownStats. It is kept as
+// the error-only form of that function.
 func ImportMarkdown(db *sql.DB, sourcePath, relPath, harness string, content []byte) error {
+	_, err := ImportMarkdownStats(db, sourcePath, relPath, harness, content)
+	return err
+}
+
+// ImportMarkdownStats is ImportMarkdown that also returns the criteria
+// statistics for this one file. For a BRIEF.md or DEBRIEF.md the upsert is
+// followed by a refresh of mission_criteria (see storeMissionCriteria), whose
+// failures are counted in the statistics and never returned as an error.
+func ImportMarkdownStats(db *sql.DB, sourcePath, relPath, harness string, content []byte) (SyncStats, error) {
+	var stats SyncStats
+	err := importMarkdownContent(db, sourcePath, relPath, harness, content, &stats)
+	return stats, err
+}
+
+// importMarkdownContent is the single implementation behind ImportMarkdown,
+// ImportMarkdownStats and the walker: it upserts the document and, for a brief
+// or debrief, accumulates the criteria refresh result into stats.
+func importMarkdownContent(db *sql.DB, sourcePath, relPath, harness string, content []byte, stats *SyncStats) error {
 	absPath := sourcePath
 	sha := sha256Hex(content)
 	kind := kindFromPath(relPath)
@@ -325,7 +385,14 @@ func ImportMarkdown(db *sql.DB, sourcePath, relPath, harness string, content []b
 	// Use absPath for source_path so multiple roots with the same relative
 	// path do not collide on the UNIQUE constraint and silently overwrite.
 	// The kind mapping and title extraction continue to use relPath.
-	return upsertDocument(db, absPath, title, kind, body, sha, missionIDFromPath(relPath), harness)
+	missionID := missionIDFromPath(relPath)
+	if err := upsertDocument(db, absPath, title, kind, body, sha, missionID, harness); err != nil {
+		return err
+	}
+	if kind == "brief" || kind == "debrief" {
+		stats.add(storeMissionCriteria(db, missionID, harness, kind))
+	}
+	return nil
 }
 
 // missionIDFromPath returns <id> for missions/<id>/BRIEF.md, PROGRESS.md or
