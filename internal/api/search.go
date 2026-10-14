@@ -171,7 +171,8 @@ type searchHit struct {
 	// in <mark> tags, built from the body column (index 1).
 	Snippet string `json:"snippet,omitempty"`
 
-	// Rank is the FTS5 bm25 score (lower = more relevant).
+	// Rank is the FTS5 bm25 score (lower = more relevant), halved in
+	// magnitude for workspace scratch; see searchMemoryHandler.
 	Rank float64 `json:"rank,omitempty"`
 }
 
@@ -208,14 +209,22 @@ func searchMemoryHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// Workspace scratch (kind "workspace": a harness's working notes,
+		// half of the live index on 2026-10-14) is weighted at half its
+		// bm25 score so the curated memory — findings, patterns,
+		// directives, briefs, debriefs — outranks it for the same match.
+		// bm25 scores are negative with lower meaning better, so
+		// multiplying by 0.5 moves a scratch hit toward the bottom rather
+		// than dropping it: a strong scratch match still beats a weak
+		// curated one, and scratch is still found when it is all there is.
 		const query = `
 			SELECT d.id, d.source_path, d.title, d.kind,
 			       snippet(documents_fts, 1, '<mark>', '</mark>', '…', 24) AS snippet,
-			       rank
+			       CASE WHEN d.kind = 'workspace' THEN rank * 0.5 ELSE rank END AS weighted
 			FROM documents_fts
 			JOIN documents d ON d.id = documents_fts.rowid
 			WHERE documents_fts MATCH ?
-			ORDER BY rank
+			ORDER BY weighted
 			LIMIT 20
 		`
 

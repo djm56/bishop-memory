@@ -690,8 +690,16 @@ def prune(payload):
     return {k: v for k, v in payload.items() if v not in ("", None)}
 
 
-def reconcile_missions(client, parsed_missions):
-    """Create missing missions and PATCH any with drifted status/outcome."""
+def reconcile_missions(client, parsed_missions, harness=None):
+    """Create missing missions and PATCH any with drifted status/outcome.
+
+    With a harness name, new missions are created as that harness's, and an
+    existing mission the service holds without a harness is claimed for it
+    (the service fills missions.harness only while it is NULL, so this can
+    never move a mission between harnesses). Missions created by older
+    reconcilers had no harness, which kept them off the HUD's harness filter
+    and the performance page.
+    """
     status_counts = {"parsed": len(parsed_missions), "created": 0, "updated": 0, "failed": 0, "skipped": 0, "fetch_failed": 0}
 
     # Fetch existing missions
@@ -733,9 +741,13 @@ def reconcile_missions(client, parsed_missions):
             db_outcome = db_mission.get("outcome", "") or ""
             db_next_action = normalize_empty(db_mission.get("next_action"))
 
+            missing_harness = bool(harness) and not db_mission.get("harness")
+
             if db_status != expected_status or db_outcome != expected_outcome or \
-               normalize_empty(expected_next_action) != db_next_action:
+               normalize_empty(expected_next_action) != db_next_action or missing_harness:
                 update_payload = {}
+                if missing_harness:
+                    update_payload["harness"] = harness
                 if db_status != expected_status:
                     update_payload["status"] = expected_status
                 if db_outcome != expected_outcome:
@@ -757,6 +769,7 @@ def reconcile_missions(client, parsed_missions):
                 "id": mission["id"],
                 "title": truncate(mission.get("title", ""), 500),
                 "status": mission["status"],
+                "harness": harness,
             })
             if not client.write("POST", "/v1/missions", payload, mission["id"]):
                 status_counts["failed"] += 1
@@ -1253,7 +1266,7 @@ def main():
 
     # --- Missions ---------
     missions = parse_missions(root)
-    counts = reconcile_missions(client, missions)
+    counts = reconcile_missions(client, missions, args.harness)
     fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
     print(f"[missions] {counts['parsed']} parsed, {counts['created']} created, " +
           f"{counts['updated']} updated, {counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}")

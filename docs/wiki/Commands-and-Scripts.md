@@ -169,11 +169,11 @@ Both are dry runs unless told to write. `backfill-mission-links.py` works on the
 ### `scripts/backfill-mission-links.py`
 
 ```
-scripts/backfill-mission-links.py [--db data/memory.db] [--rename-harness OLD=NEW ...] [--apply] [--verbose]
-make mission-links [RENAME="old=new ..."] [APPLY=1]
+scripts/backfill-mission-links.py [--db data/memory.db] [--rename-harness OLD=NEW ...] [--only PART,...] [--apply] [--verbose]
+make mission-links [RENAME="old=new ..."] [ONLY=part,...] [APPLY=1]
 ```
 
-Fills the mission links the database never recorded, in one transaction, in this order: moves rows in `missions`, `findings`, `directive_proposals` and `documents` from each `OLD` harness name to `NEW` and deletes the `OLD` harnesses row; deletes documents (and their search rows) under no registered harness memory root; fills empty `mission_steps.started_at`, `ended_at` and `summary` from the journal's `mission.step` and `step-sync` events; sets empty `findings.mission_id` from the `[YYYY-MM-DD] — target` lines in each debrief's **Findings and Patterns Linked** section, then from the one mission of the finding's harness that was open when the finding was recorded (up to two hours after it closed). It never overwrites a set column. `--verbose` (the make target always passes it) lists findings that fit several missions.
+Fills the mission links the database never recorded, in one transaction, in this order: moves rows in `missions`, `findings`, `directive_proposals` and `documents` from each `OLD` harness name to `NEW` and deletes the `OLD` harnesses row; deletes documents (and their search rows) under no registered harness memory root; fills empty `mission_steps.started_at`, `ended_at` and `summary` from the journal's `mission.step` and `step-sync` events; sets empty `findings.mission_id` from the `[YYYY-MM-DD] — target` lines in each debrief's **Findings and Patterns Linked** section, then from the one mission of the finding's harness that was open when the finding was recorded (up to two hours after it closed); sets empty `missions.harness` from the harness of the mission's own brief, progress and debrief documents when they name exactly one. It never overwrites a set column. `--verbose` (the make target always passes it) lists findings that fit several missions and missions whose documents name no single harness. `--only` runs a subset of the parts, by name: `harness`, `orphans`, `steps`, `findings`, `mission-harness` (for example `--only mission-harness`).
 
 `--apply` first copies the database with SQLite's backup API to `data/memory.bak-<timestamp>.db` (safe while `memoryd` runs), and refuses with exit 1 while a triage run is `running`. Run it after deploying the matching `memoryd` and `POST /v1/documents/sync`, so debriefs carry their mission.
 

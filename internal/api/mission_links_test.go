@@ -255,3 +255,112 @@ func TestHUDMission(t *testing.T) {
 		t.Errorf("findings?mission_id=m-1 = %v, want only #7", got)
 	}
 }
+
+// TestMissionHarnessIsRecorded checks that POST /v1/missions stores a
+// harness, that a PATCH claims a harness-less mission once and can never move
+// a mission to another harness, and that GET returns the harness.
+func TestMissionHarnessIsRecorded(t *testing.T) {
+	router, db := newTriageTestRouter(t)
+
+	if code, resp := do(t, router, http.MethodPost, "/v1/missions",
+		map[string]any{"id": "m-1", "title": "With harness", "harness": "kirsch"}); code != http.StatusCreated {
+		t.Fatalf("create m-1: %d %v", code, resp)
+	}
+	if code, resp := do(t, router, http.MethodPost, "/v1/missions",
+		map[string]any{"id": "m-2", "title": "Without harness"}); code != http.StatusCreated {
+		t.Fatalf("create m-2: %d %v", code, resp)
+	}
+	// m-2 is claimed; m-1 keeps its harness.
+	for _, id := range []string{"m-1", "m-2"} {
+		if code, resp := do(t, router, http.MethodPatch, "/v1/missions/"+id,
+			map[string]any{"harness": "other"}); code != http.StatusOK {
+			t.Fatalf("PATCH %s: %d %v", id, code, resp)
+		}
+	}
+	for id, want := range map[string]string{"m-1": "kirsch", "m-2": "other"} {
+		var got sql.NullString
+		if err := db.QueryRow(`SELECT harness FROM missions WHERE id = ?`, id).Scan(&got); err != nil {
+			t.Fatalf("lookup %s: %v", id, err)
+		}
+		if got.String != want {
+			t.Errorf("%s harness = %q, want %q", id, got.String, want)
+		}
+	}
+	if _, m := do(t, router, http.MethodGet, "/v1/missions/m-1", nil); m["harness"] != "kirsch" {
+		t.Errorf("GET m-1 harness = %v, want kirsch", m["harness"])
+	}
+}
+
+// TestMissionUpdateNoteNamesChanges checks that a mission.updated journal
+// row says which fields a PATCH changed, from what to what.
+func TestMissionUpdateNoteNamesChanges(t *testing.T) {
+	router, db := newTriageTestRouter(t)
+	insertMission(t, db, "m-1", "kirsch", "in-progress")
+
+	for _, body := range []map[string]any{
+		{"status": "complete", "next_action": "Archive"},
+		{"status": "complete"},
+	} {
+		if code, resp := do(t, router, http.MethodPatch, "/v1/missions/m-1", body); code != http.StatusOK {
+			t.Fatalf("PATCH %v: %d %v", body, code, resp)
+		}
+	}
+
+	rows, err := db.Query(`SELECT note FROM flight_recorder WHERE mission_id = 'm-1' AND event = 'mission.updated' ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query notes: %v", err)
+	}
+	defer rows.Close()
+	notes := []string{}
+	for rows.Next() {
+		var note string
+		if err := rows.Scan(&note); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		notes = append(notes, note)
+	}
+	want := []string{
+		`Mission updated: status: "in-progress" → "complete"; next_action: (none) → "Archive"`,
+		"Mission updated (no change)",
+	}
+	if len(notes) != len(want) {
+		t.Fatalf("notes = %q, want %q", notes, want)
+	}
+	for i := range want {
+		if notes[i] != want[i] {
+			t.Errorf("note %d = %q, want %q", i, notes[i], want[i])
+		}
+	}
+}
+
+// TestHUDFlagsStaleMissions checks the board's stale flag: an unfinished
+// mission with no activity for longer than staleAfter is stale, recent
+// journal activity keeps one fresh, and a complete mission is never stale.
+func TestHUDFlagsStaleMissions(t *testing.T) {
+	router, db := newTriageTestRouter(t)
+	insertMission(t, db, "idle", "kirsch", "not-started")
+	insertMission(t, db, "busy", "kirsch", "in-progress")
+	insertMission(t, db, "done", "kirsch", "complete")
+	for _, q := range []string{
+		`UPDATE missions SET updated_at = datetime('now', '-5 days')`,
+		// A step event today, without touching the mission row.
+		`INSERT INTO flight_recorder (mission_id, event, note) VALUES ('busy', 'mission.step', 'Mission step 1 created (status: in-progress)')`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("seed: %v\n%s", err, q)
+		}
+	}
+
+	_, board := do(t, router, http.MethodGet, "/v1/hud/missions", nil)
+	stale := map[string]float64{}
+	for _, raw := range board["missions"].([]any) {
+		m := raw.(map[string]any)
+		stale[m["id"].(string)] = m["stale"].(float64)
+	}
+	if stale["idle"] != 1 || stale["busy"] != 0 || stale["done"] != 0 {
+		t.Errorf("stale = %v, want only idle", stale)
+	}
+	if _, d := do(t, router, http.MethodGet, "/v1/hud/missions?stale=1", nil); len(d["missions"].([]any)) != 1 {
+		t.Errorf("?stale=1 returned %d missions, want 1", len(d["missions"].([]any)))
+	}
+}

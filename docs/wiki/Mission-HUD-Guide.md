@@ -27,13 +27,13 @@ Below 860 pixels wide the layout stacks: the header wraps and the mission list s
 
 ## The mission list
 
-The left rail lists every mission, newest first. Each row shows the id, title, status (or `failed` when the mission ended with outcome `failed`), harness, steps done out of steps recorded, linked findings and the date it opened. The header counts the missions shown and their linked findings.
+The left rail lists every mission, newest first. Each row shows the id, title, status (or `failed` when the mission ended with outcome `failed`), harness, steps done out of steps recorded, linked findings and the date it opened. An unfinished mission with no activity (no update and no journal event) for two days also shows **stale**; hover it for when it was last active. The header counts the missions shown, their linked findings and how many are stale.
 
 Above the list:
 
 - **Search** matches the mission id and title, and runs a full-text search over the mission's brief, progress and debrief. It needs those documents imported (see [How data gets there](#how-data-gets-there)).
 - **Harness** narrows to one harness; each option shows its mission count.
-- **Status** narrows to `in-progress`, `blocked`, `complete` or `not-started`.
+- **Status** narrows to `in-progress`, `blocked`, `complete` or `not-started`, or to **stale** missions of any unfinished status.
 - **Grade** narrows to one [mission grade](Mission-Grading), A to F, or to **Ungraded**.
 
 The harness, status and grade filters are remembered in the browser. Search is not. A graded mission shows its letter beside its id, and the header adds the average grade of the missions shown.
@@ -71,7 +71,7 @@ When the section says **No brief imported**, the mission's files have not reache
 
 ![The step timeline, with each step's agent, crew role, status, start time and duration, above the mission's findings](images/missions-steps-light.png)
 
-A timeline of the mission's steps in step order. Each step shows its number, its agent and that agent's crew role (hover the agent for the full description), its phase, status, start time and duration, and the one-line summary the harness wrote when the step finished. **Notes and N journal events** expands to the step's `PROGRESS.md` notes and every flight-recorder event recorded against the step.
+A timeline of the mission's steps in step order. Each step shows its number, its agent and that agent's crew role (hover the agent for the full description; `human operator` for a step the operator ran; a **not in crew** tag when the harness wrote a name no agent definition has, such as `senior (general-purpose)`), its phase, status, start time and duration, and the one-line summary the harness wrote when the step finished. **Notes and N journal events** expands to the step's `PROGRESS.md` notes and every flight-recorder event recorded against the step.
 
 Start and end times are recorded by the service as the step moves to `in-progress` and then `done` or `failed`. Steps recorded before the HUD existed have times only if the backfill below found them in the journal.
 
@@ -94,7 +94,7 @@ Each section appears only when there is something in it.
 
 ### Journal
 
-**Show every flight-recorder event** lists the mission's whole journal: time, step, agent, event and note. **PROGRESS.md as written** shows the file as the database holds it.
+**Show every flight-recorder event** lists the mission's whole journal: time, step, agent, event and note. The time is when the event happened as the harness recorded it, falling back to when the service stored it; hover a time to see the stored time when the two differ. A `mission.updated` note lists the fields that changed, from and to. **PROGRESS.md as written** shows the file as the database holds it.
 
 ## How data gets there
 

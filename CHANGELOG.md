@@ -11,6 +11,9 @@ here ahead of an actual release.
 
 ### Added
 
+- **Stale missions on the HUD** — `GET /v1/hud/missions` returns `last_activity` (the later of the mission's `updated_at` and its newest journal event) and `stale` (not complete, idle 48 hours), and takes a `stale` filter. The mission list shows a `stale` pill, the header counts stale missions, and the status menu has a **stale** option.
+- **Missions record their harness on create** — `POST /v1/missions` takes `harness`; `PATCH` fills it only while it is empty, never moving a mission between harnesses; `GET /v1/missions` returns it. `mission_create` sends the mcpd's `BISHOP_HARNESS`, and the reconciler sends `--harness` on create and claims harness-less missions it owns. `scripts/backfill-mission-links.py` gains a `mission-harness` part (from the mission's own documents) and `--only` (`make mission-links ONLY=…`).
+- **Plan:** `docs/plans/MEMORY-INSIGHT-PLAN.md`.
 - **Directive proposal reopen and amendment** — operators can now reopen accepted, declined or expired directive proposals, which moves them back to pending. A decided proposal that carries a `directive_id` can be re-decided: accepting it amends the existing `DIR-NNN` (preserves the original `ratified_at`), declining it retires the directive. The triage page's Directives tab shows a Reopen button on decided rows and cards on reopened proposals showing "reopened — amends DIR-xxx" with buttons to Ratify as amendment or Retire. Route `POST /v1/directive-proposals/:id/reopen` with `{decided_by, note}` required; 400 for a pending proposal, 404 for unknown id; prior state recorded in `directive.reopened` flight row. The `/v1/directives` route now returns a derived `status` field: `active`, `retired` or `under-review`.
 - **Stale triage run detection and operator-close** — runs are now tracked for activity. `GET /v1/triage/runs` adds `last_activity_at` (newest of started_at and child-table timestamps) and `stale` (running with no activity ≥30 minutes). The triage page's Runs tab shows a Last activity column and a `stale` pill. Operators can close a stale run with `POST /v1/triage/runs/:id/operator-close` (body: `{status: done|failed, decided_by, note}`); returns 409 if already finished or not stale, 404 if unknown; appends an operator note and writes `triage_run.operator_closed` flight row. `PATCH /v1/triage/runs/:id` now returns 409 if the run is no longer running, preventing overwrites after an operator close.
 - **`export-decisions.py` now amends and retires in place** — beyond appending new ratifications, the exporter now amends existing `DIR-NNN` entries and retires directives in-place in `DIRECTIVES.md`. It only touches entries whose Added line has `**Source:** bishop-memory triage` (service-owned); hand-authored entries are byte-preserved. Exit code 0 ok, 1 failure, 2 missing harness or file, 3 conflicts only (1 and 2 outrank 3). An entry exported for the first time after amendment records the amendment date as Added. Calling `make triage-export` before amending preserves the original date. `scripts/reconcile-memory.py` no longer PUTs directives that have a proposal, so a UI amendment is never reverted by stale Markdown.
@@ -32,6 +35,8 @@ here ahead of an actual release.
 
 ### Changed
 
+- **Search ranks scratch lower** — `GET /v1/memory/search` (and `memory_search`) counts `workspace` documents at half their bm25 score, so findings, patterns, directives, briefs and debriefs come first for the same match; `rank` is the weighted value.
+- **`mission.updated` journal notes say what changed** — each changed field as `field: "old" → "new"`, or `Mission updated (no change)`, instead of the bare "Mission updated".
 - **The triage page and the mission HUD have a new look**: a green terminal style in IBM Plex Mono and VT323, with the same light, dark and auto themes, and the wiki screenshots regenerated to match. The pages' behaviour is unchanged, except that the HUD now scrolls its mission list, not the whole page, to show the selected mission.
 - `scripts/clean-scratch.py` works through the API and runs on the machine that holds the harness checkouts. Its `--url` option replaces `--db`.
 
@@ -69,6 +74,8 @@ here ahead of an actual release.
 
 ### Fixed
 
+- **HUD journal times** — events show when they happened (`occurred_at`, the harness's `YYYY-MM-DD HH:MM UTC` now parsed) rather than when the service stored them, with the stored time on hover.
+- **HUD agent roles** — a step by the operator shows `human operator`, and a name no agent definition has (such as `senior (general-purpose)`) shows a **not in crew** tag instead of a blank role.
 - **The reconciler skipped findings and never linked them to missions.**
   `scripts/reconcile-memory.py` read only `**Suggestion**:`, so entries
   written `**Suggestion:**` were dropped without a word; it now reads

@@ -169,7 +169,7 @@ Use this, not `mission_create`, in central mode. The sequence is global across e
 
 **Route:** `POST /v1/missions`
 
-Create a new mission. Returns {"id":...,"created":true}.
+Create a new mission, owned by the harness this server runs for (BISHOP_HARNESS). Returns {"id":...,"created":true}.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

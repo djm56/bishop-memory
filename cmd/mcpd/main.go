@@ -223,7 +223,7 @@ func registerTools(s *server.MCPServer, c *client) {
 	// call.
 	s.AddTool(
 		mcp.NewTool("mission_create",
-			mcp.WithDescription("Create a new mission. Returns {\"id\":...,\"created\":true}."),
+			mcp.WithDescription("Create a new mission, owned by the harness this server runs for (BISHOP_HARNESS). Returns {\"id\":...,\"created\":true}."),
 			mcp.WithString("id",
 				mcp.Required(),
 				mcp.Description("Unique mission ID, max 128 chars. Required."),
@@ -545,6 +545,7 @@ type createMissionBody struct {
 	Priority   string `json:"priority,omitempty"`
 	NextAction string `json:"next_action,omitempty"`
 	Blockers   string `json:"blockers,omitempty"`
+	Harness    string `json:"harness,omitempty"`
 }
 
 // updateMissionBody is the JSON body for PATCH /v1/missions/<id>. Fields
@@ -808,6 +809,10 @@ func makeMissionCreateHandler(c *client) func(ctx context.Context, req mcp.CallT
 			Priority:   strings.TrimSpace(mcp.ParseString(req, "priority", "")),
 			NextAction: mcp.ParseString(req, "next_action", ""),
 			Blockers:   mcp.ParseString(req, "blockers", ""),
+			// The mission belongs to the harness this mcpd serves, so the
+			// HUD and performance page can place it; a mission created
+			// without one stayed harness-less until a backfill.
+			Harness: c.harness,
 		}
 
 		u, err := url.Parse(c.baseURL)

@@ -11,6 +11,9 @@ Fills the mission links the database has never recorded:
                       flight_recorder's mission.step and step-sync events.
   4. finding links  — findings.mission_id, from debrief "[date] — target"
                       references, then from when the finding was recorded.
+  5. mission harness — missions.harness, from the harness of the mission's
+                      imported brief, progress and debrief, when they agree on
+                      exactly one.
 
 Dry run by default: every part reports what it would change. --apply writes,
 after copying the database to <db stem>.bak-<timestamp>.db with SQLite's backup API
@@ -19,9 +22,12 @@ after copying the database to <db stem>.bak-<timestamp>.db with SQLite's backup 
 Run after deploying the matching memoryd and POST /v1/documents/sync, so the
 debriefs are in the documents table with their mission_id.
 
+--only runs a subset of the parts by name (harness, orphans, steps,
+findings, mission-harness), for example --only mission-harness.
+
 Usage:
   scripts/backfill-mission-links.py [--db data/memory.db]
-      [--rename-harness kirsch-opencode=kirschopencode] [--apply]
+      [--rename-harness kirsch-opencode=kirschopencode] [--only PART,...] [--apply]
 """
 
 import argparse
@@ -185,13 +191,55 @@ def link_findings(db, verbose):
     return out
 
 
+def backfill_mission_harness(db, verbose):
+    """Part 5: missions.harness from the harness of the mission's own documents.
+
+    Missions created through POST /v1/missions before it accepted a harness
+    (the reconciler's path) have none, which keeps them off the HUD's harness
+    filter and the performance page. A mission's brief, progress and debrief
+    were imported from one harness's memory root, so when those documents
+    name exactly one harness, that is the mission's. A mission whose
+    documents name none or several is left NULL and listed with --verbose.
+    """
+    rows = db.execute(
+        """SELECT m.id,
+                  (SELECT group_concat(DISTINCT d.harness) FROM documents d
+                    WHERE d.mission_id = m.id AND d.harness IS NOT NULL) AS harnesses
+             FROM missions m
+            WHERE m.harness IS NULL
+            ORDER BY m.id"""
+    ).fetchall()
+    changes, unresolved = [], []
+    for mission_id, harnesses in rows:
+        names = harnesses.split(",") if harnesses else []
+        if len(names) == 1:
+            db.execute("UPDATE missions SET harness = ? WHERE id = ? AND harness IS NULL", (names[0], mission_id))
+            changes.append(f"mission {mission_id}: harness -> {names[0]}")
+        else:
+            unresolved.append(f"mission {mission_id}: left NULL (documents name {harnesses or 'no harness'})")
+    if unresolved:
+        changes.append(f"{len(unresolved)} missions without a single harness left NULL")
+        if verbose:
+            changes += unresolved
+    return changes
+
+
+PARTS = ("harness", "orphans", "steps", "findings", "mission-harness")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--db", default="data/memory.db")
     parser.add_argument("--rename-harness", action="append", default=[], metavar="OLD=NEW")
     parser.add_argument("--apply", action="store_true", help="write the changes (default: dry run)")
-    parser.add_argument("--verbose", action="store_true", help="list ambiguous findings")
+    parser.add_argument("--verbose", action="store_true", help="list ambiguous findings and missions")
+    parser.add_argument("--only", default=",".join(PARTS), metavar="PART,...",
+                        help="comma-separated parts to run: " + ", ".join(PARTS) + " (default: all)")
     args = parser.parse_args()
+
+    only = {p.strip() for p in args.only.split(",") if p.strip()}
+    if not only or only - set(PARTS):
+        parser.error(f"--only wants parts from {', '.join(PARTS)}, got {args.only!r}")
 
     renames = []
     for pair in args.rename_harness:
@@ -218,10 +266,16 @@ def main():
     try:
         db.execute("BEGIN IMMEDIATE")
         report = []
-        report += rename_harnesses(db, renames)
-        report += delete_orphan_documents(db)
-        report += backfill_steps(db)
-        report += link_findings(db, args.verbose)
+        if "harness" in only:
+            report += rename_harnesses(db, renames)
+        if "orphans" in only:
+            report += delete_orphan_documents(db)
+        if "steps" in only:
+            report += backfill_steps(db)
+        if "findings" in only:
+            report += link_findings(db, args.verbose)
+        if "mission-harness" in only:
+            report += backfill_mission_harness(db, args.verbose)
         if args.apply:
             db.commit()
         else:

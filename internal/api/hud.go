@@ -25,11 +25,29 @@ import (
 const crewNameSQL = `lower(replace(CASE WHEN instr(agent, ':') > 0
 	THEN substr(agent, instr(agent, ':') + 1) ELSE agent END, '@', ''))`
 
+// lastActivitySQL is a mission's most recent sign of life: its own
+// updated_at or its newest flight-recorder event, whichever is later. Step
+// writes and journal appends do not touch missions.updated_at, so the
+// mission row alone would make a busy mission look idle.
+const lastActivitySQL = `max(m.updated_at, COALESCE(
+	(SELECT max(fr.created_at) FROM flight_recorder fr WHERE fr.mission_id = m.id), m.updated_at))`
+
+// staleAfter is how long an unfinished mission (not-started, in-progress or
+// blocked) may go without activity before the HUD flags it. Missions run
+// for hours; two quiet days means one was abandoned or its harness stopped
+// syncing (mission-20261009-02 sat not-started for five days unnoticed).
+const staleAfter = "-48 hours"
+
+// staleSQL is true for an unfinished mission idle for longer than staleAfter.
+const staleSQL = `(m.status <> 'complete' AND ` + lastActivitySQL + ` < datetime('now', '` + staleAfter + `'))`
+
 // hudMissionsHandler handles GET /v1/hud/missions.
 //
-// Filters (all optional, AND-ed): harness, status, outcome, and q — matched
+// Filters (all optional, AND-ed): harness, status, outcome, stale (any
+// non-empty value: only stale missions, see staleSQL), and q — matched
 // against the mission id and title, and as a full-text search over the
-// mission's brief, progress and debrief. Newest first.
+// mission's brief, progress and debrief. Newest first. Each mission carries
+// last_activity and stale.
 func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		where := []string{}
@@ -39,6 +57,9 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 				where = append(where, "m."+column+" = ?")
 				args = append(args, v)
 			}
+		}
+		if strings.TrimSpace(c.Query("stale")) != "" {
+			where = append(where, staleSQL)
 		}
 		if q := strings.TrimSpace(c.Query("q")); q != "" {
 			like := "%" + q + "%"
@@ -67,6 +88,8 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 			       (SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) AS grade,
 			       (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) AS grade_state,
 			       m.opened_at, m.closed_at, m.updated_at,
+			       ` + lastActivitySQL + ` AS last_activity,
+			       ` + staleSQL + ` AS stale,
 			       (SELECT COUNT(*) FROM mission_steps s WHERE s.mission_id = m.id) AS steps,
 			       (SELECT COUNT(*) FROM mission_steps s WHERE s.mission_id = m.id AND s.status = 'done') AS steps_done,
 			       (SELECT COUNT(*) FROM findings f WHERE f.mission_id = m.id) AS findings,

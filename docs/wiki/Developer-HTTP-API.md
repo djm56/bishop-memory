@@ -75,18 +75,21 @@ Routes with no tool are the operator/reconciler surface. Keeping them off both `
 
 `internal/api/hud.go`. Read-only, under `/v1/hud` so nothing the harnesses, `mcpd` or the triage agents call changed shape. Rows come back as maps keyed by column name (`queryMaps`), so the page can show a new column without a model change.
 
-**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
+**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match), `grade` (a letter, or `ungraded`), `stale` (any value: only stale missions) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
 
 ```json
 {
   "missions":  [{"id", "title", "status", "outcome", "harness", "owner", "priority",
-                 "opened_at", "closed_at", "updated_at",
+                 "grade", "grade_state", "opened_at", "closed_at", "updated_at",
+                 "last_activity", "stale",
                  "steps", "steps_done", "findings", "patterns", "has_brief", "has_debrief"}],
   "harnesses": [{"name", "missions"}]
 }
 ```
 
 `harnesses` counts missions per non-NULL `missions.harness` and ignores the filters.
+
+`last_activity` is the later of the mission's `updated_at` and its newest flight-recorder event, since step writes and journal appends do not touch `updated_at`. `stale` is 1 for a mission that is not `complete` and has had no activity for 48 hours (`staleAfter` in `hud.go`).
 
 **`GET /v1/hud/missions/:missionID`** — one mission; 404 `mission not found`. Keys:
 
@@ -110,10 +113,15 @@ These routes kept their request and response shapes; what changed is what they w
 | Route | Side effect |
 |---|---|
 | `POST /v1/documents/sync` | Body `root`: syncs that root, tagged with the harness registered on it if any; responds `{"synced":true,"root":…}`. Body `harness`: syncs that harness's registered `memory_root` (404 `harness not found` if none); responds with `root`. Neither: syncs every registered harness root (once per root; the most recently seen name wins when two share one) and responds `{"synced":true,"roots":[…]}`; with no harness registered it falls back to `MEMORY_ROOT` (then `testdata/memory`) and answers with `root`. For every root that has a harness, it also imports the `agents/` directory beside the root into `crew`; a crew failure is logged, never returned. The walker now skips hidden directories |
-| `PATCH /v1/missions/:missionID` | After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness, no root, or a root that is not a directory on this machine (a remote server, where the client pushes instead): skipped. A failure is logged and never fails the update |
+| `POST /v1/missions` | Stores the optional body `harness` on the mission. `mcpd`'s `mission_create` sends its `BISHOP_HARNESS`, and the reconciler sends its `--harness` |
+| `PATCH /v1/missions/:missionID` | Body `harness` fills `missions.harness` only while it is NULL; it never moves a mission to another harness. The `mission.updated` journal row's note names each changed field, `field: "old" → "new"` (values cut at 80 characters), or says `Mission updated (no change)`. After the update commits, re-imports `missions/<id>/BRIEF.md`, `PROGRESS.md` and `DEBRIEF.md` from the memory root registered for the mission's harness (`importer.SyncMission`). No harness, no root, or a root that is not a directory on this machine (a remote server, where the client pushes instead): skipped. A failure is logged and never fails the update |
 | `POST /v1/missions/:missionID/steps` | `stampStepTiming`: sets `started_at` the first time the step is stored `in-progress`, and `ended_at` each time it moves into `done` or `failed` from another status, unless the request carried that field. Only for a mission that is not `complete`, since a completed mission's steps arrive from a replayed `PROGRESS.md` |
 | `POST /v1/flight-recorder` | Event `step-sync` with a `mission_id` and `step` copies `note` into that step's `summary`, in the same transaction. A step the mission does not have is left alone |
 | `POST /v1/findings` | No `mission_id` but a `harness`: `openMissionFor` takes that harness's open mission (`in-progress` or `blocked`, most recently updated), unless `finding_date` is before the day it opened, so a replayed backlog is not pinned to whatever is open now |
+
+## Search ranking
+
+`GET /v1/memory/search` orders hits by FTS5 `bm25` with one adjustment: documents of kind `workspace` (a harness's scratch notes under `<memory root>/workspace/`) count at half their score, and `rank` in the response is that weighted value. Scratch is still returned, and a strong scratch match can still beat a weak one elsewhere, but for the same match findings, patterns, directives, briefs and debriefs come first. `make scratch-clean` removes old scratch altogether.
 
 ## The error contract
 
