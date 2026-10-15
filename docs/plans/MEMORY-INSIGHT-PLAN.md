@@ -2,10 +2,9 @@
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
 (mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
-built on branch feat/insight-agent-mistakes, not yet merged; decision P1 settled yes
-(2026-10-14); remaining phase 1 tables (deliverables, lessons, step_reviews) planned;
+merged to main (2347527) and live; decision P1 settled yes (2026-10-14); remaining phase 1 tables (deliverables, lessons, step_reviews) planned;
 phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
-Date: 2026-10-14.
+Date: 2026-10-15.
 
 The service captures missions well, and the HUD shows one mission well. What
 neither does yet is answer questions across missions: which agents are
