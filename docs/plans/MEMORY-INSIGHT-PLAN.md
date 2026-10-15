@@ -2,7 +2,7 @@
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
 (mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
-merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) built on branch feat/insight-deliverables, reviewed and staged on a database copy (2026-10-15), not yet merged; decision P1 settled yes (2026-10-14); remaining phase 1 tables (lessons, step_reviews) planned;
+merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac), staged on a database copy (2026-10-15), not yet deployed; decision P1 settled yes (2026-10-14); remaining phase 1 tables (lessons, step_reviews) planned;
 phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
 Date: 2026-10-15.
 
