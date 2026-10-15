@@ -79,6 +79,14 @@ Start and end times are recorded by the service as the step moves to `in-progres
 
 The findings linked to this mission, each with its id, date, status, triage category (or `uncategorised`), a **directive candidate** tag where the classifier set one, the target, the classifier's summary (or the suggestion) and the processor's recommendation and rationale. A decided finding shows its approver, date and note. **Open in triage →** takes you to the finding on the review page.
 
+### Deliverables
+
+The debrief's **Deliverables Changed** bullets, one row each in order: the path (or `—` when the bullet names none) and the note. With no rows the section says why: no deliverables listed in the debrief, no debrief imported for a closed mission, or the debrief is written when the mission closes.
+
+### Agent mistakes
+
+The debrief's **Sub-Agent Mistakes and Corrections** table, one card per row: the agent (as `@name`, or the cell as written when no crew name could be read), the impact level and its note, the mistake, and **fixed** and **prevent** lines for the correction and prevention. Empty states are worded as for Deliverables.
+
 ### Debrief
 
 `DEBRIEF.md`, rendered. An open mission says the debrief is written when the mission closes.
@@ -160,4 +168,4 @@ Like the review-page images they are produced from made-up demo data on a throwa
 
 - It cannot change a mission, step or finding. Missions change through the harness; findings are decided on the review page.
 - It cannot import files. The brief, progress and debrief appear after a document sync or a mission update.
-- It does not parse the debrief into fields beyond the acceptance criteria lines. The rest is shown as written.
+- It parses the debrief only into the acceptance criteria lines, the deliverables and the agent mistakes. The rest is shown as written.

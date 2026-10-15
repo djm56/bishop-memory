@@ -88,7 +88,7 @@ Each bullet below is a candidate only, not a commitment.
 
 - **Multi-path bullets.** A bullet such as ``- `a.go`, `b.go` — note`` stores only the first path, and its note begins with `, \`b.go\``. That is 20 of 592 rows on a copy of the live database (2026-10-15). Options: one row per path, or strip the leading path list from the note.
 - **Label-prefixed bullets.** Bullets such as `Tests: \`…\`` and `Docs: …` get a NULL path. That is 14 of the 82 NULL-path rows. Option: read paths after a leading `Label:`.
-- **HUD page sections.** The page itself does not yet render `agent_mistakes` or `deliverables`; they are API-only. Option: a section per table on the mission page, before the `/crew` page in phase 2.
+- **HUD page sections.** Shipped 2026-10-15 (3a0ba79): the mission page renders `deliverables` and `agent_mistakes` as sections before the debrief.
 - **Commit-failure tests.** The commit-failure path of the replace transactions has no test for deliverables, mistakes or criteria (checked in internal/importer tests, 2026-10-15). A deferred foreign key in a test schema can force a COMMIT failure.
 - **Parser edge cases, accepted for now.** Bullets inside fenced code blocks are read as rows. A bold span such as `**Done.**` or `**v1.2**` counts as a path because it contains a `.`. Neither occurs in the live data: a check of the staged copy on 2026-10-15 found no bullets inside fenced blocks and no such bold spans stored as paths.
 - **Staging figures.** 592 rows over 77 missions, 82 with NULL path (14%), sync skipped 0 and errors 0 (copy of the live database, 2026-10-15).
