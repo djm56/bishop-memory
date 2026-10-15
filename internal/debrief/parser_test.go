@@ -1036,3 +1036,436 @@ func TestParseMistakesNoneRuleMistakeCell(t *testing.T) {
 		})
 	}
 }
+
+// TestParseDeliverablesBacktickPath extracts path from backtick span.
+func TestParseDeliverablesBacktickPath(t *testing.T) {
+	// `` `test/bishop/page.php` `` gives path test/bishop/page.php
+	section := `- ` + "`test/bishop/page.php`" + ` — New. Dedicated classic-hierarchy template for WordPress pages.`
+	rows, skipped, ok := ParseDeliverables(section)
+
+	if !ok {
+		t.Fatal("expected ok=true, got ok=false")
+	}
+	if skipped != 0 {
+		t.Errorf("expected skipped=0, got %d", skipped)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].Path != "test/bishop/page.php" {
+		t.Errorf("expected path='test/bishop/page.php', got %q", rows[0].Path)
+	}
+	if rows[0].Note != "New. Dedicated classic-hierarchy template for WordPress pages." {
+		t.Errorf("expected note='New. Dedicated...' got %q", rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesBacktickNotAtStart shows backticks not at start → no path extraction.
+func TestParseDeliverablesBacktickNotAtStart(t *testing.T) {
+	// Root `README.md` with backtick not at start → path="" and whole text as note
+	section := `- Root ` + "`README.md`" + ` — repointed at plan/PROGRESS.md; doc/ claim corrected`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "" {
+		t.Errorf("expected path='', got %q", rows[0].Path)
+	}
+	want := "Root " + "`README.md`" + ` — repointed at plan/PROGRESS.md; doc/ claim corrected`
+	if rows[0].Note != want {
+		t.Errorf("expected note=%q, got %q", want, rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesPathNotValidFails shows that invalid paths trigger no-path mode.
+func TestParseDeliverablesPathNotValidFails(t *testing.T) {
+	// **Nothing is committed.** is bold but not a valid path → path="" and whole text as note
+	section := `- **Nothing is committed.** The working tree holds three missions' changes`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "" {
+		t.Errorf("expected path='', got %q", rows[0].Path)
+	}
+	want := "**Nothing is committed.** The working tree holds three missions' changes"
+	if rows[0].Note != want {
+		t.Errorf("expected note=%q, got %q", want, rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesBoldPath extracts path from **...**.
+func TestParseDeliverablesBoldPath(t *testing.T) {
+	// **db/schema.sql** — added agent_mistakes table
+	section := `- **db/schema.sql** — added agent_mistakes table`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "db/schema.sql" {
+		t.Errorf("expected path='db/schema.sql', got %q", rows[0].Path)
+	}
+	if rows[0].Note != "added agent_mistakes table" {
+		t.Errorf("expected note='added agent_mistakes table', got %q", rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesTotalChanges tests a line with no path.
+func TestParseDeliverablesTotalChanges(t *testing.T) {
+	// **Total changes**: 6 files, 195 insertions, 98 deletions
+	section := `- **Total changes**: 6 files, 195 insertions, 98 deletions`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "" {
+		t.Errorf("expected path='', got %q", rows[0].Path)
+	}
+	want := "**Total changes**: 6 files, 195 insertions, 98 deletions"
+	if rows[0].Note != want {
+		t.Errorf("expected note=%q, got %q", want, rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesProseOnlyNoPath tests a line with plain prose, no path.
+func TestParseDeliverablesProseOnlyNoPath(t *testing.T) {
+	// Verified zero broken links after repair; npm run check exit 0
+	section := `- Verified zero broken links after repair; npm run check exit 0`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "" {
+		t.Errorf("expected path='', got %q", rows[0].Path)
+	}
+	want := "Verified zero broken links after repair; npm run check exit 0"
+	if rows[0].Note != want {
+		t.Errorf("expected note=%q, got %q", want, rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesAsteriskBullet tests * as bullet marker.
+func TestParseDeliverablesAsteriskBullet(t *testing.T) {
+	// * instead of - as marker
+	section := `* **file.txt** — added`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "file.txt" {
+		t.Errorf("expected path='file.txt', got %q", rows[0].Path)
+	}
+}
+
+// TestParseDeliverablesSeparatorVariants tests different separator formats.
+func TestParseDeliverablesSeparatorVariants(t *testing.T) {
+	testCases := []struct {
+		name     string
+		line     string
+		wantPath string
+		wantNote string
+	}{
+		{" — separator", `- **path/file.go** — note text`, "path/file.go", "note text"},
+		{" – separator", `- **path/file.go** – note text`, "path/file.go", "note text"},
+		{" - separator", `- **path/file.go** - note text`, "path/file.go", "note text"},
+		{": separator", `- **path/file.go**: note text`, "path/file.go", "note text"},
+		{"alone : separator", `- **path/file.go** : note text`, "path/file.go", "note text"},
+		{"lone — no space after", `- **p/f.go** —`, "p/f.go", ""},
+		{"lone – no space after", `- **p/f.go** –`, "p/f.go", ""},
+		{"lone - no space after", `- **p/f.go** -`, "p/f.go", ""},
+		{"`a/b.go`:note", `- ` + "`a/b.go`" + `:note`, "a/b.go", "note"},
+		// Dashes that are not lone separators should be part of the note
+		{"-12 lines not a separator", `- **a/b.go** -12 lines`, "a/b.go", "-12 lines"},
+		{"--force not a separator", `- **a/b.go** --force`, "a/b.go", "--force"},
+		{"—note not lone separator", `- **a/b.go** —note`, "a/b.go", "—note"},
+		// Bold with backticks and colon handling
+		{"bold backtick colon inside", `- **` + "`a/b.go:`" + `** x`, "a/b.go", "x"},
+		{"bold backtick colon outside", `- **` + "`a/b.go`:" + `** x`, "a/b.go", "x"},
+		{"bold backtick no colon", `- **` + "`internal/x.go`" + `** — x`, "internal/x.go", "x"},
+		{"bold plain colon", `- **db/schema.sql:** x`, "db/schema.sql", "x"},
+		{"bold double colon", `- **a/b.go::** x`, "a/b.go", "x"},
+		{"bold double colon after backticks rejected", `- **` + "`a/b.go`::" + `** x`, "", "**`a/b.go`::** x"},
+		{"bold unmatched backtick trailing only", `- **a/b.go` + "`" + `** x`, "", "**a/b.go`** x"},
+		{"bold unmatched backtick leading only", `- **` + "`a/b.go" + `** x`, "", "**`a/b.go** x"},
+		{"bold prose not a path", `- **Nothing is committed.** x`, "", "**Nothing is committed.** x"},
+		// Dash with no space before it: entire remaining text is a separator
+		{"lone em dash no space before", `- **a/b.go**—`, "a/b.go", ""},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, _, ok := ParseDeliverables(tc.line)
+			if !ok || len(rows) != 1 {
+				t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+			}
+			if rows[0].Path != tc.wantPath {
+				t.Errorf("expected path=%q, got %q", tc.wantPath, rows[0].Path)
+			}
+			if rows[0].Note != tc.wantNote {
+				t.Errorf("expected note=%q, got %q", tc.wantNote, rows[0].Note)
+			}
+		})
+	}
+}
+
+// TestParseDeliverablesIgnoresIndentedAndNested tests that indented and nested bullets are ignored.
+func TestParseDeliverablesIgnoresIndentedAndNested(t *testing.T) {
+	section := `- **top-level.go** — kept
+  - indented sub-bullet not kept
+    - nested even more
+- **another.go** — kept too`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 2 {
+		t.Fatalf("expected ok=true and 2 rows, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "top-level.go" {
+		t.Errorf("expected first path='top-level.go', got %q", rows[0].Path)
+	}
+	if rows[1].Path != "another.go" {
+		t.Errorf("expected second path='another.go', got %q", rows[1].Path)
+	}
+}
+
+// TestParseDeliverablesIgnoresHeadingsAndProse tests that headings and prose lines are ignored.
+func TestParseDeliverablesIgnoresHeadingsAndProse(t *testing.T) {
+	section := `- **first.go** — kept
+### A subheading
+This is prose that should be ignored
+---
+- **second.go** — kept too`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 2 {
+		t.Fatalf("expected ok=true and 2 rows, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "first.go" {
+		t.Errorf("expected first path='first.go', got %q", rows[0].Path)
+	}
+	if rows[1].Path != "second.go" {
+		t.Errorf("expected second path='second.go', got %q", rows[1].Path)
+	}
+}
+
+// TestParseDeliverablesNoneOnly tests a section with only none-rows.
+func TestParseDeliverablesNoneOnly(t *testing.T) {
+	// Section with only none-rows
+	section := `- none
+- —
+- –
+- -`
+	rows, skipped, ok := ParseDeliverables(section)
+
+	if !ok || skipped != 0 {
+		t.Fatalf("expected ok=true and skipped=0, got ok=%v and skipped=%d", ok, skipped)
+	}
+	if len(rows) != 0 {
+		t.Errorf("expected 0 rows from none-only section, got %d", len(rows))
+	}
+}
+
+// TestParseDeliverablesEmptySection tests an empty section.
+func TestParseDeliverablesEmptySection(t *testing.T) {
+	// Section with no top-level bullets
+	section := ""
+	rows, skipped, ok := ParseDeliverables(section)
+
+	if ok {
+		t.Errorf("expected ok=false for empty section, got ok=true")
+	}
+	if skipped != 0 {
+		t.Errorf("expected skipped=0, got %d", skipped)
+	}
+	if len(rows) != 0 {
+		t.Errorf("expected 0 rows, got %d", len(rows))
+	}
+}
+
+// TestParseDeliverablesProseOnlySection tests a section with no bullets.
+func TestParseDeliverablesProseOnlySection(t *testing.T) {
+	// Section with prose only, no bullets
+	section := `This is just prose
+No bullets here
+Just text`
+	_, skipped, ok := ParseDeliverables(section)
+
+	if ok {
+		t.Errorf("expected ok=false for prose-only section, got ok=true")
+	}
+	if skipped != 0 {
+		t.Errorf("expected skipped=0, got %d", skipped)
+	}
+}
+
+// TestParseDeliverablesTableOnlySection tests a section with only a table.
+func TestParseDeliverablesTableOnlySection(t *testing.T) {
+	// Section with only table lines
+	section := `| Header | Value |
+|--------|-------|
+| col1 | col2 |`
+	_, skipped, ok := ParseDeliverables(section)
+
+	if ok {
+		t.Errorf("expected ok=false for table-only section, got ok=true")
+	}
+	if skipped != 0 {
+		t.Errorf("expected skipped=0, got %d", skipped)
+	}
+}
+
+// TestParseDeliverablesBoldWithBackticks tests **`path`** format.
+func TestParseDeliverablesBoldWithBackticks(t *testing.T) {
+	// **`internal/x.go`** — note
+	section := `- **` + "`internal/x.go`" + `** — note`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "internal/x.go" {
+		t.Errorf("expected path='internal/x.go', got %q", rows[0].Path)
+	}
+	if rows[0].Note != "note" {
+		t.Errorf("expected note='note', got %q", rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesEmptyBullet tests bullets with no text or dash-only text.
+func TestParseDeliverablesEmptyBullet(t *testing.T) {
+	testCases := []struct {
+		name string
+		text string
+		want int
+	}{
+		{"empty bullet", "- ", 0},
+		{"bullet with CR", "- \r", 0},
+		{"dash only", "- - -", 0},
+		{"asterisk only", "* * *", 0},
+		{"spaces only", "-    ", 0},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, _, ok := ParseDeliverables(tc.text)
+			if !ok {
+				t.Errorf("expected ok=true, got ok=false")
+			}
+			if len(rows) != tc.want {
+				t.Errorf("expected %d rows, got %d", tc.want, len(rows))
+			}
+		})
+	}
+}
+
+// TestParseDeliverablesBacktickValidation tests backtick span path validation.
+func TestParseDeliverablesBacktickValidation(t *testing.T) {
+	testCases := []struct {
+		name     string
+		line     string
+		wantPath string
+		wantNote string
+	}{
+		{"valid backtick path", `- ` + "`npm/run.go`" + ` — note`, "npm/run.go", "note"},
+		{"empty backtick span", "- `` — note", "", "`` — note"},
+		{"backtick with space", "- `npm run check` passed", "", "`npm run check` passed"},
+		{"backtick with commit SHA", "- `5b407bc` — fix", "", "`5b407bc` — fix"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, _, ok := ParseDeliverables(tc.line)
+			if !ok || len(rows) != 1 {
+				t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+			}
+			if rows[0].Path != tc.wantPath {
+				t.Errorf("expected path=%q, got %q", tc.wantPath, rows[0].Path)
+			}
+			if rows[0].Note != tc.wantNote {
+				t.Errorf("expected note=%q, got %q", tc.wantNote, rows[0].Note)
+			}
+		})
+	}
+}
+
+// TestParseDeliverablesBoldTrailingColon tests stripping trailing colon from bold content.
+func TestParseDeliverablesBoldTrailingColon(t *testing.T) {
+	section := `- **db/schema.sql:** note`
+	rows, _, ok := ParseDeliverables(section)
+
+	if !ok || len(rows) != 1 {
+		t.Fatalf("expected ok=true and 1 row, got ok=%v and %d rows", ok, len(rows))
+	}
+	if rows[0].Path != "db/schema.sql" {
+		t.Errorf("expected path='db/schema.sql', got %q", rows[0].Path)
+	}
+	if rows[0].Note != "note" {
+		t.Errorf("expected note='note', got %q", rows[0].Note)
+	}
+}
+
+// TestParseDeliverablesComprehensive tests parsing of deliverables across various cases:
+// indented and non-bullet lines (ignored), none-bullets (skipped), path extraction from
+// bold and backticks with separator stripping, invalid markup and paths without separators.
+func TestParseDeliverablesComprehensive(t *testing.T) {
+	testCases := []struct {
+		name     string
+		line     string
+		expectOk bool
+		wantRows int
+		wantPath string
+		wantNote string
+	}{
+		// Tab-indented bullet ignored (no bullets)
+		{"tab indent", "\t- file.go — note", false, 0, "", ""},
+		// Not bullets (no bullets)
+		{"-foo at line start", "-foo text", false, 0, "", ""},
+		{"**x** at line start", "**x** text", false, 0, "", ""},
+		// None-words and none-bullets (none-only)
+		{"None", "- None", true, 0, "", ""},
+		{"NONE", "- NONE", true, 0, "", ""},
+		{"none.", "- none.", true, 0, "", ""},
+		{"—.", "- —.", true, 0, "", ""},
+		// Bold with no slash or dot
+		{"**Summary**", "- **Summary** note", true, 1, "", "**Summary** note"},
+		// Unclosed/invalid markup
+		{"unclosed backtick", "- `file.go note", true, 1, "", "`file.go note"},
+		{"empty backtick", "- `` note", true, 1, "", "`` note"},
+		{"unclosed bold", "- **file.go note", true, 1, "", "**file.go note"},
+		// Mixed section: valid and none bullets
+		{"mixed none and valid", `- none
+- **a/b.go** — note`, true, 1, "a/b.go", "note"},
+		// Valid paths and notes
+		{"backtick path", "- `a/b.go` — note", true, 1, "a/b.go", "note"},
+		{"bold path", "- **a/b.go** — note", true, 1, "a/b.go", "note"},
+		{"bold with colon", "- **a/b.go:** — note", true, 1, "a/b.go", "note"},
+		{"bare dash separator", "- **a/b.go** - note", true, 1, "a/b.go", "note"},
+		{"bare colon separator", "- **a/b.go**:note", true, 1, "a/b.go", "note"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, _, ok := ParseDeliverables(tc.line)
+			if ok != tc.expectOk {
+				t.Errorf("expected ok=%v, got ok=%v", tc.expectOk, ok)
+			}
+			if len(rows) != tc.wantRows {
+				t.Errorf("expected %d rows, got %d", tc.wantRows, len(rows))
+				return
+			}
+			if tc.wantRows > 0 {
+				if rows[0].Path != tc.wantPath {
+					t.Errorf("expected path=%q, got %q", tc.wantPath, rows[0].Path)
+				}
+				if rows[0].Note != tc.wantNote {
+					t.Errorf("expected note=%q, got %q", tc.wantNote, rows[0].Note)
+				}
+			}
+		})
+	}
+}

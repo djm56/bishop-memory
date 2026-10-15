@@ -344,6 +344,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			totalStats.CriteriaErrors += stats.CriteriaErrors
 			totalStats.MistakesSkipped += stats.MistakesSkipped
 			totalStats.MistakesErrors += stats.MistakesErrors
+			totalStats.DeliverablesSkipped += stats.DeliverablesSkipped
+			totalStats.DeliverablesErrors += stats.DeliverablesErrors
 			// A registered harness keeps its agent definitions beside its
 			// memory root; they fill the crew table.
 			if target.Name != "" {
@@ -356,22 +358,26 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 
 		if request.Root != "" || harness != "" {
 			c.JSON(http.StatusOK, gin.H{
-				"synced":           true,
-				"root":             roots[0],
-				"criteria_skipped": totalStats.CriteriaSkipped,
-				"criteria_errors":  totalStats.CriteriaErrors,
-				"mistakes_skipped": totalStats.MistakesSkipped,
-				"mistakes_errors":  totalStats.MistakesErrors,
+				"synced":               true,
+				"root":                 roots[0],
+				"criteria_skipped":     totalStats.CriteriaSkipped,
+				"criteria_errors":      totalStats.CriteriaErrors,
+				"mistakes_skipped":     totalStats.MistakesSkipped,
+				"mistakes_errors":      totalStats.MistakesErrors,
+				"deliverables_skipped": totalStats.DeliverablesSkipped,
+				"deliverables_errors":  totalStats.DeliverablesErrors,
 			})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"synced":           true,
-			"roots":            roots,
-			"criteria_skipped": totalStats.CriteriaSkipped,
-			"criteria_errors":  totalStats.CriteriaErrors,
-			"mistakes_skipped": totalStats.MistakesSkipped,
-			"mistakes_errors":  totalStats.MistakesErrors,
+			"synced":               true,
+			"roots":                roots,
+			"criteria_skipped":     totalStats.CriteriaSkipped,
+			"criteria_errors":      totalStats.CriteriaErrors,
+			"mistakes_skipped":     totalStats.MistakesSkipped,
+			"mistakes_errors":      totalStats.MistakesErrors,
+			"deliverables_skipped": totalStats.DeliverablesSkipped,
+			"deliverables_errors":  totalStats.DeliverablesErrors,
 		})
 	}
 }

@@ -500,6 +500,22 @@ CREATE TABLE IF NOT EXISTS agent_mistakes (
     CHECK (impact IS NULL OR impact IN ('low', 'med', 'high'))
 );
 
+-- mission_deliverables — rows of the DEBRIEF.md "Deliverables Changed" section,
+-- as split by internal/debrief.ParseDeliverables (the parsing rules live there).
+--
+-- ord is the line order within the section (top-level bullets only).
+-- path is the deliverable path (derived from backticks or bold formatting), or NULL
+-- when no path is found.
+-- note is the description text (everything after the optional path and separator).
+CREATE TABLE IF NOT EXISTS mission_deliverables (
+    mission_id  TEXT    NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    ord         INTEGER NOT NULL,
+    path        TEXT,
+    note        TEXT    NOT NULL,
+
+    PRIMARY KEY (mission_id, ord)
+);
+
 CREATE INDEX IF NOT EXISTS idx_mission_grades_state ON mission_grades(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_pending

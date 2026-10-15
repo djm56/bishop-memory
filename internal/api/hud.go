@@ -122,12 +122,12 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 //
 // It returns the mission row; its steps (in step order) and flight-recorder
 // events; its brief, progress and debrief bodies; its acceptance criteria; the
-// agent mistakes and corrections; the patterns it discovered; directives ratified
-// from proposals whose evidence includes its findings (status `active`), plus
-// pending proposals that carry a directive_id, which are reopened directives
-// awaiting a fresh decision (status `under-review`); the crew rows and service
-// records of the agents that ran its steps, the records limited to the
-// mission's dates.
+// agent mistakes and corrections; the deliverables changed; the patterns it
+// discovered; directives ratified from proposals whose evidence includes its
+// findings (status `active`), plus pending proposals that carry a directive_id,
+// which are reopened directives awaiting a fresh decision (status `under-review`);
+// the crew rows and service records of the agents that ran its steps, the records
+// limited to the mission's dates.
 func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -157,6 +157,7 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 			                 FROM documents WHERE mission_id = ? AND kind IN ('brief', 'progress', 'debrief')`},
 			{"criteria", `SELECT ord, criterion, result, evidence FROM mission_criteria WHERE mission_id = ? ORDER BY ord`},
 			{"agent_mistakes", `SELECT ord, agent, agent_raw, mistake, impact, impact_note, correction, prevention FROM agent_mistakes WHERE mission_id = ? ORDER BY ord`},
+			{"deliverables", `SELECT ord, path, note FROM mission_deliverables WHERE mission_id = ? ORDER BY ord`},
 			{"patterns", `SELECT id, name, context, solution, example, discovered_at
 			                FROM patterns WHERE discovered_mission = ? ORDER BY id`},
 			{"directives", `SELECT p.id AS proposal_id, p.directive_id, p.title, p.rule, p.decided_at,

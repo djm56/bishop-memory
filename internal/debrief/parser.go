@@ -6,6 +6,7 @@ package debrief
 
 import (
 	"strings"
+	"unicode"
 )
 
 // Mistake represents one row from a "Sub-Agent Mistakes and Corrections" table.
@@ -21,6 +22,14 @@ type Mistake struct {
 	ImpactNote string // Text after the level or "none", or the whole cell when its first word is not a level
 	Correction string // Corrective action taken
 	Prevention string // Prevention strategy for next time
+}
+
+// Deliverable represents one bullet from a "Deliverables Changed" section.
+// Path is the file path extracted from backticks or bold formatting, or empty string for NULL.
+// Note is the description text.
+type Deliverable struct {
+	Path string // File path or empty string for NULL
+	Note string // Description text
 }
 
 // ParseMistakes extracts mistake rows from the "Sub-Agent Mistakes and Corrections"
@@ -129,6 +138,232 @@ func ParseMistakes(section string) (rows []Mistake, skipped int, ok bool) {
 	}
 
 	return rows, skipped, ok
+}
+
+// ParseDeliverables extracts deliverable rows from the "Deliverables Changed" section body
+// (without the heading). Returns the parsed rows, the count of skipped sections (always 0),
+// and whether the section was readable.
+// ok is false only when the section contains no top-level bullets at all.
+//
+// Parsing rules:
+//   - Top-level bullets: lines whose first character is '-' or '*' followed by a space,
+//     with no leading indentation. Lines indented by space or tab, numbered lines,
+//     table lines (|), headings (#), rules (---), blank lines and prose are not rows.
+//   - None rows: a bullet whose text, trimmed and with one trailing '.' removed, is empty,
+//     case-insensitively equals "none", or consists only of '-', '*', '—', '–' and spaces,
+//     is a none-row: it is not returned and is not counted.
+//   - Path from backticks: if text starts with ` (backtick), extracts the backtick-delimited span,
+//     trims it, and checks if it is a valid path. If valid, path is the span; otherwise path is ""
+//     and note is the whole bullet text with backticks kept. Rest of text follows the closing backtick.
+//   - Path from bold: if text starts with **, extracts **X** and reads X in this order: strip one
+//     trailing ':', strip one pair of surrounding backticks, strip one more trailing ':'. A result
+//     that still contains a backtick is not a path. Otherwise the result is checked as a valid path.
+//     If valid, path is the result. If not, path is "" and note is whole text.
+//   - No path: otherwise path is "" and note is whole text.
+//   - Separator: when a path was found, strip exactly one leading separator from the rest
+//     (in order checked): " — ", " – ", " - ", " : ", ": ". Otherwise, when the whole rest,
+//     trimmed, equals a single "—", "–" or "-", the note is "" (this includes a dash with no space
+//     before it). Otherwise a leading ":" is stripped. Then trim; what remains is the note.
+//   - No top-level bullets: returns (nil, 0, false).
+func ParseDeliverables(section string) (rows []Deliverable, skipped int, ok bool) {
+	lines := strings.Split(section, "\n")
+
+	var topLevelBullets []string
+	for _, line := range lines {
+		if isTopLevelBullet(line) {
+			topLevelBullets = append(topLevelBullets, line)
+		}
+	}
+
+	// No top-level bullets at all.
+	if len(topLevelBullets) == 0 {
+		return nil, 0, false
+	}
+
+	// Process each top-level bullet.
+	for _, bullet := range topLevelBullets {
+		text := extractBulletText(bullet)
+		text = strings.TrimSpace(text)
+
+		// Check if it's a none-row.
+		if isNoneBullet(text) {
+			continue
+		}
+
+		// Extract path and the rest of the text.
+		path, rest := extractPath(text)
+
+		// Handle separator between path and note.
+		note := rest
+		if path != "" {
+			note = stripSeparator(rest)
+		}
+
+		rows = append(rows, Deliverable{Path: path, Note: note})
+	}
+
+	return rows, 0, true
+}
+
+// isTopLevelBullet returns true if the line is a top-level bullet (starts with - or *
+// followed by space, with no leading indentation).
+func isTopLevelBullet(line string) bool {
+	if line == "" {
+		return false
+	}
+	// Check for leading whitespace.
+	if len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+		return false
+	}
+	// Must start with - or * followed by space.
+	if len(line) < 2 {
+		return false
+	}
+	if (line[0] == '-' || line[0] == '*') && line[1] == ' ' {
+		return true
+	}
+	return false
+}
+
+// extractBulletText returns the text of a bullet after removing the leading marker (- or *).
+func extractBulletText(bullet string) string {
+	if len(bullet) < 2 {
+		return ""
+	}
+	// Skip the leading - or * and the space.
+	return bullet[2:]
+}
+
+// isNoneBullet returns true if the trimmed text, with trailing '.' removed, is empty,
+// case-insensitively equals "none", or consists only of '-', '*', '—', '–' and space characters.
+func isNoneBullet(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return true // Empty bullet is a none-row
+	}
+	text = strings.TrimSuffix(text, ".")
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return true // Empty after trimming suffix
+	}
+	lower := strings.ToLower(text)
+	if lower == "none" {
+		return true
+	}
+	// Check if text consists only of '-', '*', '—', '–' and spaces.
+	for _, ch := range text {
+		if ch != '-' && ch != '*' && ch != '—' && ch != '–' && ch != ' ' {
+			return false
+		}
+	}
+	return true // Contains only hyphens, em dashes, en dashes, asterisks and spaces
+}
+
+// extractPath returns the path and the rest of the text.
+// If path starts with backtick, extracts the backtick-delimited span, trims it, and applies
+// isValidPath. If valid, returns (span, rest); if not or if span is empty, returns ("", text)
+// with backticks kept in the note.
+// If path starts with **, extracts **X** and reads X in this order: strips one trailing ':',
+// strips one pair of surrounding backticks, strips one more trailing ':'. A result that
+// still contains a backtick is not a path; otherwise isValidPath is applied. If valid,
+// returns (the result, rest after the closing **). Otherwise returns ("", text).
+func extractPath(text string) (path, rest string) {
+	// Try backticks first: `X`
+	if strings.HasPrefix(text, "`") {
+		if idx := strings.Index(text[1:], "`"); idx != -1 {
+			path = strings.TrimSpace(text[1 : idx+1])
+			rest = text[idx+2:]
+			// Backtick span: check if it is a valid path.
+			if path != "" && isValidPath(path) {
+				return path, rest
+			}
+			// Empty or invalid: return empty path and whole text as note.
+			return "", text
+		}
+	}
+
+	// Try bold: **X**
+	if strings.HasPrefix(text, "**") {
+		endIdx := strings.Index(text[2:], "**")
+		if endIdx != -1 {
+			boldContent := text[2 : endIdx+2]
+			// Strip one trailing ':' (outside any backticks).
+			stripped := strings.TrimSuffix(boldContent, ":")
+			// Strip one pair of surrounding backticks.
+			stripped = stripSurroundingBackticks(stripped)
+			// Strip one trailing ':' from the result.
+			stripped = strings.TrimSuffix(stripped, ":")
+			// If the result still contains a backtick, it is not a path.
+			if strings.Contains(stripped, "`") {
+				return "", text
+			}
+			// Check if it's a valid path.
+			if isValidPath(stripped) {
+				rest = text[endIdx+4:]
+				return stripped, rest
+			}
+		}
+		// Bold didn't match; return whole text as note.
+		return "", text
+	}
+
+	// No path found.
+	return "", text
+}
+
+// stripSurroundingBackticks strips one pair of surrounding backticks if present.
+func stripSurroundingBackticks(s string) string {
+	if len(s) >= 2 && s[0] == '`' && s[len(s)-1] == '`' {
+		return s[1 : len(s)-1]
+	}
+	return s
+}
+
+// isValidPath returns true if the path contains no whitespace and contains "/" or ".".
+func isValidPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	// Check for whitespace.
+	for _, ch := range path {
+		if unicode.IsSpace(ch) {
+			return false
+		}
+	}
+	// Must contain "/" or ".".
+	return strings.ContainsAny(path, "/.")
+}
+
+// stripSeparator strips exactly one leading separator from the text and returns the result.
+// Separators checked in order: " — ", " – ", " - ", " : ", ": ". Then, when the whole text,
+// trimmed, equals a single "—", "–" or "-", the result is "". Then a leading ":" is stripped.
+// Returns the trimmed result.
+func stripSeparator(text string) string {
+	// Try the multi-character separators first (with leading space).
+	for _, sep := range []string{" — ", " – ", " - ", " : ", ": "} {
+		if strings.HasPrefix(text, sep) {
+			return strings.TrimSpace(strings.TrimPrefix(text, sep))
+		}
+	}
+
+	// Lone dash: only when the whole rest, trimmed, equals that dash alone.
+	rest := strings.TrimSpace(text)
+	if rest == "—" {
+		return ""
+	}
+	if rest == "–" {
+		return ""
+	}
+	if rest == "-" {
+		return ""
+	}
+
+	// Bare ":" with no space after it.
+	if strings.HasPrefix(text, ":") {
+		return strings.TrimSpace(strings.TrimPrefix(text, ":"))
+	}
+
+	return strings.TrimSpace(text)
 }
 
 // isSeparatorRow returns true if the line is non-blank and contains only '|', '-', ':'

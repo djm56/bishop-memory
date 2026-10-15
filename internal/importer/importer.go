@@ -5,8 +5,9 @@
 // is the only writer to those two tables (the importer controls the
 // documents lifecycle; there are no AFTER INSERT/UPDATE/DELETE triggers
 // on documents_fts — see db/schema.sql for the rationale). Importing a
-// BRIEF.md or DEBRIEF.md also refreshes mission_criteria (see criteria.go)
-// and importing a DEBRIEF.md also refreshes agent_mistakes (see mistakes.go).
+// BRIEF.md or DEBRIEF.md also refreshes mission_criteria (see criteria.go),
+// importing a DEBRIEF.md also refreshes agent_mistakes (see mistakes.go), and
+// importing a DEBRIEF.md also refreshes mission_deliverables (see deliverables.go).
 //
 // What gets imported:
 //
@@ -63,11 +64,12 @@
 //     (POST /v1/flight-recorder, /v1/missions, etc.); the importer never
 //     writes to them.
 //
-//   - Besides documents and documents_fts, the importer package does write three
+//   - Besides documents and documents_fts, the importer package does write four
 //     tables: mission_criteria, refreshed when a BRIEF.md or DEBRIEF.md is
 //     imported (criteria.go); agent_mistakes, refreshed when a DEBRIEF.md is
-//     imported (mistakes.go); and crew, upserted by SyncAgents and ImportAgent
-//     (agents.go).
+//     imported (mistakes.go); mission_deliverables, refreshed when a DEBRIEF.md
+//     is imported (deliverables.go); and crew, upserted by SyncAgents and
+//     ImportAgent (agents.go).
 //
 // Idempotency:
 //
@@ -120,7 +122,7 @@ import (
 // default maximum plus headroom for large notes.
 const MaxJSONLLineBytes = 16 * 1024 * 1024
 
-// SyncStats counts what the criteria and mistakes imports did during one sync or import.
+// SyncStats counts what the criteria, mistakes, and deliverables imports did during one sync or import.
 type SyncStats struct {
 	// CriteriaSkipped counts brief or debrief imports whose criteria were not
 	// read: the mission has no missions row yet, or the criteria heading is
@@ -137,6 +139,13 @@ type SyncStats struct {
 	// MistakesErrors counts database failures while refreshing agent_mistakes.
 	// They are logged and counted; they never fail the import.
 	MistakesErrors int
+	// DeliverablesSkipped counts debrief imports whose deliverables were not
+	// stored: the mission has no missions row yet, or the deliverables heading is
+	// present with no readable bullets. See storeMissionDeliverables.
+	DeliverablesSkipped int
+	// DeliverablesErrors counts database failures while refreshing mission_deliverables.
+	// They are logged and counted; they never fail the import.
+	DeliverablesErrors int
 }
 
 // add accumulates o into s.
@@ -145,6 +154,8 @@ func (s *SyncStats) add(o SyncStats) {
 	s.CriteriaErrors += o.CriteriaErrors
 	s.MistakesSkipped += o.MistakesSkipped
 	s.MistakesErrors += o.MistakesErrors
+	s.DeliverablesSkipped += o.DeliverablesSkipped
+	s.DeliverablesErrors += o.DeliverablesErrors
 }
 
 // Sync walks the memory tree at root and imports its contents into the
@@ -175,7 +186,7 @@ func SyncHarness(db *sql.DB, root, harness string) error {
 }
 
 // SyncHarnessStats is SyncHarness that also accumulates and returns
-// criteria and mistakes statistics (skipped sections and database errors).
+// criteria, mistakes, and deliverables statistics (skipped sections and database errors).
 func SyncHarnessStats(db *sql.DB, root, harness string) (SyncStats, error) {
 	resolvedRoot, cleanRoot, err := resolveRoot(root)
 	if err != nil {
@@ -206,13 +217,13 @@ var missionFiles = []string{"BRIEF.md", "PROGRESS.md", "DEBRIEF.md"}
 // SyncMission imports only missions/<missionID>/BRIEF.md, PROGRESS.md and
 // DEBRIEF.md under root — the cheap, targeted re-import run after a mission
 // update. Files that do not exist yet are skipped. missionID must be a single
-// path segment. It discards the criteria and mistakes statistics; see SyncMissionStats.
+// path segment. It discards the criteria, mistakes, and deliverables statistics; see SyncMissionStats.
 func SyncMission(db *sql.DB, root, harness, missionID string) error {
 	_, err := SyncMissionStats(db, root, harness, missionID)
 	return err
 }
 
-// SyncMissionStats is SyncMission that also returns the criteria and mistakes statistics
+// SyncMissionStats is SyncMission that also returns the criteria, mistakes, and deliverables statistics
 // accumulated over the files it imported.
 func SyncMissionStats(db *sql.DB, root, harness, missionID string) (SyncStats, error) {
 	var stats SyncStats
@@ -271,7 +282,7 @@ func resolveRoot(root string) (resolvedRoot, cleanRoot string, err error) {
 }
 
 // visit applies the path-safety checks to one walked entry and imports it if
-// it is a Markdown or JSONL file, accumulating criteria and mistakes statistics in stats.
+// it is a Markdown or JSONL file, accumulating criteria, mistakes and deliverables statistics in stats.
 func visit(db *sql.DB, resolvedRoot, cleanRoot, harness, path string, d fs.DirEntry, stats *SyncStats) error {
 	cleanPath := filepath.Clean(path)
 
@@ -356,7 +367,7 @@ func importMarkdown(db *sql.DB, absPath, relPath, harness string, stats *SyncSta
 // found it at relPath under a memory root: the same kind, title, mission id,
 // structured-field prefixes and upsert. sourcePath is stored as the document's
 // unique key — the file's absolute path on the machine it lives on. It
-// discards the criteria and mistakes statistics. No production code calls it: the document
+// discards the criteria, mistakes, and deliverables statistics. No production code calls it: the document
 // push route (POST /v1/documents/push) calls ImportMarkdownStats. It is kept as
 // the error-only form of that function.
 func ImportMarkdown(db *sql.DB, sourcePath, relPath, harness string, content []byte) error {
@@ -364,11 +375,11 @@ func ImportMarkdown(db *sql.DB, sourcePath, relPath, harness string, content []b
 	return err
 }
 
-// ImportMarkdownStats is ImportMarkdown that also returns the criteria
-// and mistakes statistics for this one file. For a BRIEF.md or DEBRIEF.md the upsert is
+// ImportMarkdownStats is ImportMarkdown that also returns the criteria,
+// mistakes, and deliverables statistics for this one file. For a BRIEF.md or DEBRIEF.md the upsert is
 // followed by a refresh of mission_criteria (see storeMissionCriteria) and for a DEBRIEF.md
-// a refresh of agent_mistakes (see mistakes.go), whose failures are counted in the
-// statistics and never returned as an error.
+// a refresh of agent_mistakes (see mistakes.go) and mission_deliverables (see deliverables.go),
+// whose failures are counted in the statistics and never returned as an error.
 func ImportMarkdownStats(db *sql.DB, sourcePath, relPath, harness string, content []byte) (SyncStats, error) {
 	var stats SyncStats
 	err := importMarkdownContent(db, sourcePath, relPath, harness, content, &stats)
@@ -378,7 +389,7 @@ func ImportMarkdownStats(db *sql.DB, sourcePath, relPath, harness string, conten
 // importMarkdownContent is the single implementation behind ImportMarkdown,
 // ImportMarkdownStats and the walker: it upserts the document and, for a brief
 // or debrief, accumulates the criteria refresh result into stats, and for a
-// debrief, accumulates the mistakes refresh result into stats.
+// debrief, accumulates the mistakes and deliverables refresh results into stats.
 func importMarkdownContent(db *sql.DB, sourcePath, relPath, harness string, content []byte, stats *SyncStats) error {
 	absPath := sourcePath
 	sha := sha256Hex(content)
@@ -408,6 +419,7 @@ func importMarkdownContent(db *sql.DB, sourcePath, relPath, harness string, cont
 	}
 	if kind == "debrief" {
 		stats.add(storeAgentMistakes(db, missionID, harness))
+		stats.add(storeMissionDeliverables(db, missionID, harness))
 	}
 	return nil
 }

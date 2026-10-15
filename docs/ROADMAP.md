@@ -28,14 +28,14 @@ Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 across missions: data health (phase 0), structured debriefs and review
 verdicts, crew, library and activity pages with operator grade review, cost
 and usage from transcripts, and a retrieval log with a brief-prep tool that
-feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); phase 1 slice 2 (`agent_mistakes`, 2347527, live); remaining slice tables and phases 2–4 planned, with decisions P2–P5 open. Plan:
+feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); phase 1 slice 2 (`agent_mistakes`, 2347527, live); phase 1 slice 3 (`mission_deliverables`, built on feat/insight-deliverables, not yet merged); remaining slice tables and phases 2–4 planned, with decisions P2–P5 open. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
 
 **Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
 `mission_deliverables` and `mission_lessons`, so the HUD can filter on wrong
 assumptions and files that change often. Tracked under the memory insight plan:
-`mission_criteria` shipped (c325080); `agent_mistakes` shipped (2347527); remaining debrief tables (deliverables, lessons, step_reviews) planned there.
-Status: criteria shipped; agent_mistakes shipped; remaining tables planned. Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) §3.
+`mission_criteria` shipped (c325080); `agent_mistakes` shipped (2347527); `mission_deliverables` built on feat/insight-deliverables, not yet merged; remaining debrief tables (lessons, step_reviews) planned there.
+Status: criteria shipped; agent_mistakes shipped; deliverables built; remaining tables planned. Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) §3.
 
 ## Findings triage
 
