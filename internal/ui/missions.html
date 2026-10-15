@@ -468,6 +468,7 @@
     const board = state.missions.find(x => x.id === m.id);
     const tile = (k, v, s, frac) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}${frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : ''}</div>`;
     const evFor = step => d.events.filter(e => e.step === step.step);
+    const dels = d.deliverables || [], mist = d.agent_mistakes || [];
 
     $('#view').innerHTML = `
       <div class="head">
@@ -509,6 +510,10 @@
         ${r ? `<div class="rec-row"><span class="rec ${esc(r.recommendation)}">${esc(r.recommendation)}</span><p>${esc(r.rationale)}</p></div>` : ''}
         ${x.decision_note ? `<div class="meta-row" style="margin-top:8px">${esc([x.approver, x.date_approved, x.decision_note].filter(Boolean).join(' · '))}</div>` : ''}
       </div>`; }).join('')}</div>` : '<div class="none">No findings linked to this mission.</div>'}</section>
+
+      <section class="sec"><h3>Deliverables <span class="n">${dels.length}</span></h3>${dels.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Path</th><th>Note</th></tr>${dels.map(x => `<tr><td class="mono">${esc(x.ord)}</td><td class="mono">${x.path ? esc(x.path) : '—'}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div>` : `<div class="none">${docs.debrief ? 'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+
+      <section class="sec"><h3>Agent mistakes <span class="n">${mist.length}</span></h3>${mist.length ? `<div class="list">${mist.map(x => `<div class="card"><div class="meta-row"><span class="id">${x.agent ? '@' + esc(x.agent) : esc(x.agent_raw || '—')}</span>${x.impact ? `<span class="tag">impact ${esc(x.impact)}</span>` : ''}${x.impact_note ? `<span>${esc(x.impact_note)}</span>` : ''}</div><div class="sugg">${esc(x.mistake)}</div>${x.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(x.correction)}</p></div>` : ''}${x.prevention ? `<div class="rec-row"><span class="rec">prevent</span><p>${esc(x.prevention)}</p></div>` : ''}</div>`).join('')}</div>` : `<div class="none">${docs.debrief ? 'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
       <section class="sec"><h3>Debrief</h3>${docs.debrief ? `<div class="card md">${md(docs.debrief.body)}</div>` : `<div class="none">${m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 

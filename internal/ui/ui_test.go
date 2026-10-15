@@ -122,3 +122,35 @@ func TestTriagePageRendersStaleRunsUI(t *testing.T) {
 		t.Fatal("triage page contains the broken card.querySelector('[data-pid]') expression")
 	}
 }
+
+// TestMissionsPageRendersDebriefSections is a source-text check only: it cannot
+// run the page's JavaScript. It asserts that the mission page reads the HUD's
+// deliverables and agent_mistakes fields with an empty-array fallback, renders a
+// section for each, passes every rendered string field through esc(), shows —
+// for a NULL path, and words each empty state for a debrief that is present,
+// missing on a complete mission, or not yet written.
+func TestMissionsPageRendersDebriefSections(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	needles := []string{
+		"d.deliverables || []",
+		"d.agent_mistakes || []",
+		"<h3>Deliverables ",
+		"<h3>Agent mistakes ",
+		"x.path ? esc(x.path) : '—'",
+		"esc(x.note)",
+		"esc(x.mistake)",
+		"'@' + esc(x.agent)",
+		"esc(x.agent_raw || '—')",
+		"impact ${esc(x.impact)}",
+		"esc(x.impact_note)",
+		"esc(x.correction)",
+		"esc(x.prevention)",
+		"'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.'",
+		"'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.'",
+	}
+	for _, needle := range needles {
+		if !strings.Contains(page, needle) {
+			t.Errorf("missions page does not contain %q", needle)
+		}
+	}
+}
