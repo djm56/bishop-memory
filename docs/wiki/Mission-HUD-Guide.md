@@ -75,6 +75,10 @@ A timeline of the mission's steps in step order. Each step shows its number, its
 
 Start and end times are recorded by the service as the step moves to `in-progress` and then `done` or `failed`. Steps recorded before the HUD existed have times only if the backfill below found them in the journal.
 
+### Reviews
+
+One row per review step by `@apone`: the step, a verdict badge (**approved**, **not approved**, or **unknown** when the notes carry no verdict wording, as with a review that was not run), the step it reviewed, and its CRITICAL and warning counts and fix round, with **—** where the notes give none. Verdicts are read from the step's notes when the page loads, so they reflect the notes as written: a fixed `Verdict:` line is exact; older free-text notes are read for words such as APPROVED, NOT APPROVED, CHANGES REQUESTED or NO-GO.
+
 ### Findings
 
 The findings linked to this mission, each with its id, date, status, triage category (or `uncategorised`), a **directive candidate** tag where the classifier set one, the target, the classifier's summary (or the suggestion) and the processor's recommendation and rationale. A decided finding shows its approver, date and note. **Open in triage →** takes you to the finding on the review page.
@@ -172,4 +176,4 @@ Like the review-page images they are produced from made-up demo data on a throwa
 
 - It cannot change a mission, step or finding. Missions change through the harness; findings are decided on the review page.
 - It cannot import files. The brief, progress and debrief appear after a document sync or a mission update.
-- It parses the debrief only into the acceptance criteria lines, the deliverables, the agent mistakes and the lessons. The rest is shown as written.
+- It parses the debrief only into the acceptance criteria lines, the deliverables, the agent mistakes and the lessons, and review steps only into their verdicts. The rest is shown as written.

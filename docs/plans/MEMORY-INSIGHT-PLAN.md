@@ -2,7 +2,7 @@
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
 (mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
-merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); phase 1 slice 4 (mission_lessons) merged to main (1e78378) and live (2026-10-16); decision P1 settled yes (2026-10-14); remaining phase 1 slice (review verdicts, read-time parse) planned;
+merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); phase 1 slice 4 (mission_lessons) merged to main (1e78378) and live (2026-10-16); phase 1 stage 1b (review verdicts, parsed on read) merged to main (06e4f8a) and live (2026-10-16); stage 1a (verdict line) awaits ratification;
 phases 2–4 planned, not started. Decisions P2, P3 and P5 settled by the operator on 2026-10-16; P4 built. Build order in §9.
 Date: 2026-10-16.
 
@@ -216,7 +216,11 @@ test. One stage per mission; stage 1 is split in two.
      drafted as a proposed finding for the operator to ratify; agent and
      skill definitions change only after ratification.
    - 1b. Review verdicts parsed on read from `mission_steps` (see §3) and
-     shown on the mission page.
+     shown on the mission page. Shipped 2026-10-16 (06e4f8a): on a copy of
+     the live database, 526 reviews read as 290 approved, 185 not approved
+     and 51 unknown (mostly reviews not run); none yet use the verdict line.
+     Known gaps: "NOT APPROVE" and "NOT yet APPROVED" read as approved, and
+     the page test checks source text, not rendering.
 2. **Crew page** (`/crew`), with crew names on steps (decision P5): steps
    run, first-pass approval rate, fix rounds caused, recurring mistakes by
    impact, service records and average mission grade per agent.
