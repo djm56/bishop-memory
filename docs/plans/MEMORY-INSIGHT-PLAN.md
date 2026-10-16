@@ -2,9 +2,9 @@
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
 (mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
-merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); decision P1 settled yes (2026-10-14); remaining phase 1 tables (lessons, step_reviews) planned;
+merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); phase 1 slice 4 (mission_lessons) merged to main (1e78378) and live (2026-10-16); decision P1 settled yes (2026-10-14); remaining phase 1 table (step_reviews) planned;
 phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
-Date: 2026-10-15.
+Date: 2026-10-16.
 
 The service captures missions well, and the HUD shows one mission well. What
 neither does yet is answer questions across missions: which agents are
@@ -68,7 +68,7 @@ never a sync failure.
 |---|---|---|
 | `mission_criteria` | `mission_id, ord, criterion, result ('met','partial','unmet','unclear', NULL before a debrief), evidence` | Brief's Acceptance Criteria; debrief's Acceptance Criteria Outcome |
 | `mission_deliverables` | `mission_id, ord, path (NULL when none), note` | Deliverables Changed |
-| `mission_lessons` | `mission_id, kind ('wrong-assumption','similar-mission','reuse-step'), text, correction` | Wrong Assumptions; Similar Future Missions |
+| `mission_lessons` | `mission_id, kind ('wrong-assumption','similar-mission','reuse-step'), ord, text, why, correction` | Wrong Assumptions; Similar Future Missions |
 | `agent_mistakes` | `mission_id, ord, agent, agent_raw, mistake, impact ('low','med','high'), impact_note, correction, prevention` | Sub-Agent Mistakes and Corrections |
 
 Criteria and deliverables are read only from `-` and `*` bullet lines; numbered lists (`1.`, `2.`) are not read and their section counts as skipped. For deliverables, `path` comes from a leading backtick span, used as is, or a leading bold span, from which one trailing `:` is trimmed, one pair of surrounding backticks stripped, then one more trailing `:` trimmed; a result still containing a backtick is not a path, and either span must have no whitespace and contain `/` or `.`, otherwise `path` is NULL. Rows are replaced when a section with bullets is found; a section of only none-bullets deletes the rows; a missing heading or failed read keeps the rows. The tables are created via `db/schema.sql` `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot (not a separate migrate.go change).
@@ -92,6 +92,8 @@ Each bullet below is a candidate only, not a commitment.
 - **Commit-failure tests.** The commit-failure path of the replace transactions has no test for deliverables, mistakes or criteria (checked in internal/importer tests, 2026-10-15). A deferred foreign key in a test schema can force a COMMIT failure.
 - **Parser edge cases, accepted for now.** Bullets inside fenced code blocks are read as rows. A bold span such as `**Done.**` or `**v1.2**` counts as a path because it contains a `.`. Neither occurs in the live data: a check of the staged copy on 2026-10-15 found no bullets inside fenced blocks and no such bold spans stored as paths.
 - **Staging figures.** 592 rows over 77 missions, 82 with NULL path (14%), sync skipped 0 and errors 0 (copy of the live database, 2026-10-15).
+- **Lessons shipped.** 2026-10-16 (1e78378): the mission page renders `lessons` as a Lessons section after Agent mistakes. Staging figures on a copy of the live database: 303 wrong-assumption, 81 similar-mission and 411 reuse-step rows over 84 missions; sync skipped 2, errors 0.
+- **Lessons page guards untested.** The page test is a source-text check, so the `trig ?`, `w.why ?` and `w.correction ?` guards are not pinned; removing `trig ?` would break the page for a mission with steps but no trigger (mission-20260922-03 is one). Option: a JS-executing page test.
 
 ## 4. Phase 2 — cross-mission pages and operator actions
 

@@ -87,6 +87,10 @@ The debrief's **Deliverables Changed** bullets, one row each in order: the path 
 
 The debrief's **Sub-Agent Mistakes and Corrections** table, one card per row: the agent (as `@name`, or the cell as written when no crew name could be read), the impact level and its note, the mistake, and **fixed** and **prevent** lines for the correction and prevention. Empty states are worded as for Deliverables.
 
+### Lessons
+
+The debrief's **Wrong Assumptions** table, one card per row: the assumption, why it was wrong, and a **fixed** line for the correction. Below them, one card for **Similar Future Missions**: a **reuse when** line with the trigger, and the reuse checklist as a numbered list. Either part is left out when the debrief has none. Empty states are worded as for Deliverables.
+
 ### Debrief
 
 `DEBRIEF.md`, rendered. An open mission says the debrief is written when the mission closes.
@@ -168,4 +172,4 @@ Like the review-page images they are produced from made-up demo data on a throwa
 
 - It cannot change a mission, step or finding. Missions change through the harness; findings are decided on the review page.
 - It cannot import files. The brief, progress and debrief appear after a document sync or a mission update.
-- It parses the debrief only into the acceptance criteria lines, the deliverables and the agent mistakes. The rest is shown as written.
+- It parses the debrief only into the acceptance criteria lines, the deliverables, the agent mistakes and the lessons. The rest is shown as written.
