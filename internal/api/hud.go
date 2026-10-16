@@ -122,7 +122,8 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 //
 // It returns the mission row; its steps (in step order) and flight-recorder
 // events; its brief, progress and debrief bodies; its acceptance criteria; the
-// agent mistakes and corrections; the deliverables changed; the patterns it
+// agent mistakes and corrections; the deliverables changed; the lessons
+// (wrong assumptions, reuse trigger and checklist steps); the patterns it
 // discovered; directives ratified from proposals whose evidence includes its
 // findings (status `active`), plus pending proposals that carry a directive_id,
 // which are reopened directives awaiting a fresh decision (status `under-review`);
@@ -158,6 +159,7 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 			{"criteria", `SELECT ord, criterion, result, evidence FROM mission_criteria WHERE mission_id = ? ORDER BY ord`},
 			{"agent_mistakes", `SELECT ord, agent, agent_raw, mistake, impact, impact_note, correction, prevention FROM agent_mistakes WHERE mission_id = ? ORDER BY ord`},
 			{"deliverables", `SELECT ord, path, note FROM mission_deliverables WHERE mission_id = ? ORDER BY ord`},
+			{"lessons", `SELECT kind, ord, text, why, correction FROM mission_lessons WHERE mission_id = ? ORDER BY CASE kind WHEN 'wrong-assumption' THEN 1 WHEN 'similar-mission' THEN 2 ELSE 3 END, ord`},
 			{"patterns", `SELECT id, name, context, solution, example, discovered_at
 			                FROM patterns WHERE discovered_mission = ? ORDER BY id`},
 			{"directives", `SELECT p.id AS proposal_id, p.directive_id, p.title, p.rule, p.decided_at,

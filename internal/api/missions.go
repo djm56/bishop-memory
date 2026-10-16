@@ -882,4 +882,7 @@ func syncMissionDocuments(c *gin.Context, db *sql.DB, missionID string) {
 	if stats.DeliverablesSkipped > 0 || stats.DeliverablesErrors > 0 {
 		log.Printf("request_id=%v mission=%s deliverables skipped=%d errors=%d", requestID(c), missionID, stats.DeliverablesSkipped, stats.DeliverablesErrors)
 	}
+	if stats.LessonsSkipped > 0 || stats.LessonsErrors > 0 {
+		log.Printf("request_id=%v mission=%s lessons skipped=%d errors=%d", requestID(c), missionID, stats.LessonsSkipped, stats.LessonsErrors)
+	}
 }

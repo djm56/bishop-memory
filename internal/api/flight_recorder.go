@@ -346,6 +346,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			totalStats.MistakesErrors += stats.MistakesErrors
 			totalStats.DeliverablesSkipped += stats.DeliverablesSkipped
 			totalStats.DeliverablesErrors += stats.DeliverablesErrors
+			totalStats.LessonsSkipped += stats.LessonsSkipped
+			totalStats.LessonsErrors += stats.LessonsErrors
 			// A registered harness keeps its agent definitions beside its
 			// memory root; they fill the crew table.
 			if target.Name != "" {
@@ -366,6 +368,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 				"mistakes_errors":      totalStats.MistakesErrors,
 				"deliverables_skipped": totalStats.DeliverablesSkipped,
 				"deliverables_errors":  totalStats.DeliverablesErrors,
+				"lessons_skipped":      totalStats.LessonsSkipped,
+				"lessons_errors":       totalStats.LessonsErrors,
 			})
 			return
 		}
@@ -378,6 +382,8 @@ func syncDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			"mistakes_errors":      totalStats.MistakesErrors,
 			"deliverables_skipped": totalStats.DeliverablesSkipped,
 			"deliverables_errors":  totalStats.DeliverablesErrors,
+			"lessons_skipped":      totalStats.LessonsSkipped,
+			"lessons_errors":       totalStats.LessonsErrors,
 		})
 	}
 }

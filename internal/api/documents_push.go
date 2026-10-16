@@ -88,6 +88,7 @@ func pushDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 		var criteriaSkipped, criteriaErrors int
 		var mistakesSkipped, mistakesErrors int
 		var deliverablesSkipped, deliverablesErrors int
+		var lessonsSkipped, lessonsErrors int
 		for _, f := range request.Files {
 			stats, err := importer.ImportMarkdownStats(db, f.Path, f.RelPath, harness, []byte(f.Content))
 			if err != nil {
@@ -100,6 +101,8 @@ func pushDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			mistakesErrors += stats.MistakesErrors
 			deliverablesSkipped += stats.DeliverablesSkipped
 			deliverablesErrors += stats.DeliverablesErrors
+			lessonsSkipped += stats.LessonsSkipped
+			lessonsErrors += stats.LessonsErrors
 			imported++
 		}
 		agents := 0
@@ -120,6 +123,8 @@ func pushDocumentsHandler(db *sql.DB) gin.HandlerFunc {
 			"mistakes_errors":      mistakesErrors,
 			"deliverables_skipped": deliverablesSkipped,
 			"deliverables_errors":  deliverablesErrors,
+			"lessons_skipped":      lessonsSkipped,
+			"lessons_errors":       lessonsErrors,
 		})
 	}
 }

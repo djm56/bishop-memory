@@ -145,8 +145,37 @@ func TestMissionsPageRendersDebriefSections(t *testing.T) {
 		"esc(x.impact_note)",
 		"esc(x.correction)",
 		"esc(x.prevention)",
-		"'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.'",
-		"'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.'",
+		"'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'",
+		"'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'",
+	}
+	for _, needle := range needles {
+		if !strings.Contains(page, needle) {
+			t.Errorf("missions page does not contain %q", needle)
+		}
+	}
+}
+
+// TestMissionsPageRendersLessonsSection is a source-text check only: it cannot
+// run the page's JavaScript. It asserts that the mission page reads the HUD's
+// lessons field with an empty-array fallback, groups it by kind (wrong
+// assumptions, the reuse trigger, the reuse steps), renders a Lessons section,
+// passes every rendered string through esc(), and words the empty state for a
+// debrief that is present, missing on a complete mission, or not yet written.
+func TestMissionsPageRendersLessonsSection(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	needles := []string{
+		"d.lessons || []",
+		"<h3>Lessons ",
+		`less.filter(x => x.kind === 'wrong-assumption')`,
+		`less.find(x => x.kind === 'similar-mission')`,
+		`less.filter(x => x.kind === 'reuse-step')`,
+		`<div class="target">${esc(w.text)}</div>`,
+		"esc(w.why)",
+		"esc(w.correction)",
+		"esc(trig.text)",
+		"<li>${esc(st.text)}</li>",
+		`'No lessons recorded in the debrief.'`,
+		`'No lessons recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'`,
 	}
 	for _, needle := range needles {
 		if !strings.Contains(page, needle) {

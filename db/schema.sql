@@ -516,6 +516,26 @@ CREATE TABLE IF NOT EXISTS mission_deliverables (
     PRIMARY KEY (mission_id, ord)
 );
 
+-- mission_lessons — rows from a DEBRIEF.md "Wrong Assumptions" table and its
+-- "Similar Future Missions" section, as split by internal/debrief
+-- ParseWrongAssumptions and ParseSimilarMission (the parsing rules live there).
+--
+-- kind is 'wrong-assumption' (text = the assumption; why; correction),
+-- 'similar-mission' (text = the reuse trigger) or 'reuse-step' (text = one
+-- checklist step). ord counts from 1 within each kind of a mission. why and
+-- correction are NULL when empty; only wrong-assumption rows set them.
+CREATE TABLE IF NOT EXISTS mission_lessons (
+    mission_id  TEXT    NOT NULL REFERENCES missions(id) ON DELETE CASCADE,
+    kind        TEXT    NOT NULL,
+    ord         INTEGER NOT NULL,
+    text        TEXT    NOT NULL,
+    why         TEXT,
+    correction  TEXT,
+
+    PRIMARY KEY (mission_id, kind, ord),
+    CHECK (kind IN ('wrong-assumption', 'similar-mission', 'reuse-step'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_mission_grades_state ON mission_grades(state);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_recommendation_pending

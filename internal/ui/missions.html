@@ -469,6 +469,7 @@
     const tile = (k, v, s, frac) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}${frac != null ? `<div class="bar"><i style="width:${Math.round(frac * 100)}%"></i></div>` : ''}</div>`;
     const evFor = step => d.events.filter(e => e.step === step.step);
     const dels = d.deliverables || [], mist = d.agent_mistakes || [];
+    const less = d.lessons || [], was = less.filter(x => x.kind === 'wrong-assumption'), trig = less.find(x => x.kind === 'similar-mission'), rsteps = less.filter(x => x.kind === 'reuse-step');
 
     $('#view').innerHTML = `
       <div class="head">
@@ -514,6 +515,8 @@
       <section class="sec"><h3>Deliverables <span class="n">${dels.length}</span></h3>${dels.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Path</th><th>Note</th></tr>${dels.map(x => `<tr><td class="mono">${esc(x.ord)}</td><td class="mono">${x.path ? esc(x.path) : '—'}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div>` : `<div class="none">${docs.debrief ? 'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
       <section class="sec"><h3>Agent mistakes <span class="n">${mist.length}</span></h3>${mist.length ? `<div class="list">${mist.map(x => `<div class="card"><div class="meta-row"><span class="id">${x.agent ? '@' + esc(x.agent) : esc(x.agent_raw || '—')}</span>${x.impact ? `<span class="tag">impact ${esc(x.impact)}</span>` : ''}${x.impact_note ? `<span>${esc(x.impact_note)}</span>` : ''}</div><div class="sugg">${esc(x.mistake)}</div>${x.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(x.correction)}</p></div>` : ''}${x.prevention ? `<div class="rec-row"><span class="rec">prevent</span><p>${esc(x.prevention)}</p></div>` : ''}</div>`).join('')}</div>` : `<div class="none">${docs.debrief ? 'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+
+      <section class="sec"><h3>Lessons <span class="n">${less.length}</span></h3>${less.length ? `${was.length ? `<div class="list">${was.map(w => `<div class="card"><div class="target">${esc(w.text)}</div>${w.why ? `<div class="sugg">${esc(w.why)}</div>` : ''}${w.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(w.correction)}</p></div>` : ''}</div>`).join('')}</div>` : ''}${trig || rsteps.length ? `<div class="card" style="margin-top:12px">${trig ? `<div class="meta-row"><span class="tag">reuse when</span><span>${esc(trig.text)}</span></div>` : ''}${rsteps.length ? `<ol>${rsteps.map(st => `<li>${esc(st.text)}</li>`).join('')}</ol>` : ''}</div>` : ''}` : `<div class="none">${docs.debrief ? 'No lessons recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
       <section class="sec"><h3>Debrief</h3>${docs.debrief ? `<div class="card md">${md(docs.debrief.body)}</div>` : `<div class="none">${m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
