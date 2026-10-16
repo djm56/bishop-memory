@@ -183,3 +183,39 @@ func TestMissionsPageRendersLessonsSection(t *testing.T) {
 		}
 	}
 }
+
+// TestMissionsPageRendersReviewsSection is a source-text check only: it cannot
+// run the page's JavaScript. It asserts that the mission page reads the HUD's
+// reviews field with an empty-array fallback, renders a Reviews section, maps
+// the approved and not-approved verdicts to their labels and badge classes
+// with "unknown" and "defer" for any other value, passes every rendered field
+// through esc(), renders a missing reviewed step or count as a dash rather
+// than as an empty or zero value, and words the empty state.
+func TestMissionsPageRendersReviewsSection(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	needles := []string{
+		"d.reviews || []",
+		"<h3>Reviews ",
+		`{'approved': 'approve',`,
+		`'not-approved': 'reject'}`,
+		`vlabel = {'approved': 'approved',`,
+		`'not-approved': 'not approved'}`,
+		`esc(vlabel[r.verdict] || 'unknown')`,
+		`esc(vclass[r.verdict] || 'defer')`,
+		"esc(r.step)",
+		"esc(r.reviews_step)",
+		"esc(r.critical)",
+		"esc(r.warnings)",
+		"esc(r.fix_round)",
+		"r.reviews_step == null ? '—'",
+		"r.critical == null ? '—'",
+		"r.warnings == null ? '—'",
+		"r.fix_round == null ? '—'",
+		`<div class="none">No review steps recorded.</div>`,
+	}
+	for _, needle := range needles {
+		if !strings.Contains(page, needle) {
+			t.Errorf("missions page does not contain %q", needle)
+		}
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bishop-memory/internal/importer"
+	"bishop-memory/internal/review"
 )
 
 // crewNameSQL normalises an agent column the way importer.CrewName does:
@@ -123,7 +124,8 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 // It returns the mission row; its steps (in step order) and flight-recorder
 // events; its brief, progress and debrief bodies; its acceptance criteria; the
 // agent mistakes and corrections; the deliverables changed; the lessons
-// (wrong assumptions, reuse trigger and checklist steps); the patterns it
+// (wrong assumptions, reuse trigger and checklist steps); the review outcomes
+// of its @apone steps, parsed from their notes and summary; the patterns it
 // discovered; directives ratified from proposals whose evidence includes its
 // findings (status `active`), plus pending proposals that carry a directive_id,
 // which are reopened directives awaiting a fresh decision (status `under-review`);
@@ -181,6 +183,30 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 			}
 			out[q.key] = rows
 		}
+
+		// Review outcomes of the @apone steps, parsed on read from their notes and
+		// summary (internal/review); a value the text does not give is null.
+		reviews := []map[string]any{}
+		for _, step := range out["steps"].([]map[string]any) {
+			agent, _ := step["agent"].(string)
+			if importer.CrewName(agent) != "apone" {
+				continue
+			}
+			notes, _ := step["notes"].(string)
+			summary, _ := step["summary"].(string)
+			v := review.Parse(notes, summary)
+			reviews = append(reviews, map[string]any{
+				"step":         step["step"],
+				"agent":        agent,
+				"verdict":      nullIfEmpty(v.Verdict),
+				"critical":     v.Critical,
+				"warnings":     v.Warnings,
+				"reviews_step": nullIfEmpty(v.ReviewsStep),
+				"fix_round":    v.FixRound,
+				"source":       v.Source,
+			})
+		}
+		out["reviews"] = reviews
 
 		// The crew of this mission: every agent named on a step.
 		names := []any{}

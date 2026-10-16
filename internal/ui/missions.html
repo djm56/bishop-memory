@@ -470,6 +470,7 @@
     const evFor = step => d.events.filter(e => e.step === step.step);
     const dels = d.deliverables || [], mist = d.agent_mistakes || [];
     const less = d.lessons || [], was = less.filter(x => x.kind === 'wrong-assumption'), trig = less.find(x => x.kind === 'similar-mission'), rsteps = less.filter(x => x.kind === 'reuse-step');
+    const revs = d.reviews || [], vlabel = {'approved': 'approved', 'not-approved': 'not approved'}, vclass = {'approved': 'approve', 'not-approved': 'reject'};
 
     $('#view').innerHTML = `
       <div class="head">
@@ -503,6 +504,8 @@
           ${s.summary ? `<div class="sum">${esc(s.summary)}</div>` : ''}
           ${s.notes || events.length ? `<details><summary>Notes${events.length ? ` and ${events.length} journal events` : ''}</summary>${s.notes ? `<div class="detail">${esc(s.notes)}</div>` : ''}${events.length ? `<ul class="ev">${events.map(e => `<li><span class="ts">${esc(fmtWhen(e.occurred_at || e.created_at))}</span>${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul>` : ''}</details>` : ''}
         </div></div>`; }).join('')}</div></div>` : '<div class="none">No steps recorded.</div>'}</section>
+
+      <section class="sec"><h3>Reviews <span class="n">${revs.length}</span></h3>${revs.length ? `<div class="table-wrap"><table><tr><th>Step</th><th>Verdict</th><th>Reviews</th><th>Critical</th><th>Warnings</th><th>Fix round</th></tr>${revs.map(r => `<tr><td class="mono">${esc(r.step)}</td><td><span class="rec ${esc(vclass[r.verdict] || 'defer')}">${esc(vlabel[r.verdict] || 'unknown')}</span></td><td class="mono">${r.reviews_step == null ? '—' : esc(r.reviews_step)}</td><td class="mono">${r.critical == null ? '—' : esc(r.critical)}</td><td class="mono">${r.warnings == null ? '—' : esc(r.warnings)}</td><td class="mono">${r.fix_round == null ? '—' : esc(r.fix_round)}</td></tr>`).join('')}</table></div>` : `<div class="none">No review steps recorded.</div>`}</section>
 
       <section class="sec"><h3>Findings <span class="n">${findings.length}</span></h3>${findings.length ? `<div class="list">${findings.map(x => { const t = x.triage, r = x.recommendation; return `<div class="card">
         <div class="meta-row"><span class="id">#${x.id}</span>${x.finding_date ? `<span>${esc(x.finding_date)}</span>` : ''}${pillFor(x.status)}${t ? `<span class="tag">${esc(t.category)}</span>` : '<span class="tag">uncategorised</span>'}${t?.directive_candidate ? '<span class="tag dc">directive candidate</span>' : ''}
