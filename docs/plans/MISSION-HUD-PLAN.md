@@ -1,10 +1,13 @@
 # Mission HUD — Plan
 
 Status: phases 1 and 3 shipped (merged to `main`); phase 2 un-deferred by
-memory insight decision P1 — `mission_criteria` shipped (c325080), the remaining
-debrief tables are planned. §2.4 sync and backfill run on the live database.
+memory insight decision P1 — `mission_criteria` (c325080), `agent_mistakes`
+(2347527), `mission_deliverables` (a53c1ac) and `mission_lessons` (1e78378)
+shipped and live; review verdicts and later stages follow the memory insight
+plan's build order (`MEMORY-INSIGHT-PLAN.md` §9). §2.4 sync and backfill run
+on the live database.
 How the shipped pages work is in the wiki: `../wiki/Mission-HUD-Guide.md`.
-Date: 2026-10-14.
+Date: 2026-10-16.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each

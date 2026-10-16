@@ -2,8 +2,8 @@
 
 Status: phase 0 (data health) merged to main (ef23e11) and live; phase 1 slice 1
 (mission_criteria) merged to main (c325080) and live; phase 1 slice 2 (agent_mistakes)
-merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); phase 1 slice 4 (mission_lessons) merged to main (1e78378) and live (2026-10-16); decision P1 settled yes (2026-10-14); remaining phase 1 table (step_reviews) planned;
-phases 2–4 planned, not started. Decisions P2–P5 in §7 are open.
+merged to main (2347527) and live; phase 1 slice 3 (mission_deliverables) merged to main (a53c1ac) and live (2026-10-15); phase 1 slice 4 (mission_lessons) merged to main (1e78378) and live (2026-10-16); decision P1 settled yes (2026-10-14); remaining phase 1 slice (review verdicts, read-time parse) planned;
+phases 2–4 planned, not started. Decisions P2, P3 and P5 settled by the operator on 2026-10-16; P4 built. Build order in §9.
 Date: 2026-10-16.
 
 The service captures missions well, and the HUD shows one mission well. What
@@ -73,10 +73,14 @@ never a sync failure.
 
 Criteria and deliverables are read only from `-` and `*` bullet lines; numbered lists (`1.`, `2.`) are not read and their section counts as skipped. For deliverables, `path` comes from a leading backtick span, used as is, or a leading bold span, from which one trailing `:` is trimmed, one pair of surrounding backticks stripped, then one more trailing `:` trimmed; a result still containing a backtick is not a path, and either span must have no whitespace and contain `/` or `.`, otherwise `path` is NULL. Rows are replaced when a section with bullets is found; a section of only none-bullets deletes the rows; a missing heading or failed read keeps the rows. The tables are created via `db/schema.sql` `CREATE TABLE IF NOT EXISTS`, applied on every memoryd boot (not a separate migrate.go change).
 
-Review outcomes are parsed when a step is written (and backfilled), into
-`step_reviews(mission_id, step, reviewer, verdict ('approved','not-approved'),
-critical, warnings, reviews_step, fix_round)`, from a reviewer step's notes or
-summary. Free text is the fallback; see decision P3.
+Review outcomes are parsed on read, not stored: a reviewer step's notes (then
+summary) in `mission_steps` give verdict ('approved', 'not-approved', or
+unknown), critical and warning counts, the step reviewed and the fix round.
+A fixed verdict line (decision P3) is read first; free text is the fallback
+for history. No `step_reviews` table is kept, because `mission_steps` is
+written by three paths (step upsert, step PATCH, summary update) and a stored
+copy would drift from it; about 520 reviewer rows make a read-time parse
+cheap.
 
 What it buys: first-pass approval rate per implementer, fix rounds per
 mission, which mistakes recur per agent, "every wrong assumption about X",
@@ -168,23 +172,24 @@ Semantic (embedding) search is left out: at 600 documents FTS5 with the
 phase 0 weighting is adequate; revisit if `retrieval_log` shows searches
 returning nothing useful.
 
-## 7. Decisions (open)
+## 7. Decisions
 
 - **P1. Un-defer debrief parsing (D3).** Settled yes by the operator on 2026-10-14; `mission_criteria` shipped (merged c325080, live). All 66 imported
   debriefs, across ten harnesses, carry the Acceptance Criteria Outcome,
   Wrong Assumptions, Sub-Agent Mistakes and Deliverables Changed sections;
   65 carry Similar Future Missions.
-- **P2. Usage granularity.** Per sub-agent run (recommended) or per message.
+- **P2. Usage granularity.** Settled 2026-10-16: one row per sub-agent run.
   Per run is enough for every question in §5 and keeps the table small.
-- **P3. Review verdicts.** Parse free text, or have the harness reviewer
-  write a fixed line (`Verdict: NOT APPROVED; critical=1; warnings=4`).
-  Recommended: ask the harness for the fixed line and parse free text as the
-  fallback for history.
+- **P3. Review verdicts.** Settled 2026-10-16: the reviewer writes a fixed
+  line (`Verdict: NOT APPROVED; critical=1; warnings=4; reviews_step=3;
+  fix_round=1`), and free text is parsed as the fallback for history. The
+  line is proposed for ratification (FINDINGS 2026-10-16) before the agent
+  and skill definitions change.
 - **P4. Stale threshold.** 48 hours, fixed in code (built). Make it a
   setting only if missions start running longer than a day between syncs.
-- **P5. Agent names.** Ask the harnesses to write crew names on steps
-  (`@vasquez`, not `senior (general-purpose)`), or add an alias table.
-  Recommended: the harness fix; an alias table hides drift.
+- **P5. Agent names.** Settled 2026-10-16: the harnesses write crew names on
+  steps (`@vasquez`, not `senior (general-purpose)`); no alias table, which
+  would hide drift.
 
 ## 8. Risks
 
@@ -199,3 +204,42 @@ returning nothing useful.
   uses `memory_search`; watch its next runs.
 - **Retrieval log volume.** One row per read call; prune after 90 days if it
   grows.
+
+## 9. Build order (agreed 2026-10-16)
+
+Each stage ships on its own: exact-code briefs, a review after every coding
+step, staging on a copy of the database, deploy, then the operator's HUD
+test. One stage per mission; stage 1 is split in two.
+
+1. **Review verdicts.**
+   - 1a. A fixed verdict line in the review output format (decision P3),
+     drafted as a proposed finding for the operator to ratify; agent and
+     skill definitions change only after ratification.
+   - 1b. Review verdicts parsed on read from `mission_steps` (see §3) and
+     shown on the mission page.
+2. **Crew page** (`/crew`), with crew names on steps (decision P5): steps
+   run, first-pass approval rate, fix rounds caused, recurring mistakes by
+   impact, service records and average mission grade per agent.
+3. **Brief prep** (§6): similar past missions, their wrong assumptions and
+   reuse checklists, and matching directives and patterns, called by Bishop
+   while framing a mission.
+4. **Retrieval log and directive citations** (§6): whether memory is read,
+   and which directives are cited or never come up.
+5. **Operator actions on the HUD** (§4): agree with or override a grade,
+   park or close a stale mission, mission notes.
+6. **Cross-harness views** (§4): activity feed, trends on `/performance`,
+   global search, filters in the URL, `/library`.
+7. **Cost and usage** (§5), one row per sub-agent run (decision P2).
+   Independent of stages 2–6; it can move earlier.
+8. **Git deliverables and operator interventions** (§6).
+
+Small fixes, taken by whichever stage touches the same code:
+
+- A page test that runs the mission page's JavaScript, so runtime guards
+  such as the Lessons `trig ?` check are tested, not only present.
+- Commit-failure tests for the replace transactions (see "Found while
+  building").
+- Deliverables: multi-path bullets and label-prefixed bullets (see "Found
+  while building").
+- The mutation harness keeps every failing line of a kill, not only the
+  first (FINDINGS 2026-10-16).
