@@ -140,6 +140,8 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 			memory.GET("/search", searchMemoryHandler(db))
 		}
 
+		v1.GET("/brief-prep", briefPrepHandler(db))
+
 		v1.POST("/documents/sync", syncDocumentsHandler(db))
 		v1.POST("/documents/push", pushDocumentsHandler(db))
 		v1.GET("/documents/hashes", documentHashesHandler(db))

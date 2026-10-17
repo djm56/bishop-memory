@@ -30,10 +30,10 @@
 //   - BISHOP_HARNESS: harness / agent-family prefix used in the composed
 //     Agent identity (default "claude-code").
 //   - MCPD_PROFILE: which tool set to register — "harness" (default; the
-//     16 tools below) or "triage" (the findings-triage tool set in
+//     tools registered by registerTools) or "triage" (the findings-triage tool set in
 //     triage.go, used only by the scheduled triage agents).
 //
-// The 15 MCP tools are real HTTP proxies with typed input schemas
+// The MCP tools are real HTTP proxies with typed input schemas
 // (matching the bishop-memory wire shapes) and agent-identity composition
 // for the two write tools that capture it (flight_recorder_append,
 // mission_step_record). See docs/ROADMAP.md for the plan.
@@ -135,7 +135,7 @@ func main() {
 	}
 }
 
-// registerTools registers the 15 bishop-memory MCP tools on the server.
+// registerTools registers the bishop-memory harness-profile MCP tools on the server.
 //
 // Each tool gets a typed input schema (mcp.WithString / WithInteger /
 // ...) that mirrors the underlying HTTP request shape, and a handler
@@ -175,6 +175,23 @@ func registerTools(s *server.MCPServer, c *client) {
 			),
 		),
 		makeMissionGetHandler(c),
+	)
+
+	s.AddTool(
+		mcp.NewTool("brief_prep",
+			mcp.WithDescription("Analyze a goal statement and return ranked missions, directives, and patterns from the knowledge base. Returns {\"goal\":string,\"harness\":string|null,\"missions\":[{mission_id,title,status,outcome,grade,rank,wrong_assumptions,reuse_checklist},...],\"directives\":[{directive_id,title,rule,score},...],\"patterns\":[{id,name,context,solution,score},...]}. Arrays never null."),
+			mcp.WithString("goal",
+				mcp.Required(),
+				mcp.Description("Goal statement to analyze. Tokenized, with stopwords removed and tokens >= 3 runes kept (max 12). An empty or whitespace-only goal is rejected by the adapter with a tool error and no request is sent. Required."),
+			),
+			mcp.WithString("harness",
+				mcp.Description("Optional filter to return only missions from a specific harness."),
+			),
+			mcp.WithString("exclude",
+				mcp.Description("Optional mission ID to exclude from results."),
+			),
+		),
+		makeBriefPrepHandler(c),
 	)
 
 	// --- Write tools (HTTP method varies) ---
@@ -1149,6 +1166,49 @@ func makePatternListHandler(c *client) func(ctx context.Context, req mcp.CallToo
 			return toolHTTPStatusError("pattern_list", httpStatus, body), nil
 		}
 		return toolSuccess("pattern_list", body), nil
+	}
+}
+
+// makeBriefPrepHandler wires the brief_prep tool to GET /v1/brief-prep?goal=...&harness=...&exclude=...
+//
+// Query params:
+//   - goal: required, trimmed. An empty or whitespace-only goal is rejected
+//     here with an MCP tool error and no HTTP request is made.
+//   - harness: optional, trimmed; sent only when non-empty.
+//   - exclude: optional mission ID, trimmed; sent only when non-empty.
+func makeBriefPrepHandler(c *client) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		goal := strings.TrimSpace(mcp.ParseString(req, "goal", ""))
+		if goal == "" {
+			return mcp.NewToolResultError("brief_prep: `goal` is required and must not be empty/whitespace-only"), nil
+		}
+
+		u, err := url.Parse(c.baseURL)
+		if err != nil {
+			return toolInternalErr("brief_prep: parse base URL", err), nil
+		}
+		u = u.JoinPath("v1", "brief-prep")
+
+		// Construct query parameters.
+		qry := u.Query()
+		qry.Set("goal", goal)
+
+		if harness := strings.TrimSpace(mcp.ParseString(req, "harness", "")); harness != "" {
+			qry.Set("harness", harness)
+		}
+		if exclude := strings.TrimSpace(mcp.ParseString(req, "exclude", "")); exclude != "" {
+			qry.Set("exclude", exclude)
+		}
+		u.RawQuery = qry.Encode()
+
+		body, httpStatus, httpErr := c.do(ctx, http.MethodGet, u.String(), nil)
+		if httpErr != nil {
+			return toolHTTPError("brief_prep", httpErr), nil
+		}
+		if httpStatus < 200 || httpStatus >= 300 {
+			return toolHTTPStatusError("brief_prep", httpStatus, body), nil
+		}
+		return toolSuccess("brief_prep", body), nil
 	}
 }
 

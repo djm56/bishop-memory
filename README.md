@@ -81,15 +81,15 @@ Two rules are enforced by what is registered where, not by the API key (every ke
 
 `cmd/mcpd` is a stdio MCP server that proxies the HTTP API. It registers one of two tool sets, chosen by `MCPD_PROFILE`:
 
-**Harness profile** (default, 16 tools) — what a Bishop crew uses during a mission.
+**Harness profile** (default) — what a Bishop crew uses during a mission.
 
 | Read | Write |
 |---|---|
-| `memory_search`, `mission_list`, `mission_get`, `mission_steps_list`, `finding_list`, `pattern_list`, `service_record_list` | `mission_allocate`, `mission_create`, `mission_update`, `flight_recorder_append`, `mission_step_record`, `finding_append`, `pattern_append`, `service_record_append`, `documents_sync` |
+| `memory_search`, `mission_list`, `mission_get`, `brief_prep`, `mission_steps_list`, `finding_list`, `pattern_list`, `service_record_list` | `mission_allocate`, `mission_create`, `mission_update`, `flight_recorder_append`, `mission_step_record`, `finding_append`, `pattern_append`, `service_record_append`, `documents_sync` |
 
 `flight_recorder_append` and `mission_step_record` record the actor as `<BISHOP_HARNESS>:<agent>`; `finding_append` records the harness. `finding_list` filters by status, triage category, harness and ids.
 
-**Triage profile** (`MCPD_PROFILE=triage`, 15 tools) — what the three scheduled agents use: `triage_categories`, `triage_next_unclassified`, `triage_classify`, `triage_category_findings`, `triage_recent_decisions`, `triage_group_create`, `triage_recommend`, `directive_propose`, `triage_run_start`, `triage_run_finish`, the mission grader's `grade_claim` and `grade_write`, plus the read-only `finding_list`, `pattern_list`, `memory_search`. The two profiles share no write tool.
+**Triage profile** (`MCPD_PROFILE=triage`) — what the three scheduled agents use: `triage_categories`, `triage_next_unclassified`, `triage_classify`, `triage_category_findings`, `triage_recent_decisions`, `triage_group_create`, `triage_recommend`, `directive_propose`, `triage_run_start`, `triage_run_finish`, the mission grader's `grade_claim` and `grade_write`, plus the read-only `finding_list`, `pattern_list`, `memory_search`. The two profiles share no write tool.
 
 Every tool, with arguments, examples and errors: [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md).
 

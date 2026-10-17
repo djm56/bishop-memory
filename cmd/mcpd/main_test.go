@@ -134,6 +134,7 @@ func TestMCPDRoutePathsMatchServerRoutes(t *testing.T) {
 		{"memory_search", "GET", []string{"v1", "memory", "search"}, "v1/memory/search"},
 		{"mission_list", "GET", []string{"v1", "missions"}, "v1/missions"},
 		{"mission_get", "GET", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
+		{"brief_prep", "GET", []string{"v1", "brief-prep"}, "v1/brief-prep"},
 		{"mission_create", "POST", []string{"v1", "missions"}, "v1/missions"},
 		{"mission_update", "PATCH", []string{"v1", "missions", "test-id"}, "v1/missions/test-id"},
 		{"flight_recorder_append", "POST", []string{"v1", "flight-recorder"}, "v1/flight-recorder"},
@@ -287,4 +288,112 @@ func TestMissionCreateHandler_SendsHarness(t *testing.T) {
 	if got["harness"] != "kirsch" {
 		t.Fatalf("request harness = %v, want kirsch (body %v)", got["harness"], got)
 	}
+}
+
+// TestBriefPrepHandler_RejectsEmptyGoal drives makeBriefPrepHandler directly
+// (not through the MCP server dispatch) and checks that an empty,
+// whitespace-only, or omitted goal is rejected by the adapter with a tool
+// error before any HTTP request is made. The test server counts requests, so a
+// handler that lets a blank goal through fails on the IsError check and on
+// the request count.
+func TestBriefPrepHandler_RejectsEmptyGoal(t *testing.T) {
+	cases := []struct {
+		name string
+		args map[string]any
+	}{
+		{"empty", map[string]any{"goal": ""}},
+		{"whitespace", map[string]any{"goal": "   "}},
+		{"omitted", map[string]any{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"goal":"","missions":[],"directives":[],"patterns":[]}`))
+			}))
+			defer server.Close()
+
+			c := &client{httpClient: server.Client(), baseURL: server.URL, harness: "test"}
+			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
+
+			result, err := makeBriefPrepHandler(c)(context.Background(), req)
+			if err != nil {
+				t.Fatalf("%s goal: handler returned Go error %v, want an MCP tool-error result", tc.name, err)
+			}
+			if !result.IsError {
+				t.Fatalf("%s goal: result.IsError = false, want true (blank goal must be rejected)", tc.name)
+			}
+			if text := resultText(t, result); !strings.Contains(text, "required") {
+				t.Fatalf("%s goal: error text %q does not say goal is required", tc.name, text)
+			}
+			if requests != 0 {
+				t.Fatalf("%s goal: server received %d request(s), want 0", tc.name, requests)
+			}
+		})
+	}
+}
+
+// TestBriefPrepHandler_ForwardsQueryParams drives makeBriefPrepHandler
+// directly and checks the query string it sends: supplied goal, harness and
+// exclude arrive trimmed, and a blank harness or exclude is left out of the
+// query entirely while the goal still arrives.
+func TestBriefPrepHandler_ForwardsQueryParams(t *testing.T) {
+	run := func(t *testing.T, args map[string]any) url.Values {
+		t.Helper()
+		var capturedURL string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			capturedURL = r.URL.String()
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"goal":"test","missions":[],"directives":[],"patterns":[]}`))
+		}))
+		defer server.Close()
+
+		c := &client{httpClient: server.Client(), baseURL: server.URL, harness: "test"}
+		req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: args}}
+		result, err := makeBriefPrepHandler(c)(context.Background(), req)
+		if err != nil {
+			t.Fatalf("brief_prep handler returned Go error: %v", err)
+		}
+		if result.IsError {
+			t.Fatalf("brief_prep handler returned error result: %v", resultText(t, result))
+		}
+		u, err := url.Parse(capturedURL)
+		if err != nil {
+			t.Fatalf("parse captured URL %q: %v", capturedURL, err)
+		}
+		return u.Query()
+	}
+
+	t.Run("forwards_trimmed", func(t *testing.T) {
+		q := run(t, map[string]any{
+			"goal":    "  add MCP tool ",
+			"harness": " kirsch ",
+			"exclude": " mission-20260915-01 ",
+		})
+		if got := q.Get("goal"); got != "add MCP tool" {
+			t.Errorf("forwards_trimmed: goal query param = %q, want %q", got, "add MCP tool")
+		}
+		if got := q.Get("harness"); got != "kirsch" {
+			t.Errorf("forwards_trimmed: harness query param = %q, want %q", got, "kirsch")
+		}
+		if got := q.Get("exclude"); got != "mission-20260915-01" {
+			t.Errorf("forwards_trimmed: exclude query param = %q, want %q", got, "mission-20260915-01")
+		}
+	})
+
+	t.Run("blank_optionals_absent", func(t *testing.T) {
+		q := run(t, map[string]any{"goal": "add MCP tool", "harness": "   ", "exclude": ""})
+		// Positive control: the goal went through the same request.
+		if got := q.Get("goal"); got != "add MCP tool" {
+			t.Fatalf("blank_optionals_absent: goal query param = %q, want %q", got, "add MCP tool")
+		}
+		if q.Has("harness") {
+			t.Errorf("blank_optionals_absent: blank harness was forwarded as %q, want it absent", q["harness"])
+		}
+		if q.Has("exclude") {
+			t.Errorf("blank_optionals_absent: blank exclude was forwarded as %q, want it absent", q["exclude"])
+		}
+	})
 }
