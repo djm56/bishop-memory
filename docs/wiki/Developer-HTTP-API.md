@@ -15,6 +15,7 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | GET | `/` | inline | — (302 to `/missions`) |
 | GET | `/favicon.svg`, `/favicon.ico` | `ui.FaviconSVGHandler`, `ui.FaviconICOHandler` | — (both pages' icon; `.ico` serves a 32px PNG) |
 | GET | `/v1/crew` | `crewHandler` | — (crew page) |
+| GET | `/v1/brief-prep` | `briefPrepHandler` | `brief_prep` (harness) |
 | GET | `/v1/hud/missions` | `hudMissionsHandler` | — (mission HUD) |
 | GET | `/v1/hud/missions/:missionID` | `hudMissionHandler` | — (mission HUD) |
 | GET | `/v1/missions` | `listMissionsHandler` | `mission_list` (harness) |
@@ -200,6 +201,29 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 - **last_active**: max(mission_steps.ended_at) across the agent's steps; null if none have a non-empty ended_at.
 - **Agent list**: union of names from mission_steps, agent_mistakes, service_records and the crew table, normalised via CrewName. A name normalising to empty is dropped. Role comes from the crew table (null if no crew row or the row has no role). When collisions occur (multiple crew rows normalising to one name), a non-null role beats null, and among non-null roles the first in name order wins.
 - **Order**: steps_run desc, then agent asc.
+
+### Brief prep
+
+`GET /v1/brief-prep?goal=&harness=&exclude=` — analyze a goal statement and return knowledge from missions, directives, and patterns. Tokenizes the goal, removes stopwords, and scores sources by token matches.
+
+**Query parameters:**
+
+- **goal** (required, trimmed): goal statement to analyze. Tokenized by splitting on whitespace and non-alphanumeric boundaries, lowercased, filtered to tokens with at least 3 runes and not in the stopword list (the, and, for, with, from, into, that, this, are, was, not, by, as, on, or, to, of, in), deduplicated, and kept in order (first 12 tokens). Whitespace-only goals return 400 `{"error":"invalid request","details":"goal is required"}`. Goals with no usable tokens return 200 with empty arrays.
+- **harness** (optional): filter missions to only those from this harness name. Directives and patterns are not filtered.
+- **exclude** (optional): exclude a mission ID from results.
+
+**Response shape:** `{"goal","harness"(string|null),"missions":[…],"directives":[…],"patterns":[…]}`. Arrays are never null.
+
+**Missions:** top 5 by FTS relevance, from documents with `kind='brief'` and a mission attached, joined with `missions` and `mission_grades`. Each mission carries:
+- `mission_id, title, status, outcome` (string|null), `grade` (string|null from `mission_grades`), `rank` (raw bm25, negative)
+- `wrong_assumptions`: array of `{ord,text,why,correction}` from mission_lessons where kind='wrong-assumption'. `why` and `correction` are JSON null when the database column is NULL.
+- `reuse_checklist`: array of `{ord,text}` from mission_lessons where kind='reuse-step'. Never carries `why` or `correction`.
+
+**Directives:** active directives only (status not `under-review` or `retired`), scored by counting how many distinct query tokens appear in `directive_id+title+rule+rationale` (case-insensitive substring match). Kept if score > 0, top 5 by score desc then directive_id asc. Each carries `directive_id, title, rule, score`.
+
+**Patterns:** all patterns, scored identically over `id+name+context+solution`. Kept if score > 0, top 5 by score desc then id asc. Each carries `id, name, context, solution, score`.
+
+**Tokenizing in detail:** FTS query is built by wrapping each token as a quoted phrase (with internal `"` doubled), joined with ` OR `. A goal with no stopword-filtered tokens produces an empty FTS query and returns 200 with empty mission, directive and pattern arrays.
 
 ### Findings
 

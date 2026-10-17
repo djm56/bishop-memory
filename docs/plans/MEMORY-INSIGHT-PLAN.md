@@ -231,7 +231,12 @@ test. One stage per mission; stage 1 is split in two.
    three non-crew names visible (P5 drift).
 3. **Brief prep** (§6): similar past missions, their wrong assumptions and
    reuse checklists, and matching directives and patterns, called by Bishop
-   while framing a mission.
+   while framing a mission. Shipped 2026-10-17 (3112a24). Live: GET /v1/brief-prep
+   returns 5 missions, 0 directives and 1 pattern for goal "crew page metrics"
+   (top: mission-20261017-01); endpoint live, MCP tool not yet installed (installs
+   with mcpd at step 8). Known gaps: directives scored on token match only, not
+   on related rule semantics; hostile-goal test in brief_prep_test.go:597–600
+   overstates which goals discriminate; harness and exclude parameters untested.
 4. **Retrieval log and directive citations** (§6): whether memory is read,
    and which directives are cited or never come up.
 5. **Operator actions on the HUD** (§4): agree with or override a grade,

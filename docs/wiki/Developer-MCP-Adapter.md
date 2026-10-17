@@ -21,7 +21,7 @@ The harness's `connect-bishop-memory.sh` writes `.mcp.json` at project scope so 
 
 Two guards are easy to forget when adding a tool:
 
-- `mcp.Required()` is schema metadata only. The framework does not enforce it; every required argument needs a handler check (`finding_append: suggestion is required…`).
+- `mcp.Required()` is schema metadata only. The framework does not enforce it; every required argument needs a handler check (`finding_append: suggestion is required…`). The `brief_prep` tool rejects an empty or whitespace-only goal locally with a tool error before sending a request.
 - Path parameters go through `url.PathEscape` and `JoinPath`, which cleans `.` and `..` **after** escaping. `isDotSegment` refuses those before any request, otherwise `mission_get` with `.` returns the whole mission list.
 
 ## Structure of `triage.go`
