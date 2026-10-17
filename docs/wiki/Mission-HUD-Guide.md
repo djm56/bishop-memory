@@ -25,6 +25,31 @@ The control at the right of the header switches between **Auto**, **Light** and 
 
 Below 860 pixels wide the layout stacks: the header wraps and the mission list sits above the selected mission in a scrolling box.
 
+## The crew page
+
+The crew page at `http://127.0.0.1:8787/crew` shows per-agent metrics across all missions: how many steps each agent ran, their first-pass approval rate on reviews, how many review rounds they needed, their recurring mistakes by severity, service records, and their average grade over the missions they worked on.
+
+Each agent appears as a card:
+
+| Item | Shows |
+|---|---|
+| Steps run | Done out of recorded total |
+| First-pass approval | Percentage and count; null when the agent has reviewed no steps |
+| Re-reviews | Count of fix rounds on steps this agent wrote. Only counts fix rounds when the review's Verdict line named one (decision P3); when reviews lack fix rounds, re-reviews equal (review count - 1) per reviewed step, so a single review gives 0. Null if no reviews exist. |
+| Mistakes | Badges for each severity (high, med, low, unrated). Top 5 most recent or most severe are shown in order: severity first, then by mission date (newest), then by insertion order. |
+| Service records | Total count and breakdown by source (self-reported vs bishop-observed). |
+| Average grade | Letter grade and count of graded missions, shared credit (the grade of every graded mission this agent has a step on). Null when the agent has no graded missions. |
+| Last active | Date and time of the agent's most recent step end, or null if never recorded. |
+
+**Known gaps and caveats:**
+
+- **Reviews without a step named.** Reviews recorded before the fixed verdict line (decision P3) may lack the reviewed step. These are excluded from reviewed_steps and do not affect the first-pass rate.
+- **Re-reviews and fix rounds.** Re-review counts match fix rounds only when a review's Verdict line carries them (e.g., `Verdict: APPROVED; fix_round=1`). Older reviews rely on review count, and a mission with only one review per step shows 0 re-reviews. Small samples should show "x of y" context.
+- **Average grade is shared credit.** When a mission is graded, every agent who worked on it shares that grade in their average. A 1-agent mission weighted equally to a 6-agent mission means the single agent's grade carries more weight in their average. Missions with few grades over many steps may skew the result.
+- **Non-crew names.** Agent names not in the crew table (such as "senior (general-purpose)" or "operator") appear as their own rows with no role until the harnesses write crew names (decision P5).
+
+Sorted by steps run (descending), then by name.
+
 ## The mission list
 
 The left rail lists every mission, newest first. Each row shows the id, title, status (or `failed` when the mission ended with outcome `failed`), harness, steps done out of steps recorded, linked findings and the date it opened. An unfinished mission with no activity (no update and no journal event) for two days also shows **stale**; hover it for when it was last active. The header counts the missions shown, their linked findings and how many are stale.

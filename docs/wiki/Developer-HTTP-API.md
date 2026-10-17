@@ -11,8 +11,10 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | GET | `/healthz` | `healthHandler` | — |
 | GET | `/triage` | `ui.TriagePageHandler` | — (review page) |
 | GET | `/missions` | `ui.MissionsPageHandler` | — (mission HUD) |
+| GET | `/crew` | `ui.CrewPageHandler` | — (crew page) |
 | GET | `/` | inline | — (302 to `/missions`) |
 | GET | `/favicon.svg`, `/favicon.ico` | `ui.FaviconSVGHandler`, `ui.FaviconICOHandler` | — (both pages' icon; `.ico` serves a 32px PNG) |
+| GET | `/v1/crew` | `crewHandler` | — (crew page) |
 | GET | `/v1/hud/missions` | `hudMissionsHandler` | — (mission HUD) |
 | GET | `/v1/hud/missions/:missionID` | `hudMissionHandler` | — (mission HUD) |
 | GET | `/v1/missions` | `listMissionsHandler` | `mission_list` (harness) |
@@ -146,6 +148,58 @@ The routes below have no tool, or need more than the tool's page says. Bodies ar
 ### Health
 
 `GET /healthz` → 200 `{"ok":true,"service":"bishop-memory","storage":"sqlite","schema":"ok"}`. 503 `{"ok":false,"storage":"sqlite","error":"schema incomplete","missing":["…"]}` when a name in `expectedSchemaObjects` is absent, and 503 `"error":"database unavailable"` when the ping fails.
+
+### Crew
+
+`GET /v1/crew` — per-agent metrics, computed on read from `mission_steps`, `agent_mistakes`, `mission_grades`, and `service_records`. Response:
+
+```json
+{
+  "crew": [
+    {
+      "agent": "hicks",
+      "role": "junior developer",
+      "steps_run": 399,
+      "steps_total": 402,
+      "reviewed_steps": 0,
+      "first_pass_approved": 0,
+      "first_pass_rate": null,
+      "re_reviews": 0,
+      "mistakes": {
+        "high": 14,
+        "med": 8,
+        "low": 3,
+        "unrated": 0,
+        "top": [
+          {"mission_id": "mission-20261001-02", "mistake": "…", "impact": "high"},
+          …
+        ]
+      },
+      "service_records": {
+        "total": 42,
+        "self_reported": 21,
+        "bishop_observed": 21
+      },
+      "graded_missions": 18,
+      "avg_points": 3.72,
+      "avg_grade": "B",
+      "last_active": "2026-10-17 14:32 UTC"
+    }
+  ]
+}
+```
+
+**Definitions:**
+
+- **reviewed_steps**: count of `@apone` review steps that name their reviewed step (`reviews_step` non-empty) and carry a verdict (approved or not-approved). Reviews without a verdict, or naming no reviewed step, are not counted.
+- **first_pass_approved / first_pass_rate**: per reviewed step, the first review in insertion order (by `mission_steps.id`) sets first_pass_approved. Rate is the fraction (null when reviewed_steps is 0).
+- **re_reviews**: sum of fix rounds per reviewed step. When a step's reviews carry `FixRound` values, re_reviews counts the max FixRound across those reviews; otherwise, count - 1 (zero for a single review). Computed per agent.
+- **mistakes**: aggregated by impact level (high, med, low, unrated). A NULL impact reads as unrated. Top 5 mistakes are ordered high > med > low > unrated, then mission_id desc, then insertion order asc (stable sort by (mission_id, ord)). Agent names are normalised via CrewName.
+- **service_records**: split by source (self-reported vs bishop-observed). Total is self_reported + bishop_observed.
+- **avg_grade / avg_points**: average grade on graded missions where the agent has ≥1 step. grade_points: A=5, B=4, C=3, D=2, E=1, F=0. Null when graded_missions is 0.
+- **last_active**: max(mission_steps.ended_at) across the agent's steps; null if none have a non-empty ended_at.
+- **Agent list**: union of names from mission_steps, agent_mistakes, service_records and the crew table, normalised via CrewName. A name normalising to empty is dropped. Role comes from the crew table (null if no crew row or the row has no role). When collisions occur (multiple crew rows normalising to one name), a non-null role beats null, and among non-null roles the first in name order wins.
+- **Order**: steps_run desc, then agent asc.
 
 ### Findings
 

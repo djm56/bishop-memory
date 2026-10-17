@@ -223,7 +223,12 @@ test. One stage per mission; stage 1 is split in two.
      the page test checks source text, not rendering.
 2. **Crew page** (`/crew`), with crew names on steps (decision P5): steps
    run, first-pass approval rate, fix rounds caused, recurring mistakes by
-   impact, service records and average mission grade per agent.
+   impact, service records and average mission grade per agent. Shipped
+   2026-10-17 (f0da6af). Live: 9 agents; hicks 399 steps (first pass 58 of
+   110, 53%); vasquez 94 steps (22 of 29, 76%); lambert 232 steps (15 of
+   20, 75%); apone 2 of 2; known gaps: page tests check source text, not
+   rendering; "over time" trends deferred; whole tables read per request;
+   three non-crew names visible (P5 drift).
 3. **Brief prep** (§6): similar past missions, their wrong assumptions and
    reuse checklists, and matching directives and patterns, called by Bishop
    while framing a mission.
