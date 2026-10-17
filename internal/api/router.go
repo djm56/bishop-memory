@@ -42,6 +42,7 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 	router.GET("/triage", ui.TriagePageHandler())
 	router.GET("/missions", ui.MissionsPageHandler())
 	router.GET("/performance", ui.PerformancePageHandler())
+	router.GET("/crew", ui.CrewPageHandler())
 	router.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/missions") })
 	router.GET("/favicon.svg", ui.FaviconSVGHandler())
 	router.GET("/favicon.ico", ui.FaviconICOHandler())
@@ -53,6 +54,7 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 	required := cfg.HTTPHost != "" && !config.IsLoopbackHost(cfg.HTTPHost) && !cfg.AllowNoAuth
 	v1 := router.Group("/v1", middleware.APIKey(keys, required))
 	{
+		v1.GET("/crew", crewHandler(db))
 		v1.GET("/hud/missions", hudMissionsHandler(db))
 		v1.GET("/hud/missions/:missionID", hudMissionHandler(db))
 

@@ -30,6 +30,9 @@ var missionsPage []byte
 //go:embed performance.html
 var performancePage []byte
 
+//go:embed crew.html
+var crewPage []byte
+
 //go:embed favicon.svg
 var faviconSVG []byte
 
@@ -59,6 +62,14 @@ func MissionsPageHandler() gin.HandlerFunc {
 func PerformancePageHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", performancePage)
+	}
+}
+
+// CrewPageHandler serves GET /crew: per-agent metrics including steps run,
+// review rates, mistakes, service records, and average grade.
+func CrewPageHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", crewPage)
 	}
 }
 

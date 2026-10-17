@@ -53,29 +53,33 @@ func TestIconsAreServedWithTheirTypes(t *testing.T) {
 // TestPageLinksBothIcons guards the <head> links: without them a browser
 // falls back to requesting /favicon.ico alone and ignores the SVG.
 func TestPageLinksBothIcons(t *testing.T) {
-	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler()} {
+	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler(), "crew": CrewPageHandler()} {
 		page := string(serve(t, h).Body.Bytes())
 		for _, want := range []string{`href="/favicon.svg"`, `href="/favicon.ico"`} {
-			if !strings.Contains(page, want) {
-				t.Fatalf("%s page does not link %s", name, want)
-			}
+			t.Run(name+"/"+want, func(t *testing.T) {
+				if !strings.Contains(page, want) {
+					t.Fatalf("%s page does not link %s", name, want)
+				}
+			})
 		}
 	}
 }
 
 // TestPagesLinkEachOther checks every page carries the page switch, so the
-// operator can move between triage, the mission HUD and performance.
+// operator can move between triage, the mission HUD, performance and crew.
 func TestPagesLinkEachOther(t *testing.T) {
-	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler()} {
+	for name, h := range map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler(), "crew": CrewPageHandler()} {
 		rec := serve(t, h)
 		if rec.Code != http.StatusOK || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
 			t.Fatalf("%s page: status %d, type %q", name, rec.Code, rec.Header().Get("Content-Type"))
 		}
 		page := rec.Body.String()
-		for _, want := range []string{`href="/triage"`, `href="/missions"`, `href="/performance"`} {
-			if !strings.Contains(page, want) {
-				t.Fatalf("%s page has no link %s", name, want)
-			}
+		for _, want := range []string{`href="/triage"`, `href="/missions"`, `href="/performance"`, `href="/crew"`} {
+			t.Run(name+"/"+want, func(t *testing.T) {
+				if !strings.Contains(page, want) {
+					t.Fatalf("%s page has no link %s", name, want)
+				}
+			})
 		}
 	}
 }
@@ -182,6 +186,61 @@ func TestMissionsPageRendersLessonsSection(t *testing.T) {
 			t.Errorf("missions page does not contain %q", needle)
 		}
 	}
+}
+
+// TestCrewPageRendersMetrics is a source-text check only: it cannot run the
+// page's JavaScript, so it does not prove the page renders correctly. It
+// asserts that the served source contains each listed expression (the fetch of
+// /v1/crew, the assignment of each rendered field, the dash fallbacks for role,
+// first-pass approval, average grade and last active, the `|| {}` guards on
+// mistakes and service_records, the re-reviews title, the empty-state text and
+// the aria-current marker), and
+// that the string "innerHTML" appears nowhere in the crew page. The innerHTML
+// absence check is paired with a control: the missions page, served the same
+// way, does contain "innerHTML", so a pass means the page was searched rather
+// than that nothing was served.
+func TestCrewPageRendersMetrics(t *testing.T) {
+	page := serve(t, CrewPageHandler()).Body.String()
+	needles := []string{
+		"api('/v1/crew')",
+		"nameDiv.textContent = agent.agent",
+		"roleDiv.textContent = agent.role || '—'",
+		"agent.steps_run + ' / ' + agent.steps_total",
+		"fpassSpan.textContent = '—'",
+		"gradeSpan.textContent = '—'",
+		"const mk = agent.mistakes || {};",
+		"const sr = agent.service_records || {};",
+		"(agent.first_pass_rate * 100).toFixed(0)",
+		"agent.first_pass_approved + ' of ' + agent.reviewed_steps",
+		"String(agent.re_reviews)",
+		"Re-reviews of steps this agent wrote (fix rounds when the verdict line records them)",
+		"['high', mk.high ?? 0], ['med', mk.med ?? 0], ['low', mk.low ?? 0], ['unrated', mk.unrated ?? 0]",
+		"mk.top.forEach(m => {",
+		"link.href = '/missions#' + encodeURIComponent(m.mission_id)",
+		"' — ' + m.mistake + ' (' + m.impact + ')'",
+		"'total ' + (sr.total ?? 0) + ' (self-reported ' + (sr.self_reported ?? 0) + ', bishop-observed ' + (sr.bishop_observed ?? 0) + ')'",
+		"gradeElem.textContent = agent.avg_grade",
+		"' over ' + agent.graded_missions + ' graded mission'",
+		"lastSpan.textContent = agent.last_active ? agent.last_active : '—'",
+		"empty.textContent = 'No crew activity yet.'",
+		"err.textContent = 'Cannot reach the service: ' + e.message",
+		`<a href="/crew" class="on" aria-current="page">Crew</a>`,
+	}
+	for _, needle := range needles {
+		t.Run(needle, func(t *testing.T) {
+			if !strings.Contains(page, needle) {
+				t.Fatalf("crew page does not contain %q", needle)
+			}
+		})
+	}
+	t.Run("no innerHTML in crew page", func(t *testing.T) {
+		if !strings.Contains(serve(t, MissionsPageHandler()).Body.String(), "innerHTML") {
+			t.Fatal("control failed: missions page no longer contains innerHTML, so the absence check proves nothing")
+		}
+		if strings.Contains(page, "innerHTML") {
+			t.Fatal("crew page contains innerHTML; data must reach the DOM through textContent or text nodes only")
+		}
+	})
 }
 
 // TestMissionsPageRendersReviewsSection is a source-text check only: it cannot
