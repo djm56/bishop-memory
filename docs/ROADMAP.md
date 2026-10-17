@@ -28,7 +28,7 @@ Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 across missions: data health (phase 0), structured debriefs and review
 verdicts, crew, library and activity pages with operator grade review, cost
 and usage from transcripts, and a retrieval log with a brief-prep tool that
-feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); phase 1 slice 2 (`agent_mistakes`, 2347527, live); phase 1 slice 3 (`mission_deliverables`, a53c1ac, live); phase 1 slice 4 (`mission_lessons`, 1e78378, live); review verdicts (stage 1b, 06e4f8a, live); Crew page and GET /v1/crew (stage 2, f0da6af, live); remaining stages and phases 3–4 planned, with decisions P2–P5 open. Plan:
+feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); phase 1 slice 2 (`agent_mistakes`, 2347527, live); phase 1 slice 3 (`mission_deliverables`, a53c1ac, live); phase 1 slice 4 (`mission_lessons`, 1e78378, live); review verdicts (stage 1b, 06e4f8a, live); Crew page and GET /v1/crew (stage 2, f0da6af, live); remaining stages (3–8 of the build order) planned; phase 2's other pages, phases 3 and 4 not started; decisions P2, P3 and P5 settled (2026-10-16), P4 built. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
 
 **Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
