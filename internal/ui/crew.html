@@ -112,6 +112,83 @@
   #view { max-width:1600px; margin:0 auto }
   .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
   .brand { gap:14px }
+
+  /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
+  [hidden] { display:none !important }
+  header.top .brand h1 { font-size:24px }
+  @media (min-width: 861px) {
+    header.top { height:56px; gap:18px; flex-wrap:nowrap; row-gap:0 }
+    aside { top:56px; height:calc(100vh - 56px) }
+  }
+  @media (max-width: 1180px) { header.top .brand h1 { display:none } }
+  .subbar { position:sticky; top:56px; z-index:4; display:flex; align-items:stretch; gap:14px; padding:0 20px; min-height:44px; background:var(--bg); border-bottom:1px solid var(--line2) }
+  .subbar > :not(.subnav) { align-self:center }
+  .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
+  .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
+  .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
+  .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
+  .subnav button.on .n { color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .pager:empty { display:none }
+  .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
+  .bar { height:8px; border:1px solid var(--line2); padding:1px; background:none; overflow:hidden }
+  .bar i { display:block; height:100%; background:repeating-linear-gradient(90deg, var(--ok) 0 5px, transparent 5px 7px) }
+  /* Crew: performance-style summary strip + leaderboard rows (click a row for detail) */
+  #view { padding:18px 24px 64px }
+  .summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:22px; align-items:center; padding:12px 18px; margin:0 0 22px }
+  .summary .big { display:flex; align-items:center; gap:16px }
+  .summary .big .grade.lg { min-width:56px; height:48px; font-size:40px }
+  .summary .k, .kv .k { font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+  .summary .big .v, .kv .v { font:400 26px/1 var(--disp); font-variant-numeric:tabular-nums; margin-top:2px }
+  .summary .s, .kv .s { font-size:11.5px; color:var(--muted) }
+  .summary .mid { display:flex; flex-direction:column; gap:8px; min-width:0 } .summary .mid .bar { height:14px }
+  .summary .stats2 { display:flex; gap:22px; padding-left:22px; border-left:1px solid var(--line2) }
+  section.sec { margin-bottom:24px }
+  .sec > h3 { margin:0 0 8px; font-size:20px }
+  .toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 8px }
+  .toolbar input { width:min(280px, 100%) }
+  .sortl { display:flex; align-items:center; gap:8px; font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted) }
+  .sortl select { text-transform:none; letter-spacing:0; min-width:180px }
+  .cnt { margin-left:auto; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .board { background:var(--panel); border:1px solid var(--line2) }
+  .bhead, .crew-card { display:grid; grid-template-columns:36px minmax(150px,1.1fr) 80px minmax(140px,1fr) 64px minmax(200px,1.3fr) 130px; gap:0 14px; align-items:center; padding:0 18px 0 16px }
+  .bhead { padding-top:7px; padding-bottom:7px; border-bottom:1px solid var(--line2); font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+  .bhead > :nth-child(3), .bhead > :nth-child(5), .bhead > :nth-child(7) { text-align:right }
+  .crew-card { grid-template-areas:"g n s f r m l" "g o s f r m l" ". d d d d d d" ". e e e e e e"; position:static; background:none; border:0; border-bottom:1px solid var(--line); border-left:2px solid transparent; padding-top:6px; padding-bottom:6px; cursor:pointer }
+  .crew-card::before, .crew-card::after { display:none }
+  .crew-card:last-of-type { border-bottom:0 }
+  .crew-card:hover { background:var(--soft) }
+  .crew-card.open { background:var(--soft); border-left-color:var(--fg) }
+  .crew-card .name { grid-area:n; font:400 18px/1 var(--disp); letter-spacing:.06em; text-transform:uppercase; margin:0; align-self:end }
+  .crew-card .role { grid-area:o; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:2px 0 0; align-self:start }
+  .crew-card .row { display:flex; flex-direction:column; gap:2px; margin:0; font-size:12.5px; min-width:0 }
+  .crew-card .row > b, .crew-card .mistakes-row > b { display:none }
+  .crew-card .k-steps { grid-area:s; text-align:right } .crew-card .k-rerev { grid-area:r; text-align:right }
+  .crew-card .k-steps span, .crew-card .k-rerev span { font-variant-numeric:tabular-nums; color:var(--fg) }
+  .crew-card .k-fpass { grid-area:f } .crew-card .k-fpass span { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums } .crew-card .k-fpass .bar { height:6px; margin-top:2px }
+  .crew-card .k-grade { grid-area:g } .crew-card .k-grade span { font-size:0 } .crew-card .k-grade .grade { min-width:30px; height:30px; font-size:28px }
+  .crew-card .k-last { grid-area:l; text-align:right } .crew-card .k-last span { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums }
+  .crew-card .mistakes-row { grid-area:m; display:flex; flex-wrap:wrap; gap:4px; margin:0 }
+  .crew-card .mistake-badge { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; padding:2px 6px; border:0; color:var(--on); background:var(--faint); text-shadow:none; display:inline-flex; gap:4px }
+  .crew-card .mistake-badge b { color:inherit }
+  .crew-card .mistake-badge.sev-high { background:var(--bad) } .crew-card .mistake-badge.sev-med { background:var(--warn) }
+  .crew-card .mistake-badge.zero { background:none; color:var(--faint); border:1px solid var(--line) }
+  .crew-card .mistake-list { grid-area:d; margin:10px 0 4px; padding:4px 0 4px 12px; border-left:1px solid var(--line2) }
+  .crew-card .mistake-item { margin:0; padding:3px 0; color:var(--muted); font-size:12.5px }
+  .crew-card .k-sr { grid-area:e; margin:4px 0 6px } .crew-card .k-sr span { font-size:12px; color:var(--muted) }
+  .crew-card:not(.open) .mistake-list, .crew-card:not(.open) .k-sr { display:none }
+  @media (max-width: 1200px) {
+    .summary { grid-template-columns:auto minmax(0,1fr) } .summary .stats2 { grid-column:1 / -1; padding:14px 0 0; border-left:0; border-top:1px solid var(--line2); flex-wrap:wrap }
+    .bhead { display:none }
+    .crew-card { grid-template-columns:36px repeat(3, minmax(0,1fr)); grid-template-areas:"g n n l" "g o o o" "g s f r" "g m m m" ". d d d" ". e e e"; gap:6px 14px; padding-top:10px; padding-bottom:10px }
+    .crew-card .row > b { display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
+    .crew-card .k-steps, .crew-card .k-rerev { text-align:left }
+    .crew-card .k-grade > b { display:none }
+  }
+  @media (max-width: 760px) { .summary { grid-template-columns:1fr } #view { padding:16px 16px 64px } }
 </style>
 </head>
 <body>
@@ -188,12 +265,14 @@
     card.appendChild(roleDiv);
 
     const stepsDiv = labelRow('Steps run');
+    stepsDiv.classList.add('k-steps');
     const stepsSpan = document.createElement('span');
     stepsSpan.textContent = agent.steps_run + ' / ' + agent.steps_total;
     stepsDiv.appendChild(stepsSpan);
     card.appendChild(stepsDiv);
 
     const fpassDiv = labelRow('First-pass approval');
+    fpassDiv.classList.add('k-fpass');
     const fpassSpan = document.createElement('span');
     if (agent.first_pass_rate != null) {
       const pct = (agent.first_pass_rate * 100).toFixed(0);
@@ -202,9 +281,15 @@
       fpassSpan.textContent = '—';
     }
     fpassDiv.appendChild(fpassSpan);
+    if (agent.first_pass_rate != null) {
+      const bar = document.createElement('div'); bar.className = 'bar';
+      const fill = document.createElement('i'); fill.style.width = Math.round(agent.first_pass_rate * 100) + '%';
+      bar.appendChild(fill); fpassDiv.appendChild(bar);
+    }
     card.appendChild(fpassDiv);
 
     const rerevDiv = labelRow('Re-reviews');
+    rerevDiv.classList.add('k-rerev');
     const rerevSpan = document.createElement('span');
     rerevSpan.textContent = String(agent.re_reviews);
     rerevDiv.title = 'Re-reviews of steps this agent wrote (fix rounds when the verdict line records them)';
@@ -213,10 +298,11 @@
 
     const mistakesRow = document.createElement('div');
     mistakesRow.className = 'mistakes-row';
+    const mLabel = document.createElement('b'); mLabel.textContent = 'Mistakes'; mistakesRow.appendChild(mLabel);
     const mk = agent.mistakes || {};
     [['high', mk.high ?? 0], ['med', mk.med ?? 0], ['low', mk.low ?? 0], ['unrated', mk.unrated ?? 0]].forEach(([impact, count]) => {
       const badge = document.createElement('div');
-      badge.className = 'mistake-badge';
+      badge.className = 'mistake-badge sev-' + impact + (count ? '' : ' zero');
       const b = document.createElement('b');
       b.textContent = String(count);
       badge.appendChild(b);
@@ -245,6 +331,7 @@
     }
 
     const srDiv = labelRow('Service records');
+    srDiv.classList.add('k-sr');
     const srSpan = document.createElement('span');
     const sr = agent.service_records || {};
     srSpan.textContent = 'total ' + (sr.total ?? 0) + ' (self-reported ' + (sr.self_reported ?? 0) + ', bishop-observed ' + (sr.bishop_observed ?? 0) + ')';
@@ -252,6 +339,7 @@
     card.appendChild(srDiv);
 
     const gradeDiv = labelRow('Average grade');
+    gradeDiv.classList.add('k-grade');
     const gradeSpan = document.createElement('span');
     gradeSpan.title = 'Shared credit: the grade of every graded mission this agent worked on';
     if (agent.avg_grade) {
@@ -268,12 +356,41 @@
     card.appendChild(gradeDiv);
 
     const lastDiv = labelRow('Last active');
+    lastDiv.classList.add('k-last');
     const lastSpan = document.createElement('span');
     lastSpan.textContent = agent.last_active ? agent.last_active : '—';
     lastDiv.appendChild(lastSpan);
     card.appendChild(lastDiv);
 
     return card;
+  }
+
+  // Toolbar, sort and pager are built with DOM calls; this page never parses markup.
+  const CREW_PAGE = 20;
+  const cstate = { all:[], q:'', sort:'active', page:0 };
+  try { cstate.sort = localStorage.getItem('crew.sort') || 'active'; } catch (e) {}
+  const mtotal = a => { const m = a.mistakes || {}; return (m.high ?? 0) + (m.med ?? 0) + (m.low ?? 0) + (m.unrated ?? 0); };
+  const sorters = {
+    active: (a, b) => String(b.last_active || '').localeCompare(String(a.last_active || '')),
+    name: (a, b) => String(a.agent).localeCompare(String(b.agent)),
+    grade: (a, b) => String(a.avg_grade || 'Z').localeCompare(String(b.avg_grade || 'Z')),
+    firstpass: (a, b) => (b.first_pass_rate ?? -1) - (a.first_pass_rate ?? -1),
+    steps: (a, b) => (b.steps_run || 0) - (a.steps_run || 0),
+    mistakes: (a, b) => mtotal(b) - mtotal(a),
+  };
+  const el = (tag, cls, text) => { const x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; };
+
+  // Same pager as the other pages: ‹ Prev, first, current ±1, last, Next ›.
+  function pagerEl(page, pages, total, size, go) {
+    const wrap = el('div', 'pager'); if (pages <= 1) return wrap;
+    wrap.appendChild(el('span', '', (page * size + 1) + '–' + Math.min(total, (page + 1) * size) + ' of ' + total));
+    const seg = el('div', 'seg sm');
+    const btn = (lbl, to, on, off) => { const b = el('button', on ? 'on' : '', lbl); b.disabled = !!off; b.onclick = () => go(to); seg.appendChild(b); };
+    btn('‹ Prev', page - 1, false, page === 0);
+    let last = -1;
+    for (let i = 0; i < pages; i++) if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) { if (i - last > 1) seg.appendChild(el('span', 'gap', '…')); btn(String(i + 1), i, i === page); last = i; }
+    btn('Next ›', page + 1, false, page >= pages - 1);
+    wrap.appendChild(seg); return wrap;
   }
 
   function render(crew) {
@@ -286,13 +403,55 @@
       view.appendChild(empty);
       return;
     }
+    cstate.all = crew;
+    paintCrew();
+  }
+
+  function paintCrew() {
+    const view = $('#view');
     view.textContent = '';
+    const bar = el('div', 'toolbar');
+    const q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = cstate.q;
+    q.oninput = () => { cstate.q = q.value; cstate.page = 0; paintCrew(); const n = $('#cq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    const sel = el('select');
+    [['active', 'Last active'], ['name', 'Name'], ['grade', 'Average grade'], ['firstpass', 'First-pass approval'], ['steps', 'Steps run'], ['mistakes', 'Most mistakes']].forEach(([v, l]) => { const o = el('option', '', l); o.value = v; sel.appendChild(o); });
+    sel.value = cstate.sort;
+    sel.onchange = () => { cstate.sort = sel.value; cstate.page = 0; try { localStorage.setItem('crew.sort', sel.value); } catch (e) {} paintCrew(); };
+    const sortLabel = el('label', 'sortl', 'Sort '); sortLabel.appendChild(sel);
+    const needle = cstate.q.trim().toLowerCase();
+    const rows = cstate.all.filter(a => !needle || (String(a.agent) + ' ' + String(a.role || '')).toLowerCase().includes(needle)).sort(sorters[cstate.sort] || sorters.active);
+    bar.append(q, sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
+    // Summary strip, same shape as the performance page.
+    const sum = (f) => cstate.all.reduce((n, a) => n + (f(a) || 0), 0);
+    const approved = sum(a => a.first_pass_approved), reviewed = sum(a => a.reviewed_steps), rate = reviewed ? approved / reviewed : null;
+    const summary = el('div', 'card summary');
+    const big = el('div', 'big');
+    big.appendChild(el('span', 'grade lg solid ' + (rate == null ? '' : rate >= .85 ? 'gA' : rate >= .7 ? 'gB' : rate >= .55 ? 'gC' : 'gD'), rate == null ? '—' : String(Math.round(rate * 100))));
+    const bigt = el('div'); bigt.append(el('div', 'k', 'First-pass approval'), el('div', 'v', rate == null ? '—' : Math.round(rate * 100) + '%'), el('div', 's', approved + ' of ' + reviewed + ' reviewed steps'));
+    big.appendChild(bigt);
+    const mid = el('div', 'mid'); const mbar = el('div', 'bar'); const mfill = el('i'); mfill.style.width = Math.round((rate || 0) * 100) + '%'; mbar.appendChild(mfill); mid.append(el('div', 'k', 'Crew-wide first pass'), mbar);
+    const stats = el('div', 'stats2');
+    const kv = (k, v, s) => { const x = el('div', 'kv'); x.append(el('div', 'k', k), el('div', 'v', String(v))); if (s) x.appendChild(el('div', 's', s)); return x; };
+    stats.append(kv('Agents', cstate.all.length), kv('Steps run', sum(a => a.steps_run)), kv('Re-reviews', sum(a => a.re_reviews)), kv('High-impact mistakes', sum(a => (a.mistakes || {}).high), sum(a => mtotal(a)) + ' recorded in all'));
+    summary.append(big, mid, stats);
+    view.appendChild(summary);
+    const head = el('h3', '', 'Crew '); head.appendChild(el('span', 'n', String(rows.length)));
+    const sec = el('section', 'sec'); sec.append(head, bar);
+    view.appendChild(sec);
+    const pages = Math.max(1, Math.ceil(rows.length / CREW_PAGE)); cstate.page = Math.min(cstate.page, pages - 1);
     const list = document.createElement('div');
-    list.className = 'crew-list';
-    crew.forEach(agent => {
-      list.appendChild(crewCard(agent));
+    list.className = 'crew-list board';
+    const bh = el('div', 'bhead'); ['Avg', 'Agent', 'Steps', 'First pass', 'Re-rev', 'Mistakes', 'Last active'].forEach(t => bh.appendChild(el('span', '', t)));
+    if (rows.length) list.appendChild(bh);
+    rows.slice(cstate.page * CREW_PAGE, (cstate.page + 1) * CREW_PAGE).forEach(agent => {
+      const card = crewCard(agent);
+      card.title = 'Click for mistakes and service records';
+      card.onclick = e => { if (!e.target.closest('a')) card.classList.toggle('open'); };
+      list.appendChild(card);
     });
-    view.appendChild(list);
+    if (!rows.length) list.appendChild(el('div', 'none', 'No agents match.'));
+    sec.appendChild(list);
+    sec.appendChild(pagerEl(cstate.page, pages, rows.length, CREW_PAGE, p => { cstate.page = p; paintCrew(); window.scrollTo(0, 0); }));
   }
 
   api('/v1/crew')
