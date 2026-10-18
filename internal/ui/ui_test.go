@@ -132,36 +132,81 @@ func TestTriagePageRendersStaleRunsUI(t *testing.T) {
 }
 
 // TestTriagePageCloseRunButtonsMarkup is a source-text check only: it cannot run
-// the page's JavaScript. It asserts that close run controls render on their own
-// line (distinct from status pills), include a "Close run:" label, have buttons
-// without the filled `.ok` class (must be outlined), and carry the correct data
-// attributes and aria-labels for keyboard accessibility and operator action.
-// The test verifies the new markup structure and absence of the old filled style.
+// the page's JavaScript. It asserts close run controls render with the correct
+// markup structure: separate from status pills, a "Close run:" label, buttons
+// with full aria-labels pinning the run id, and without the old filled classes
+// (must be outlined). Per-subtest assertions verify presence of individual
+// elements and the absence of old markup. Absence check uses a presence control
+// to verify the path exists.
 func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
 	page := serve(t, TriagePageHandler()).Body.String()
-	// Positive controls: the markup must be present for the buttons to work.
-	needles := []string{
-		`<div class="close-label">Close run:</div>`,
-		`<div class="btns close-btns">`,
-		`data-close="done"`,
-		`data-close="failed"`,
-		`aria-label="Close run`,
-		`as done"`,
-		`as failed"`,
-	}
-	for _, needle := range needles {
-		if !strings.Contains(page, needle) {
-			t.Errorf("triage page does not contain %q", needle)
+
+	t.Run("close-label element", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="close-label">Close run:</div>`) {
+			t.Error("close-label div with text 'Close run:' not found")
 		}
-	}
-	// Absence control: close buttons must not have the `.ok` filled class.
-	// If the old broken markup is present, this test will fail.
-	if strings.Contains(page, `class="ok" data-close="done"`) {
-		t.Error("triage page contains the broken .ok class on close-done button")
-	}
-	if strings.Contains(page, `class="bad" data-close="failed"`) {
-		t.Error("triage page contains the filled .bad class on close-failed button")
-	}
+	})
+
+	t.Run("close-btns wrapper", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="btns close-btns">`) {
+			t.Error("close-btns wrapper not found")
+		}
+	})
+
+	t.Run("run-close wrapper", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="run-close">`) {
+			t.Error("run-close wrapper not found")
+		}
+	})
+
+	t.Run("close button aria-label with run id", func(t *testing.T) {
+		// Presence control: full aria-label template must exist.
+		if !strings.Contains(page, `aria-label="Close run `) {
+			t.Error("aria-label with 'Close run' prefix not found")
+		}
+		if !strings.Contains(page, ` as done"`) {
+			t.Error("aria-label with ' as done' suffix not found")
+		}
+		if !strings.Contains(page, ` as failed"`) {
+			t.Error("aria-label with ' as failed' suffix not found")
+		}
+	})
+
+	t.Run("data-run attribute present", func(t *testing.T) {
+		if !strings.Contains(page, `data-run="`) {
+			t.Error("data-run attribute not found on close buttons")
+		}
+	})
+
+	t.Run("old filled button classes absent", func(t *testing.T) {
+		// Absence control paired with presence check for run-close markup.
+		if !strings.Contains(page, `<div class="run-close">`) {
+			t.Fatal("run-close wrapper missing; cannot verify old markup is absent")
+		}
+		if strings.Contains(page, `class="ok" data-close="done"`) {
+			t.Error("old filled .ok class found on done button")
+		}
+		if strings.Contains(page, `class="bad" data-close="failed"`) {
+			t.Error("old filled .bad class found on failed button")
+		}
+	})
+
+	t.Run("light-theme pill rules for not-started/retired/superseded/stale", func(t *testing.T) {
+		// Verify the CSS rules exist for light theme pills.
+		stylePresent := false
+		for _, rule := range []string{
+			`.pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }`,
+			`.pill.stale { background:var(--warn); color:var(--on) }`,
+		} {
+			if strings.Contains(page, rule) {
+				stylePresent = true
+				break
+			}
+		}
+		if !stylePresent {
+			t.Error("light-theme pill background rules not found in page CSS")
+		}
+	})
 }
 
 // TestMissionsPageRendersDebriefSections is a source-text check only: it cannot

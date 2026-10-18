@@ -14,7 +14,7 @@
 </script>
 <style>
   :root {
-    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#5f7f69; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
+    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#4f6e5a; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
     --accent:#0b5a2c; --ok:#1b6834; --bad:#a3301c; --warn:#7a4f06; --on:#f4f7ef;
     --glow:none; --glowbox:none;
     --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; --sans:var(--mono); --disp:"VT323", var(--mono);
@@ -27,9 +27,6 @@
     --glow:0 0 3px rgba(140,255,180,.22); --glowbox:0 0 22px rgba(120,255,165,.14);
     --paper:none; --scan:repeating-linear-gradient(180deg, rgba(0,0,0,.12) 0 1px, transparent 1px 4px), radial-gradient(ellipse at center, transparent 65%, rgba(0,0,0,.3));
     color-scheme:dark;
-  }
-  :root[data-theme=light] {
-    --faint:#4f6e5a;
   }
   @media (prefers-color-scheme: dark) { :root[data-theme=system] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
@@ -231,14 +228,6 @@
   .verdict h4 { margin:12px 0 4px; font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
   .verdict p { margin:0; text-wrap:pretty; max-width:90ch }
   .signals { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px }
-  /* Light theme pill background colours */
-  :root[data-theme=light] .pill, :root[data-theme=light] .rec { border-color:transparent; background:var(--faint); color:var(--on); text-shadow:none }
-  :root[data-theme=light] .pill.approved, :root[data-theme=light] .pill.applied, :root[data-theme=light] .pill.accepted, :root[data-theme=light] .pill.finished, :root[data-theme=light] .pill.done, :root[data-theme=light] .pill.complete { background:var(--ok) }
-  :root[data-theme=light] .pill.rejected, :root[data-theme=light] .pill.declined, :root[data-theme=light] .pill.failed, :root[data-theme=light] .pill.blocked { background:var(--bad) }
-  :root[data-theme=light] .pill.running, :root[data-theme=light] .pill.proposed, :root[data-theme=light] .pill.pending, :root[data-theme=light] .pill.in-progress { background:var(--run); color:var(--on) }
-  :root[data-theme=light] .pill.not-started, :root[data-theme=light] .pill.retired, :root[data-theme=light] .pill.superseded { background:var(--faint) }
-  :root[data-theme=light] .pill.stale { background:var(--warn) }
-  :root[data-theme=light] .rec.approve { background:var(--ok) } :root[data-theme=light] .rec.reject { background:var(--bad) } :root[data-theme=light] .rec.defer { background:var(--warn) }
   @media (max-width: 1100px) { .stats { display:none } .two { grid-template-columns:1fr } }
   @media (max-width: 860px) {
     header.top { height:auto; flex-wrap:wrap; padding:10px 16px; gap:10px 14px }
