@@ -179,32 +179,46 @@ func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
 	})
 
 	t.Run("old filled button classes absent", func(t *testing.T) {
-		// Absence control paired with presence check for run-close markup.
-		if !strings.Contains(page, `<div class="run-close">`) {
-			t.Fatal("run-close wrapper missing; cannot verify old markup is absent")
+		// Absence control: verify old filled button markup is not present in run-close.
+		// Presence control: close button must exist to distinguish 'control works' from 'nothing present'.
+		hasCloseButton := strings.Contains(page, `class="btns close-btns"`)
+		hasOldDoneButton := strings.Contains(page, `class="ok" data-close="done"`)
+		hasOldFailedButton := strings.Contains(page, `class="bad" data-close="failed"`)
+		if !hasCloseButton {
+			t.Error("close-btns wrapper not found; cannot establish absence control")
 		}
-		if strings.Contains(page, `class="ok" data-close="done"`) {
+		if hasOldDoneButton {
 			t.Error("old filled .ok class found on done button")
 		}
-		if strings.Contains(page, `class="bad" data-close="failed"`) {
+		if hasOldFailedButton {
 			t.Error("old filled .bad class found on failed button")
 		}
 	})
 
-	t.Run("light-theme pill rules for not-started/retired/superseded/stale", func(t *testing.T) {
-		// Verify the CSS rules exist for light theme pills.
-		stylePresent := false
-		for _, rule := range []string{
-			`.pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }`,
-			`.pill.stale { background:var(--warn); color:var(--on) }`,
-		} {
-			if strings.Contains(page, rule) {
-				stylePresent = true
-				break
-			}
+	t.Run("root --faint variable and absence of old stale faint", func(t *testing.T) {
+		// Pin the base --faint value to #4f6e5a (default light fill).
+		// Assert that #5f7f69 (the old stale faint value) is not at :root.
+		if !strings.Contains(page, `--faint:#4f6e5a`) {
+			t.Error("root --faint variable not set to #4f6e5a")
 		}
-		if !stylePresent {
-			t.Error("light-theme pill background rules not found in page CSS")
+		if strings.Contains(page, `:root[data-theme=light] {`) && strings.Contains(page, `--faint:#5f7f69`) {
+			t.Error("old stale faint value #5f7f69 found in light-theme override")
+		}
+	})
+
+	t.Run("pill.not-started/retired/superseded fill rule", func(t *testing.T) {
+		// Verify the not-started/retired/superseded pill fill rule exists.
+		// This rule is theme-agnostic (applies to all themes).
+		if !strings.Contains(page, `.pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }`) {
+			t.Error("pill not-started/retired/superseded fill rule not found")
+		}
+	})
+
+	t.Run("pill.stale fill rule", func(t *testing.T) {
+		// Verify the stale pill fill rule exists.
+		// This rule is theme-agnostic (applies to all themes).
+		if !strings.Contains(page, `.pill.stale { background:var(--warn); color:var(--on) }`) {
+			t.Error("pill stale fill rule not found")
 		}
 	})
 }
