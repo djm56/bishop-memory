@@ -76,6 +76,12 @@ here ahead of an actual release.
 
 ### Fixed
 
+- **Triage page Runs tab: close-run controls now sit on their own line.** A stale run's close controls now sit on their own line under the status tags, labelled "Close run:" with outlined Done and Failed buttons (each with an aria-label naming the run). Previously the small filled "Mark done"/"Mark failed" buttons looked like status tags, so a stale run appeared to show every status.
+
+- **Default light theme: base `--faint` colour is now #4f6e5a on all four HUD pages.** The base light theme sets `--faint` to #4f6e5a (crew, missions, performance, triage). The darker value previously applied only after explicitly choosing light; with the system theme (dark chosen by the OS), faint text and grey status tags (not-started, retired, superseded) fell to 4.10:1 contrast. Status tags for done, complete, blocked, in-progress, stale, not-started, retired and superseded now have background fills on the triage and missions pages.
+
+- **Tests: ui_test.go pins the close-control markup and base --faint value.** TestTriagePageCloseRunButtonsMarkup guards the close-run buttons' aria-labels, data-run attributes, and outlined CSS; TestPagesPinBaseFaint asserts that all four HUD pages define `--faint:#4f6e5a` in their root rule.
+
 - **HUD journal times** — events show when they happened (`occurred_at`, the harness's `YYYY-MM-DD HH:MM UTC` now parsed) rather than when the service stored them, with the stored time on hover.
 - **HUD agent roles** — a step by the operator shows `human operator`, and a name no agent definition has (such as `senior (general-purpose)`) shows a **not in crew** tag instead of a blank role.
 - **The reconciler skipped findings and never linked them to missions.**
