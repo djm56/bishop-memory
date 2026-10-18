@@ -269,6 +269,53 @@
   .mrow .pill.in-progress, .step .pill.in-progress, .head .pill.in-progress { background:var(--run); border-color:var(--run); color:var(--on); text-shadow:none }
   .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
 
+  /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
+  [hidden] { display:none !important }
+  header.top .brand h1 { font-size:24px }
+  @media (min-width: 861px) {
+    header.top { height:56px; gap:18px; flex-wrap:nowrap; row-gap:0 }
+    aside { top:56px; height:calc(100vh - 56px) }
+  }
+  @media (max-width: 1180px) { header.top .brand h1 { display:none } }
+  .subbar { position:sticky; top:56px; z-index:4; display:flex; align-items:stretch; gap:14px; padding:0 20px; min-height:44px; background:var(--bg); border-bottom:1px solid var(--line2) }
+  .subbar > :not(.subnav) { align-self:center }
+  .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
+  .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
+  .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
+  .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
+  .subnav button.on .n { color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .pager:empty { display:none }
+  .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
+  /* Missions: paged list, tabbed detail */
+  aside { padding-bottom:0 }
+  #mpager { margin-top:auto; position:sticky; bottom:0; background:var(--bg); padding:10px 2px 12px; border-top:1px solid var(--line2) }
+  #mpager:empty { display:none }
+  #mpager .pager { margin-top:0; flex-wrap:nowrap }
+  #mpager .seg button:not([data-lp=prev]):not([data-lp=next]), #mpager .gap { display:none }
+  .head { margin-bottom:12px }
+  .tiles { margin-bottom:20px }
+  .now { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px }
+  .nowcard .k { font-size:10.5px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin:14px 0 5px }
+  .nowcard .k:first-child { margin-top:0 }
+  .nowcard .v { font-size:14px; display:flex; flex-wrap:wrap; gap:6px 10px; align-items:center; text-wrap:pretty }
+  .nowcard .v.bad { color:var(--bad) }
+  .nowcard .s { color:var(--muted); font-size:12.5px; margin-top:4px; text-wrap:pretty }
+  .att { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:5px }
+  .att .warn { color:var(--warn) }
+  .att button, .nowcard .more { background:none; border:0; padding:0; font:inherit; font-size:13px; color:var(--accent); cursor:pointer; text-decoration:underline dotted; text-underline-offset:3px; text-shadow:inherit; text-align:left }
+  .nowcard .more { margin-top:6px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase }
+  .dot-s { display:inline-grid; place-items:center; min-width:24px; height:24px; border:1px solid var(--line2); font-weight:600; font-size:11px }
+  .dot-s.in-progress { border-color:var(--run); color:var(--run) } .dot-s.done { background:var(--ok); border-color:var(--ok); color:var(--on); text-shadow:none }
+  @media (max-width: 1000px) { .now { grid-template-columns:1fr } }
+  .mtabs { position:sticky; top:56px; z-index:3; margin:0 0 20px; background:var(--panel); border:1px solid var(--line2) }
+  .mtabs button { min-height:42px }
+  .mtabs button.on { background:var(--bg) }
+  @media (max-width: 860px) { .mtabs { position:static } }
+
   /* Fit fixes for the MU/TH/UR header (2026-10-14). The wider brand pushed
      the header past the viewport, and on phones the single grid column
      grew to its widest child (a table, a long word) instead of the screen. */
@@ -308,6 +355,7 @@
     </div>
     <div class="rail-head"><span>Missions</span><span id="count"></span></div>
     <div class="mlist" id="mlist"></div>
+    <div id="mpager"></div>
   </aside>
   <section id="view"><div class="empty">Loading…</div></section>
 </main>
@@ -316,6 +364,9 @@
   const $ = (s, el=document) => el.querySelector(s);
   const state = { missions:[], current:null, filters:{ q:'', harness:'', status:'', grade:'' } };
   try { Object.assign(state.filters, JSON.parse(localStorage.getItem('hud.filters') || '{}'), { q:'' }); } catch (e) {}
+  const LIST_PAGE = 20; state.listPage = 0; state.tab = 'summary';
+  try { state.tab = localStorage.getItem('hud.tab') || 'summary'; } catch (e) {}
+  const pageOfCurrent = () => { const i = state.missions.findIndex(x => x.id === state.current); if (i >= 0) state.listPage = Math.floor(i / LIST_PAGE); return i; };
 
   const root = document.documentElement;
   const paintTheme = () => $('#theme').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.set === root.dataset.theme));
@@ -343,6 +394,13 @@
   const api = async path => {
     const r = await authed(path); const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
     if (!r.ok) throw new Error(json.error || r.status); return json;
+  };
+  // Shared pager (same markup on every page): ‹ Prev, first, current ±1, last, Next ›.
+  const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
+  const pagerHTML = (page, pages, total, size, key) => {
+    if (pages <= 1) return '';
+    const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+    return `<div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div>`;
   };
   const label = s => String(s || '').replace(/-/g, ' ');
   const crewName = a => String(a || '').split(':').pop().replace(/^@/, '').trim().toLowerCase();
@@ -415,6 +473,7 @@
     if (f.status === 'stale') { q.delete('status'); q.set('stale', '1'); }
     const d = await api('/v1/hud/missions?' + q);
     state.missions = d.missions;
+    if (pageOfCurrent() < 0) state.listPage = 0;
     const sel = $('#harness'), cur = f.harness;
     sel.innerHTML = '<option value="">All harnesses</option>' + d.harnesses.map(h => `<option value="${esc(h.name)}">${esc(h.name)} (${h.missions})</option>`).join('');
     sel.value = cur; $('#status').value = f.status; $('#grade').value = f.grade;
@@ -428,7 +487,11 @@
     if (!state.current && d.missions.length && !location.hash) location.hash = d.missions[0].id;
   }
   function renderList() {
-    $('#mlist').innerHTML = state.missions.length ? state.missions.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''} s-${esc(m.outcome === 'failed' ? 'failed' : m.status)}${m.stale ? ' stale' : ''}" href="#${esc(m.id)}" ${state.current === m.id ? 'aria-current="true"' : ''}>
+    const pages = Math.max(1, Math.ceil(state.missions.length / LIST_PAGE)); state.listPage = Math.min(Math.max(0, state.listPage), pages - 1);
+    const shown = state.missions.slice(state.listPage * LIST_PAGE, (state.listPage + 1) * LIST_PAGE);
+    $('#mpager').innerHTML = pagerHTML(state.listPage, pages, state.missions.length, LIST_PAGE, 'lp');
+    $('#mpager').querySelectorAll('[data-lp]').forEach(b => b.onclick = () => { state.listPage = pageFrom(b.dataset.lp, state.listPage); renderList(); $('aside').scrollTop = 0; });
+    $('#mlist').innerHTML = state.missions.length ? shown.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''} s-${esc(m.outcome === 'failed' ? 'failed' : m.status)}${m.stale ? ' stale' : ''}" href="#${esc(m.id)}" ${state.current === m.id ? 'aria-current="true"' : ''}>
         <span class="id">${m.grade ? gradeBadge(m.grade) + ' ' : ''}${esc(m.id)}</span>
         <span class="t">${esc(m.title)}</span>
         <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>${m.stale ? `<span class="pill stale" title="No activity since ${esc(fmtWhen(m.last_activity))}">stale</span>` : ''}
@@ -444,13 +507,30 @@
   // ---- one mission -------------------------------------------------------
 
   async function loadMission(id) {
-    state.current = id; renderList();
+    state.current = id; pageOfCurrent(); renderList();
     const view = $('#view'); view.innerHTML = '<div class="empty">Loading…</div>';
     const [d, f] = await Promise.all([api('/v1/hud/missions/' + encodeURIComponent(id)), api('/v1/findings?mission_id=' + encodeURIComponent(id))]);
     if (state.current !== id) return;
     renderMission(d, f.findings);
     document.title = id + ' · Mission HUD';
     { const on = $('.mrow.on'), a = $('aside'); if (on && a) { const r = on.getBoundingClientRect(), ar = a.getBoundingClientRect(); if (r.top < ar.top || r.bottom > ar.bottom) a.scrollTop += r.top - ar.top - ar.height / 2; } }
+  }
+
+  // Mission detail tabs: every section carries data-pane; only the chosen pane shows.
+  function applyTab() {
+    const v = $('#view'); let any = false;
+    v.querySelectorAll('[data-pane]').forEach(s => { const on = s.dataset.pane === state.tab; s.hidden = !on; any = any || on; });
+    v.querySelectorAll('[data-mt]').forEach(b => { const on = b.dataset.mt === state.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    let e = v.querySelector('.pane-empty');
+    if (!any) { if (!e) { e = document.createElement('div'); e.className = 'none pane-empty'; e.textContent = 'Nothing recorded for this mission yet.'; v.appendChild(e); } e.hidden = false; } else if (e) e.hidden = true;
+  }
+  function wireTabs() {
+    $('#view').querySelectorAll('[data-mt]').forEach(b => b.onclick = () => {
+      state.tab = b.dataset.mt; try { localStorage.setItem('hud.tab', state.tab); } catch (e) {}
+      applyTab(); const t = $('#mtabs'); const top = t.getBoundingClientRect().top + scrollY - $('header.top').offsetHeight; if (scrollY > top) window.scrollTo(0, top);
+    });
+    $('#view').querySelectorAll('[data-go]').forEach(b => b.onclick = () => $(`[data-mt="${b.dataset.go}"]`)?.click());
+    applyTab();
   }
 
   function renderMission(d, findings) {
@@ -472,6 +552,34 @@
     const less = d.lessons || [], was = less.filter(x => x.kind === 'wrong-assumption'), trig = less.find(x => x.kind === 'similar-mission'), rsteps = less.filter(x => x.kind === 'reuse-step');
     const revs = d.reviews || [], vlabel = {'approved': 'approved', 'not-approved': 'not approved'}, vclass = {'approved': 'approve', 'not-approved': 'reject'};
 
+    const ctxN = d.patterns.length + d.directives.length + d.crew.length + d.service_records.length;
+    const panes = [['summary', 'Summary', null], ['brief', 'Brief', null], ['steps', 'Steps', steps.length], ['findings', 'Findings', findings.length], ['debrief', 'Debrief', docs.debrief ? dels.length + mist.length + less.length : null], ['context', 'Context', ctxN], ['journal', 'Journal', d.events.length]];
+    if (!panes.some(p => p[0] === state.tab)) state.tab = 'summary';
+    const tabsBar = `<nav class="subnav mtabs" id="mtabs" role="tablist" aria-label="Mission sections">${panes.map(([k, l, n]) => `<button role="tab" data-mt="${k}">${l}${n != null ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</nav>`;
+    // Summary pane: what is happening now and what needs a decision, before the detail tabs.
+    const cur = steps.find(s => s.status === 'in-progress') || steps.find(s => s.status !== 'done');
+    const lastDone = steps.filter(s => s.status === 'done').slice(-1)[0];
+    const recent = d.events.slice(-5).reverse();
+    const openF = findings.filter(x => x.status === 'proposed').length, unmet = criteria.filter(c => c.met === false).length, highM = mist.filter(x => x.impact === 'high').length;
+    const stepLine = s => `<div class="v"><span class="dot-s ${esc(s.status)}">${esc(s.step)}</span><b>${esc(s.agent || '—')}</b>${s.phase ? `<span class="tag">${esc(s.phase)}</span>` : ''}${pillFor(s.status || 'pending')}</div>${s.summary ? `<div class="s">${esc(s.summary)}</div>` : ''}`;
+    const att = [
+      openF ? `<li><button data-go="findings">${openF} finding${openF === 1 ? '' : 's'} awaiting triage</button></li>` : '',
+      unmet ? `<li><button data-go="brief">${unmet} acceptance criteri${unmet === 1 ? 'on' : 'a'} not met</button></li>` : '',
+      highM ? `<li><button data-go="debrief">${highM} high-impact agent mistake${highM === 1 ? '' : 's'}</button></li>` : '',
+      board?.stale ? `<li class="warn">No activity since ${esc(fmtWhen(board.last_activity))}</li>` : '',
+    ].filter(Boolean).join('');
+    const nowHTML = `<section class="sec" data-pane="summary"><h3>Now</h3><div class="now">
+      <div class="card nowcard">
+        <div class="k">Next action</div><div class="v">${esc(m.next_action || (m.status === 'complete' ? 'Mission closed.' : '—'))}</div>
+        ${m.blockers ? `<div class="k">Blocked by</div><div class="v bad">${esc(m.blockers)}</div>` : ''}
+        ${cur ? `<div class="k">Current step</div>${stepLine(cur)}` : lastDone ? `<div class="k">Last step</div>${stepLine(lastDone)}` : ''}
+      </div>
+      <div class="card nowcard">
+        <div class="k">Needs attention</div>${att ? `<ul class="att">${att}</ul>` : '<div class="s">Nothing waiting on you.</div>'}
+        <div class="k">Latest activity</div>${recent.length ? `<ul class="ev">${recent.map(e => `<li><span class="ts">${esc(fmtWhen(e.occurred_at || e.created_at))}</span>${esc(e.agent || '')} ${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul><button class="more" data-go="journal">Full journal →</button>` : '<div class="s">No events yet.</div>'}
+      </div>
+    </div></section>`;
+
     $('#view').innerHTML = `
       <div class="head">
         <div class="ids"><span class="id">${esc(m.id)}</span><span>${esc(m.harness || 'no harness')}</span>${m.owner ? `<span>owner ${esc(m.owner)}</span>` : ''}${m.priority && m.priority !== 'normal' ? `<span class="tag">${esc(m.priority)}</span>` : ''}
@@ -479,7 +587,8 @@
         <h2>${esc(m.title)}</h2>
         <div class="when">Opened ${esc(fmtWhen(m.opened_at))}${m.closed_at ? ` · closed ${esc(fmtWhen(m.closed_at))}` : ''}${m.next_action ? ` · next: ${esc(m.next_action)}` : ''}${m.blockers ? ` · <span style="color:var(--bad)">blocked: ${esc(m.blockers)}</span>` : ''}${board?.stale ? ` · <span style="color:var(--warn)">stale: no activity since ${esc(fmtWhen(board.last_activity))}</span>` : ''}</div>
       </div>
-      <div class="tiles">
+      ${tabsBar}
+      <div class="tiles" data-pane="summary">
         ${tile('Steps', `${done}/${steps.length}`, steps.length ? '' : 'none recorded', steps.length ? done / steps.length : null)}
         ${tile('Duration', esc(dur(m.opened_at, m.closed_at) || '—'), m.closed_at ? '' : 'still open')}
         ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${v} ${k}`).join(' · '))}
@@ -488,15 +597,16 @@
         ${tile('Directives', d.directives.filter(x => x.status !== 'under-review').length, d.directives.some(x => x.status === 'under-review') ? `${d.directives.filter(x => x.status === 'under-review').length} under review` : '')}
       </div>
 
+      ${nowHTML}
       ${gradeSection(d.grade, m)}
 
-      <section class="sec"><h3>Brief</h3>${docs.brief ? `<div class="card">
+      <section class="sec" data-pane="brief"><h3>Brief</h3>${docs.brief ? `<div class="card">
         ${brief['Goal'] ? `<p class="goal">${md(brief['Goal']).replace(/^<p>|<\/p>$/g, '')}</p>` : ''}
         ${criteria.length ? `<ul class="crit">${criteria.map(c => `<li><span class="box ${c.met === true ? 'yes' : c.met === false ? 'no' : ''}">${c.met === true ? '✓' : c.met === false ? '✕' : ''}</span><span>${md(c.text).replace(/^<p>|<\/p>$/g, '')}${c.ev ? `<span class="ev">${esc(c.ev)}</span>` : ''}</span></li>`).join('')}</ul>` : ''}
         <details><summary>Full brief</summary><div class="md" style="margin-top:10px">${md(docs.brief.body)}</div></details>
       </div>` : `<div class="none">No brief imported. <code>POST /v1/documents/sync</code> imports it.</div>`}</section>
 
-      <section class="sec"><h3>Steps <span class="n">${steps.length}</span></h3>${steps.length ? `<div class="card"><div class="steps">${steps.map(s => {
+      <section class="sec" data-pane="steps"><h3>Steps <span class="n">${steps.length}</span></h3>${steps.length ? `<div class="card"><div class="steps">${steps.map(s => {
         const who = crew[crewName(s.agent)], events = evFor(s);
         return `<div class="step"><div class="rail"><span class="dot ${esc(s.status)}">${esc(s.step)}</span><span class="line"></span></div><div class="body">
           <div class="top"><span class="agent" title="${esc(who?.description || '')}">${esc(s.agent || '—')}</span>${roleFor(s.agent, who) ? `<span${roleFor(s.agent, who) === 'not in crew' ? ' class="tag" title="No agent definition by this name in any registered harness"' : ''}>${esc(roleFor(s.agent, who))}</span>` : ''}${s.phase ? `<span class="tag">${esc(s.phase)}</span>` : ''}${pillFor(s.status || 'pending')}
@@ -505,9 +615,9 @@
           ${s.notes || events.length ? `<details><summary>Notes${events.length ? ` and ${events.length} journal events` : ''}</summary>${s.notes ? `<div class="detail">${esc(s.notes)}</div>` : ''}${events.length ? `<ul class="ev">${events.map(e => `<li><span class="ts">${esc(fmtWhen(e.occurred_at || e.created_at))}</span>${esc(e.event)} · ${esc(e.note)}</li>`).join('')}</ul>` : ''}</details>` : ''}
         </div></div>`; }).join('')}</div></div>` : '<div class="none">No steps recorded.</div>'}</section>
 
-      <section class="sec"><h3>Reviews <span class="n">${revs.length}</span></h3>${revs.length ? `<div class="table-wrap"><table><tr><th>Step</th><th>Verdict</th><th>Reviews</th><th>Critical</th><th>Warnings</th><th>Fix round</th></tr>${revs.map(r => `<tr><td class="mono">${esc(r.step)}</td><td><span class="rec ${esc(vclass[r.verdict] || 'defer')}">${esc(vlabel[r.verdict] || 'unknown')}</span></td><td class="mono">${r.reviews_step == null ? '—' : esc(r.reviews_step)}</td><td class="mono">${r.critical == null ? '—' : esc(r.critical)}</td><td class="mono">${r.warnings == null ? '—' : esc(r.warnings)}</td><td class="mono">${r.fix_round == null ? '—' : esc(r.fix_round)}</td></tr>`).join('')}</table></div>` : `<div class="none">No review steps recorded.</div>`}</section>
+      <section class="sec" data-pane="steps"><h3>Reviews <span class="n">${revs.length}</span></h3>${revs.length ? `<div class="table-wrap"><table><tr><th>Step</th><th>Verdict</th><th>Reviews</th><th>Critical</th><th>Warnings</th><th>Fix round</th></tr>${revs.map(r => `<tr><td class="mono">${esc(r.step)}</td><td><span class="rec ${esc(vclass[r.verdict] || 'defer')}">${esc(vlabel[r.verdict] || 'unknown')}</span></td><td class="mono">${r.reviews_step == null ? '—' : esc(r.reviews_step)}</td><td class="mono">${r.critical == null ? '—' : esc(r.critical)}</td><td class="mono">${r.warnings == null ? '—' : esc(r.warnings)}</td><td class="mono">${r.fix_round == null ? '—' : esc(r.fix_round)}</td></tr>`).join('')}</table></div>` : `<div class="none">No review steps recorded.</div>`}</section>
 
-      <section class="sec"><h3>Findings <span class="n">${findings.length}</span></h3>${findings.length ? `<div class="list">${findings.map(x => { const t = x.triage, r = x.recommendation; return `<div class="card">
+      <section class="sec" data-pane="findings"><h3>Findings <span class="n">${findings.length}</span></h3>${findings.length ? `<div class="list">${findings.map(x => { const t = x.triage, r = x.recommendation; return `<div class="card">
         <div class="meta-row"><span class="id">#${x.id}</span>${x.finding_date ? `<span>${esc(x.finding_date)}</span>` : ''}${pillFor(x.status)}${t ? `<span class="tag">${esc(t.category)}</span>` : '<span class="tag">uncategorised</span>'}${t?.directive_candidate ? '<span class="tag dc">directive candidate</span>' : ''}
           <a class="open" href="/triage?finding=${x.id}">Open in triage →</a></div>
         ${x.target ? `<div class="target">${esc(x.target)}</div>` : ''}<div class="sugg">${esc(t?.summary || x.suggestion)}</div>
@@ -515,32 +625,33 @@
         ${x.decision_note ? `<div class="meta-row" style="margin-top:8px">${esc([x.approver, x.date_approved, x.decision_note].filter(Boolean).join(' · '))}</div>` : ''}
       </div>`; }).join('')}</div>` : '<div class="none">No findings linked to this mission.</div>'}</section>
 
-      <section class="sec"><h3>Deliverables <span class="n">${dels.length}</span></h3>${dels.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Path</th><th>Note</th></tr>${dels.map(x => `<tr><td class="mono">${esc(x.ord)}</td><td class="mono">${x.path ? esc(x.path) : '—'}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div>` : `<div class="none">${docs.debrief ? 'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+      <section class="sec" data-pane="debrief"><h3>Deliverables <span class="n">${dels.length}</span></h3>${dels.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Path</th><th>Note</th></tr>${dels.map(x => `<tr><td class="mono">${esc(x.ord)}</td><td class="mono">${x.path ? esc(x.path) : '—'}</td><td>${esc(x.note)}</td></tr>`).join('')}</table></div>` : `<div class="none">${docs.debrief ? 'No deliverables listed in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
-      <section class="sec"><h3>Agent mistakes <span class="n">${mist.length}</span></h3>${mist.length ? `<div class="list">${mist.map(x => `<div class="card"><div class="meta-row"><span class="id">${x.agent ? '@' + esc(x.agent) : esc(x.agent_raw || '—')}</span>${x.impact ? `<span class="tag">impact ${esc(x.impact)}</span>` : ''}${x.impact_note ? `<span>${esc(x.impact_note)}</span>` : ''}</div><div class="sugg">${esc(x.mistake)}</div>${x.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(x.correction)}</p></div>` : ''}${x.prevention ? `<div class="rec-row"><span class="rec">prevent</span><p>${esc(x.prevention)}</p></div>` : ''}</div>`).join('')}</div>` : `<div class="none">${docs.debrief ? 'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+      <section class="sec" data-pane="debrief"><h3>Agent mistakes <span class="n">${mist.length}</span></h3>${mist.length ? `<div class="list">${mist.map(x => `<div class="card"><div class="meta-row"><span class="id">${x.agent ? '@' + esc(x.agent) : esc(x.agent_raw || '—')}</span>${x.impact ? `<span class="tag">impact ${esc(x.impact)}</span>` : ''}${x.impact_note ? `<span>${esc(x.impact_note)}</span>` : ''}</div><div class="sugg">${esc(x.mistake)}</div>${x.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(x.correction)}</p></div>` : ''}${x.prevention ? `<div class="rec-row"><span class="rec">prevent</span><p>${esc(x.prevention)}</p></div>` : ''}</div>`).join('')}</div>` : `<div class="none">${docs.debrief ? 'No agent mistakes recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
-      <section class="sec"><h3>Lessons <span class="n">${less.length}</span></h3>${less.length ? `${was.length ? `<div class="list">${was.map(w => `<div class="card"><div class="target">${esc(w.text)}</div>${w.why ? `<div class="sugg">${esc(w.why)}</div>` : ''}${w.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(w.correction)}</p></div>` : ''}</div>`).join('')}</div>` : ''}${trig || rsteps.length ? `<div class="card" style="margin-top:12px">${trig ? `<div class="meta-row"><span class="tag">reuse when</span><span>${esc(trig.text)}</span></div>` : ''}${rsteps.length ? `<ol>${rsteps.map(st => `<li>${esc(st.text)}</li>`).join('')}</ol>` : ''}</div>` : ''}` : `<div class="none">${docs.debrief ? 'No lessons recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+      <section class="sec" data-pane="debrief"><h3>Lessons <span class="n">${less.length}</span></h3>${less.length ? `${was.length ? `<div class="list">${was.map(w => `<div class="card"><div class="target">${esc(w.text)}</div>${w.why ? `<div class="sugg">${esc(w.why)}</div>` : ''}${w.correction ? `<div class="rec-row"><span class="rec">fixed</span><p>${esc(w.correction)}</p></div>` : ''}</div>`).join('')}</div>` : ''}${trig || rsteps.length ? `<div class="card" style="margin-top:12px">${trig ? `<div class="meta-row"><span class="tag">reuse when</span><span>${esc(trig.text)}</span></div>` : ''}${rsteps.length ? `<ol>${rsteps.map(st => `<li>${esc(st.text)}</li>`).join('')}</ol>` : ''}</div>` : ''}` : `<div class="none">${docs.debrief ? 'No lessons recorded in the debrief.' : m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
-      <section class="sec"><h3>Debrief</h3>${docs.debrief ? `<div class="card md">${md(docs.debrief.body)}</div>` : `<div class="none">${m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
+      <section class="sec" data-pane="debrief"><h3>Debrief</h3>${docs.debrief ? `<div class="card md">${md(docs.debrief.body)}</div>` : `<div class="none">${m.status === 'complete' ? 'No debrief imported.' : 'Written when the mission closes.'}</div>`}</section>
 
-      ${d.patterns.length ? `<section class="sec"><h3>Patterns <span class="n">${d.patterns.length}</span></h3><div class="list">${d.patterns.map(p => `<div class="card"><b>${esc(p.name)}</b>${p.context ? `<div class="sugg" style="color:var(--muted)">${esc(p.context)}</div>` : ''}<details><summary>Solution and example</summary><div class="md" style="margin-top:8px">${md(p.solution)}${p.example ? md(p.example) : ''}</div></details></div>`).join('')}</div></section>` : ''}
+      ${d.patterns.length ? `<section class="sec" data-pane="context"><h3>Patterns <span class="n">${d.patterns.length}</span></h3><div class="list">${d.patterns.map(p => `<div class="card"><b>${esc(p.name)}</b>${p.context ? `<div class="sugg" style="color:var(--muted)">${esc(p.context)}</div>` : ''}<details><summary>Solution and example</summary><div class="md" style="margin-top:8px">${md(p.solution)}${p.example ? md(p.example) : ''}</div></details></div>`).join('')}</div></section>` : ''}
 
-      ${d.directives.length ? `<section class="sec"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span>${pillFor(x.status || 'active')}</div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
+      ${d.directives.length ? `<section class="sec" data-pane="context"><h3>Directives <span class="n">${d.directives.length}</span></h3><div class="list">${d.directives.map(x => `<div class="card"><div class="meta-row"><span class="id">${esc(x.directive_id || 'proposal #' + x.proposal_id)}</span><span>${esc(fmtDay(x.ratified_at || x.decided_at))}</span>${pillFor(x.status || 'active')}</div><div class="target">${esc(x.title)}</div><div class="sugg">${esc(x.rule)}</div></div>`).join('')}</div></section>` : ''}
 
-      ${d.crew.length ? `<section class="sec"><h3>Crew <span class="n">${d.crew.length}</span></h3><div class="two">${d.crew.map(c => `<div class="card crew-card"><b>@${esc(c.name)}</b><span>${esc(c.description || c.role || '')}</span></div>`).join('')}</div></section>` : ''}
+      ${d.crew.length ? `<section class="sec" data-pane="context"><h3>Crew <span class="n">${d.crew.length}</span></h3><div class="two">${d.crew.map(c => `<div class="card crew-card"><b>@${esc(c.name)}</b><span>${esc(c.description || c.role || '')}</span></div>`).join('')}</div></section>` : ''}
 
-      ${d.service_records.length ? `<section class="sec"><h3>Service records <span class="n">${d.service_records.length}</span></h3><div class="list">${d.service_records.map(s => `<div class="card"><div class="meta-row"><span class="id">@${esc(crewName(s.agent))}</span><span>${esc(s.record_date)}</span>${s.source ? `<span class="tag">${esc(s.source)}</span>` : ''}</div>${s.title ? `<div class="target">${esc(s.title)}</div>` : ''}<div class="sugg">${esc(s.note)}</div>${s.adjustment ? `<div class="rec-row"><span class="rec defer">adjust</span><p>${esc(s.adjustment)}</p></div>` : ''}</div>`).join('')}</div></section>` : ''}
+      ${d.service_records.length ? `<section class="sec" data-pane="context"><h3>Service records <span class="n">${d.service_records.length}</span></h3><div class="list">${d.service_records.map(s => `<div class="card"><div class="meta-row"><span class="id">@${esc(crewName(s.agent))}</span><span>${esc(s.record_date)}</span>${s.source ? `<span class="tag">${esc(s.source)}</span>` : ''}</div>${s.title ? `<div class="target">${esc(s.title)}</div>` : ''}<div class="sugg">${esc(s.note)}</div>${s.adjustment ? `<div class="rec-row"><span class="rec defer">adjust</span><p>${esc(s.adjustment)}</p></div>` : ''}</div>`).join('')}</div></section>` : ''}
 
-      <section class="sec"><h3>Journal <span class="n">${d.events.length}</span></h3>${d.events.length ? `<details><summary>Show every flight-recorder event</summary><div class="table-wrap" style="margin-top:10px"><table><tr><th>When</th><th>Step</th><th>Agent</th><th>Event</th><th>Note</th></tr>${d.events.map(e => `<tr><td class="mono" title="${e.occurred_at && e.occurred_at !== e.created_at ? 'recorded ' + esc(fmtWhen(e.created_at)) : ''}">${esc(fmtWhen(e.occurred_at || e.created_at))}</td><td>${esc(e.step || '')}</td><td>${esc(e.agent || '')}</td><td>${esc(e.event)}</td><td>${esc(e.note)}</td></tr>`).join('')}</table></div></details>` : '<div class="none">No events.</div>'}
+      <section class="sec" data-pane="journal"><h3>Journal <span class="n">${d.events.length}</span></h3>${d.events.length ? `<details><summary>Show every flight-recorder event</summary><div class="table-wrap" style="margin-top:10px"><table><tr><th>When</th><th>Step</th><th>Agent</th><th>Event</th><th>Note</th></tr>${d.events.map(e => `<tr><td class="mono" title="${e.occurred_at && e.occurred_at !== e.created_at ? 'recorded ' + esc(fmtWhen(e.created_at)) : ''}">${esc(fmtWhen(e.occurred_at || e.created_at))}</td><td>${esc(e.step || '')}</td><td>${esc(e.agent || '')}</td><td>${esc(e.event)}</td><td>${esc(e.note)}</td></tr>`).join('')}</table></div></details>` : '<div class="none">No events.</div>'}
         ${docs.progress ? `<details><summary>PROGRESS.md as written</summary><div class="card md" style="margin-top:10px">${md(docs.progress.body)}</div></details>` : ''}</section>`;
+    wireTabs();
   }
 
   // The grader's verdict: letter, why, and what to change next time. signals
   // are the server's own counts, shown so any grade can be checked.
   function gradeSection(g, m) {
     const done = m.status === 'complete' || m.outcome === 'failed';
-    if (!g || g.state === 'pending') return `<section class="sec"><h3>Grade</h3><div class="none">${done ? (g ? 'Claimed by a grading run; the verdict is not written yet.' : 'Not graded yet. The grader runs nightly; <code>make triage-grade</code> runs it now.') : 'Graded once the mission is finished.'}</div></section>`;
-    if (g.state === 'skipped') return `<section class="sec"><h3>Grade</h3><div class="none">Skipped after ${esc(g.attempts)} unanswered grading runs. <code>make triage-grade MISSIONS=${esc(m.id)} REGRADE=1</code> tries again.</div></section>`;
+    if (!g || g.state === 'pending') return `<section class="sec" data-pane="summary"><h3>Grade</h3><div class="none">${done ? (g ? 'Claimed by a grading run; the verdict is not written yet.' : 'Not graded yet. The grader runs nightly; <code>make triage-grade</code> runs it now.') : 'Graded once the mission is finished.'}</div></section>`;
+    if (g.state === 'skipped') return `<section class="sec" data-pane="summary"><h3>Grade</h3><div class="none">Skipped after ${esc(g.attempts)} unanswered grading runs. <code>make triage-grade MISSIONS=${esc(m.id)} REGRADE=1</code> tries again.</div></section>`;
     const s = g.signals || {};
     const chips = [
       s.criteria_planned != null ? `criteria ${s.criteria_met}/${s.criteria_planned}${s.criteria_unmet ? ` · ${s.criteria_unmet} unmet` : ''}` : '',
@@ -551,7 +662,7 @@
       s.blocked_events ? `${s.blocked_events} blocked` : '',
       s.findings != null ? `${s.findings} finding${s.findings === 1 ? '' : 's'}` : '',
     ].filter(Boolean);
-    return `<section class="sec"><h3>Grade</h3><div class="card verdict">
+    return `<section class="sec" data-pane="summary"><h3>Grade</h3><div class="card verdict">
       ${g.grade ? gradeBadge(g.grade, 'lg solid') : '<span class="grade lg">?</span>'}
       <div>
         <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
