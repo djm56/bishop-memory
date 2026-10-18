@@ -267,13 +267,18 @@ func TestMissionsPageFiltersAreLabelled(t *testing.T) {
 	}
 }
 
-// TestMissionsPageEscapesFindingStatus checks that the finding status tile
-// escapes both the status key and its count value when rendering the findings
-// tile subline, to prevent XSS via tainted API strings.
-func TestMissionsPageEscapesFindingStatus(t *testing.T) {
+// TestMissionsPageFindingStatusSourceText is a source-text check only: it
+// cannot run the page's JavaScript. It asserts that the mission page template
+// escapes both the status key and its count value in the findings tile subline
+// by checking the template string in the page source.
+func TestMissionsPageFindingStatusSourceText(t *testing.T) {
 	page := serve(t, MissionsPageHandler()).Body.String()
 	if !strings.Contains(page, "${esc(String(v))} ${esc(k)}") {
 		t.Fatalf("missions page does not escape finding status counts and keys")
+	}
+	// Absence control: the raw form without esc() must NOT appear.
+	if strings.Contains(page, "${v} ${k}") {
+		t.Fatalf("missions page contains unescaped finding status template")
 	}
 }
 
@@ -309,6 +314,70 @@ func TestMissionsPageRendersReviewsSection(t *testing.T) {
 	for _, needle := range needles {
 		if !strings.Contains(page, needle) {
 			t.Errorf("missions page does not contain %q", needle)
+		}
+	}
+}
+
+// TestPagerConstDeclaredOnce checks that each page using pagerHTML template
+// (missions, triage, performance) declares it exactly once. A duplicate
+// declaration is a SyntaxError that prevents the page from loading.
+func TestPagerConstDeclaredOnce(t *testing.T) {
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"missions", MissionsPageHandler()},
+		{"triage", TriagePageHandler()},
+		{"performance", PerformancePageHandler()},
+	}
+	for _, p := range pages {
+		page := serve(t, p.handler).Body.String()
+		count := strings.Count(page, "const pagerHTML")
+		if count != 1 {
+			t.Errorf("%s page declares pagerHTML %d times, want 1", p.name, count)
+		}
+	}
+}
+
+// TestSharedShellIdentical checks that the CSS shared shell block
+// (identical across all four pages) is byte-for-byte identical in each page.
+func TestSharedShellIdentical(t *testing.T) {
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"missions", MissionsPageHandler()},
+		{"triage", TriagePageHandler()},
+		{"performance", PerformancePageHandler()},
+		{"crew", CrewPageHandler()},
+	}
+
+	const sharedStartMarker = "/* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */"
+	// Shared shell ends just after @media (max-width: 860px) { .subbar }
+	const sharedEndMarker = "@media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }"
+
+	shells := make(map[string]string)
+	for _, p := range pages {
+		page := serve(t, p.handler).Body.String()
+		start := strings.Index(page, sharedStartMarker)
+		if start == -1 {
+			t.Fatalf("%s page missing shared shell start marker", p.name)
+		}
+		end := strings.Index(page[start:], sharedEndMarker)
+		if end == -1 {
+			t.Fatalf("%s page missing shared shell end marker", p.name)
+		}
+		end += start + len(sharedEndMarker)
+		shells[p.name] = page[start : end]
+	}
+
+	// All shells must be identical
+	var canonical string
+	for name, shell := range shells {
+		if canonical == "" {
+			canonical = shell
+		} else if shell != canonical {
+			t.Errorf("%s page shared shell differs from canonical", name)
 		}
 	}
 }

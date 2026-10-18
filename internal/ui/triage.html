@@ -28,6 +28,9 @@
     --paper:none; --scan:repeating-linear-gradient(180deg, rgba(0,0,0,.12) 0 1px, transparent 1px 4px), radial-gradient(ellipse at center, transparent 65%, rgba(0,0,0,.3));
     color-scheme:dark;
   }
+  :root[data-theme=light] {
+    --faint:#4f6e5a;
+  }
   @media (prefers-color-scheme: dark) { :root[data-theme=system] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
     --accent:#d4ffe1; --ok:#8dffb0; --bad:#ff6b57; --warn:#ffbf5e; --on:#030805;
@@ -53,6 +56,7 @@
   .seg button, .seg a { border:0; border-right:1px solid var(--line2); background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:9px 12px; cursor:pointer; text-decoration:none; text-shadow:inherit }
   .seg > :last-child { border-right:0 }
   .seg button:hover, .seg a:hover { color:var(--fg); background:var(--soft) }
+  .seg button:focus-visible, .seg a:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
   .seg button.on, .seg a.on { background:var(--fg); color:var(--on); text-shadow:none }
   .seg.sm button { padding:7px 9px; font-size:11px }
   .spacer { flex:1 }
@@ -276,6 +280,7 @@
   .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
   .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
   .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px }
   .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
   .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
   .subnav button.on .n { color:var(--fg) }
@@ -576,7 +581,7 @@
       const stalePill = r.stale ? ` <span class="pill stale">stale</span>` : '';
       const buttons = r.stale ? `<div class="btns"><button class="ok" data-close="done" data-run="${r.id}">Mark done</button><button class="bad" data-close="failed" data-run="${r.id}">Mark failed</button></div>` : '';
       const statusCol = statusPill + stalePill + buttons;
-      return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s" title="${esc(r.model || '—')}">${esc(r.model || '—')}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono"><details><summary>${esc(shortWhen(r.started_at))}</summary><div style="padding:8px">Started: ${esc(r.started_at || '—')}<br>Last activity: ${esc(r.last_activity_at || '—')}</div></details><div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<details><summary>Notes</summary><div style="padding:8px">${esc(r.notes)}</div></details>` : ''}</td></tr>`;
+      return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s">${r.model ? `<details><summary>${esc(r.model).length > 30 ? esc(r.model).substring(0, 27) + '…' : esc(r.model)}</summary><div style="padding:8px">${esc(r.model)}</div></details>` : '—'}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono"><details><summary>${esc(shortWhen(r.started_at))}</summary><div style="padding:8px">Started: ${esc(r.started_at || '—')}<br>Last activity: ${esc(r.last_activity_at || '—')}</div></details><div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<details><summary>Notes</summary><div style="padding:8px">${esc(r.notes)}</div></details>` : ''}</td></tr>`;
     }).join('');
     view.innerHTML = d.runs.length ? `<div class="table-wrap runs"><table><tr><th>#</th><th>Run</th><th>Model</th><th>Status</th><th class="num">Read → wr</th><th>Started / last</th><th>Notes</th></tr>` + rows + '</table></div>' + pagerHTML(state.runsPage, pages, d.runs.length, RUNS_PAGE, 'rp')
       : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';

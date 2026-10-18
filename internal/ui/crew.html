@@ -29,7 +29,7 @@
     color-scheme:dark;
   }
   :root[data-theme=light] {
-    --faint:#6d8876;
+    --faint:#4f6e5a;
   }
   @media (prefers-color-scheme: dark) { :root[data-theme=system] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
@@ -117,6 +117,8 @@
   #view { max-width:1600px; margin:0 auto }
   .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
   .brand { gap:14px }
+  .bar { height:8px; border:1px solid var(--line2); padding:1px; background:none; overflow:hidden }
+  .bar i { display:block; height:100%; background:repeating-linear-gradient(90deg, var(--ok) 0 5px, transparent 5px 7px) }
 
   /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
   [hidden] { display:none !important }
@@ -140,8 +142,6 @@
   .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
   .seg button:disabled { opacity:.35; cursor:default; background:none }
   @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
-  .bar { height:8px; border:1px solid var(--line2); padding:1px; background:none; overflow:hidden }
-  .bar i { display:block; height:100%; background:repeating-linear-gradient(90deg, var(--ok) 0 5px, transparent 5px 7px) }
   /* Crew: performance-style summary strip + leaderboard rows (click a row for detail) */
   #view { padding:18px 24px 64px }
   .summary { display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:22px; align-items:center; padding:12px 18px; margin:0 0 22px }
@@ -417,10 +417,19 @@
   function paintCrew() {
     const view = $('#view');
     const existingQ = $('#cq'); const qValue = existingQ ? existingQ.value : cstate.q;
-    view.textContent = '';
+    const isMounted = !!existingQ;
+    if (!isMounted) view.textContent = '';
+
     const bar = el('div', 'toolbar');
-    const q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = qValue;
-    const qlabel = el('label'); qlabel.textContent = 'Filter'; qlabel.style.display = 'contents'; qlabel.appendChild(q);
+    let q = existingQ;
+    if (!q) {
+      q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = qValue;
+      const qlabel = el('label'); qlabel.textContent = 'Filter'; qlabel.style.display = 'contents'; qlabel.appendChild(q);
+      bar.appendChild(qlabel);
+    } else {
+      q.value = qValue;
+      bar.appendChild(q.parentElement);
+    }
     q.oninput = () => { cstate.q = q.value; cstate.page = 0; paintCrew(); };
     const sel = el('select');
     [['active', 'Last active'], ['name', 'Name'], ['grade', 'Average grade'], ['firstpass', 'First-pass approval'], ['steps', 'Steps run'], ['mistakes', 'Most mistakes']].forEach(([v, l]) => { const o = el('option', '', l); o.value = v; sel.appendChild(o); });
@@ -429,7 +438,7 @@
     const sortLabel = el('label', 'sortl', 'Sort '); sortLabel.appendChild(sel);
     const needle = cstate.q.trim().toLowerCase();
     const rows = cstate.all.filter(a => !needle || (String(a.agent) + ' ' + String(a.role || '')).toLowerCase().includes(needle)).sort(sorters[cstate.sort] || sorters.active);
-    bar.append(qlabel, sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
+    bar.append(sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
     // Summary strip, same shape as the performance page.
     const sum = (f) => cstate.all.reduce((n, a) => n + (f(a) || 0), 0);
     const approved = sum(a => a.first_pass_approved), reviewed = sum(a => a.reviewed_steps), rate = reviewed ? approved / reviewed : null;
@@ -443,11 +452,19 @@
     const kv = (k, v, s) => { const x = el('div', 'kv'); x.append(el('div', 'k', k), el('div', 'v', String(v))); if (s) x.appendChild(el('div', 's', s)); return x; };
     stats.append(kv('Agents', cstate.all.length), kv('Steps run', sum(a => a.steps_run)), kv('Re-reviews', sum(a => a.re_reviews)), kv('High-impact mistakes', sum(a => (a.mistakes || {}).high), sum(a => mtotal(a)) + ' recorded in all'));
     summary.append(big, mid, stats);
-    view.appendChild(summary);
+    if (!isMounted) view.appendChild(summary);
     const head = el('h3', '', 'Crew '); head.appendChild(el('span', 'n', String(rows.length)));
     const sec = el('section', 'sec'); sec.append(head, bar);
-    view.appendChild(sec);
+    if (!isMounted) view.appendChild(sec);
     const pages = Math.max(1, Math.ceil(rows.length / CREW_PAGE)); cstate.page = Math.min(cstate.page, pages - 1);
+
+    let boardContainer = document.getElementById('crew-board-container');
+    if (!boardContainer) {
+      boardContainer = el('div'); boardContainer.id = 'crew-board-container';
+      sec.appendChild(boardContainer);
+    }
+    boardContainer.textContent = '';
+
     const list = document.createElement('div');
     list.className = 'crew-list board';
     const bh = el('div', 'bhead'); ['Avg', 'Agent', 'Steps', 'First pass', 'Re-rev', 'Mistakes', 'Last active'].forEach(t => bh.appendChild(el('span', '', t)));
@@ -463,8 +480,8 @@
       list.appendChild(card);
     });
     if (!rows.length) list.appendChild(el('div', 'none', 'No agents match.'));
-    sec.appendChild(list);
-    sec.appendChild(pagerEl(cstate.page, pages, rows.length, CREW_PAGE, p => { cstate.page = p; paintCrew(); window.scrollTo(0, 0); }));
+    boardContainer.appendChild(list);
+    boardContainer.appendChild(pagerEl(cstate.page, pages, rows.length, CREW_PAGE, p => { cstate.page = p; paintCrew(); window.scrollTo(0, 0); }));
   }
 
   api('/v1/crew')

@@ -22,7 +22,7 @@
     --scan:none; color-scheme:light;
   }
   :root[data-theme=light] {
-    --faint:#6d8876;
+    --faint:#4f6e5a;
   }
   :root[data-theme=dark] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
@@ -56,6 +56,7 @@
   .seg button, .seg a { border:0; border-right:1px solid var(--line2); background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:9px 12px; cursor:pointer; text-decoration:none; text-shadow:inherit }
   .seg > :last-child { border-right:0 }
   .seg button:hover, .seg a:hover { color:var(--fg); background:var(--soft) }
+  .seg button:focus-visible, .seg a:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
   .seg button.on, .seg a.on { background:var(--fg); color:var(--on); text-shadow:none }
   .seg.sm button { padding:7px 9px; font-size:11px }
   .spacer { flex:1 }
@@ -285,6 +286,7 @@
   .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
   .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
   .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px }
   .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
   .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
   .subnav button.on .n { color:var(--fg) }
@@ -525,7 +527,7 @@
   function applyTab() {
     const v = $('#view'); let any = false;
     v.querySelectorAll('[data-pane]').forEach(s => { const on = s.dataset.pane === state.tab; s.hidden = !on; any = any || on; });
-    v.querySelectorAll('[data-mt]').forEach(b => { const on = b.dataset.mt === state.tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    v.querySelectorAll('[data-mt]').forEach(b => { const on = b.dataset.mt === state.tab; b.classList.toggle('on', on); });
     let e = v.querySelector('.pane-empty');
     if (!any) { if (!e) { e = document.createElement('div'); e.className = 'none pane-empty'; e.textContent = 'Nothing recorded for this mission yet.'; v.appendChild(e); } e.hidden = false; } else if (e) e.hidden = true;
   }
@@ -560,7 +562,7 @@
     const ctxN = d.patterns.length + d.directives.length + d.crew.length + d.service_records.length;
     const panes = [['summary', 'Summary', null], ['brief', 'Brief', null], ['steps', 'Steps', steps.length], ['findings', 'Findings', findings.length], ['debrief', 'Debrief', docs.debrief ? dels.length + mist.length + less.length : null], ['context', 'Context', ctxN], ['journal', 'Journal', d.events.length]];
     if (!panes.some(p => p[0] === state.tab)) state.tab = 'summary';
-    const tabsBar = `<nav class="subnav mtabs" id="mtabs" role="tablist" aria-label="Mission sections">${panes.map(([k, l, n]) => `<button role="tab" data-mt="${k}">${l}${n != null ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</nav>`;
+    const tabsBar = `<nav class="subnav mtabs" id="mtabs" aria-label="Mission sections">${panes.map(([k, l, n]) => `<button data-mt="${k}">${l}${n != null ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</nav>`;
     // Summary pane: what is happening now and what needs a decision, before the detail tabs.
     const cur = steps.find(s => s.status === 'in-progress') || steps.find(s => s.status !== 'done');
     const lastDone = steps.filter(s => s.status === 'done').slice(-1)[0];
