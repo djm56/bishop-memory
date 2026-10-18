@@ -28,6 +28,9 @@
     --paper:none; --scan:repeating-linear-gradient(180deg, rgba(0,0,0,.12) 0 1px, transparent 1px 4px), radial-gradient(ellipse at center, transparent 65%, rgba(0,0,0,.3));
     color-scheme:dark;
   }
+  :root[data-theme=light] {
+    --faint:#6d8876;
+  }
   @media (prefers-color-scheme: dark) { :root[data-theme=system] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
     --accent:#d4ffe1; --ok:#8dffb0; --bad:#ff6b57; --warn:#ffbf5e; --on:#030805;
@@ -44,6 +47,7 @@
   a:hover { background:var(--fg); color:var(--on); text-decoration:none; text-shadow:none }
   code, kbd, pre { font-family:var(--mono) }
   @keyframes blink { 50% { opacity:0 } }
+  @media (prefers-reduced-motion: reduce) { @keyframes blink { to { opacity:1 } } }
   @keyframes toast-in { from { opacity:0; transform:translate(-50%, 6px) } }
   header.top { position:sticky; top:0; z-index:5; height:60px; display:flex; align-items:center; gap:20px; padding:0 20px; background:var(--bg); border-bottom:1px solid var(--line2) }
   .brand { display:flex; align-items:center; gap:12px }
@@ -53,6 +57,7 @@
   .seg button, .seg a { border:0; border-right:1px solid var(--line2); background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:9px 12px; cursor:pointer; text-decoration:none; text-shadow:inherit }
   .seg > :last-child { border-right:0 }
   .seg button:hover, .seg a:hover { color:var(--fg); background:var(--soft) }
+  .seg button:focus-visible, .seg a:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
   .seg button.on, .seg a.on { background:var(--fg); color:var(--on); text-shadow:none }
   .seg.sm button { padding:7px 9px; font-size:11px }
   .spacer { flex:1 }
@@ -126,6 +131,7 @@
   .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
   .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
   .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px }
   .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
   .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
   .subnav button.on .n { color:var(--fg) }
@@ -382,15 +388,16 @@
 
   // Same pager as the other pages: ‹ Prev, first, current ±1, last, Next ›.
   function pagerEl(page, pages, total, size, go) {
-    const wrap = el('div', 'pager'); if (pages <= 1) return wrap;
+    const nav = el('nav'); nav.setAttribute('aria-label', 'Pagination');
+    const wrap = el('div', 'pager'); if (pages <= 1) { nav.appendChild(wrap); return nav; }
     wrap.appendChild(el('span', '', (page * size + 1) + '–' + Math.min(total, (page + 1) * size) + ' of ' + total));
     const seg = el('div', 'seg sm');
-    const btn = (lbl, to, on, off) => { const b = el('button', on ? 'on' : '', lbl); b.disabled = !!off; b.onclick = () => go(to); seg.appendChild(b); };
+    const btn = (lbl, to, on, off) => { const b = el('button', on ? 'on' : '', lbl); b.disabled = !!off; b.onclick = () => go(to); if (lbl !== '‹ Prev' && lbl !== 'Next ›') { b.setAttribute('aria-label', 'Page ' + lbl); if (on) b.setAttribute('aria-current', 'page'); } else { b.setAttribute('aria-label', lbl === '‹ Prev' ? 'Previous page' : 'Next page'); } seg.appendChild(b); };
     btn('‹ Prev', page - 1, false, page === 0);
     let last = -1;
     for (let i = 0; i < pages; i++) if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) { if (i - last > 1) seg.appendChild(el('span', 'gap', '…')); btn(String(i + 1), i, i === page); last = i; }
     btn('Next ›', page + 1, false, page >= pages - 1);
-    wrap.appendChild(seg); return wrap;
+    wrap.appendChild(seg); nav.appendChild(wrap); return nav;
   }
 
   function render(crew) {
@@ -409,10 +416,12 @@
 
   function paintCrew() {
     const view = $('#view');
+    const existingQ = $('#cq'); const qValue = existingQ ? existingQ.value : cstate.q;
     view.textContent = '';
     const bar = el('div', 'toolbar');
-    const q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = cstate.q;
-    q.oninput = () => { cstate.q = q.value; cstate.page = 0; paintCrew(); const n = $('#cq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+    const q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = qValue;
+    const qlabel = el('label'); qlabel.textContent = 'Filter'; qlabel.style.display = 'contents'; qlabel.appendChild(q);
+    q.oninput = () => { cstate.q = q.value; cstate.page = 0; paintCrew(); };
     const sel = el('select');
     [['active', 'Last active'], ['name', 'Name'], ['grade', 'Average grade'], ['firstpass', 'First-pass approval'], ['steps', 'Steps run'], ['mistakes', 'Most mistakes']].forEach(([v, l]) => { const o = el('option', '', l); o.value = v; sel.appendChild(o); });
     sel.value = cstate.sort;
@@ -420,7 +429,7 @@
     const sortLabel = el('label', 'sortl', 'Sort '); sortLabel.appendChild(sel);
     const needle = cstate.q.trim().toLowerCase();
     const rows = cstate.all.filter(a => !needle || (String(a.agent) + ' ' + String(a.role || '')).toLowerCase().includes(needle)).sort(sorters[cstate.sort] || sorters.active);
-    bar.append(q, sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
+    bar.append(qlabel, sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
     // Summary strip, same shape as the performance page.
     const sum = (f) => cstate.all.reduce((n, a) => n + (f(a) || 0), 0);
     const approved = sum(a => a.first_pass_approved), reviewed = sum(a => a.reviewed_steps), rate = reviewed ? approved / reviewed : null;
@@ -445,8 +454,12 @@
     if (rows.length) list.appendChild(bh);
     rows.slice(cstate.page * CREW_PAGE, (cstate.page + 1) * CREW_PAGE).forEach(agent => {
       const card = crewCard(agent);
+      card.tabIndex = 0;
+      card.role = 'button';
+      card.setAttribute('aria-expanded', card.classList.contains('open'));
       card.title = 'Click for mistakes and service records';
-      card.onclick = e => { if (!e.target.closest('a')) card.classList.toggle('open'); };
+      card.onclick = e => { if (!e.target.closest('a')) { card.classList.toggle('open'); card.setAttribute('aria-expanded', card.classList.contains('open')); } };
+      card.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); card.classList.toggle('open'); card.setAttribute('aria-expanded', card.classList.contains('open')); } };
       list.appendChild(card);
     });
     if (!rows.length) list.appendChild(el('div', 'none', 'No agents match.'));

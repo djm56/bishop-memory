@@ -21,6 +21,9 @@
     --paper:repeating-linear-gradient(180deg, transparent 0 30px, rgba(27,104,52,.06) 30px 60px);
     --scan:none; color-scheme:light;
   }
+  :root[data-theme=light] {
+    --faint:#6d8876;
+  }
   :root[data-theme=dark] {
     --bg:#050b07; --panel:#09150e; --fg:#b4ffca; --muted:#86d9a2; --faint:#62ad7e; --line:#173f28; --line2:#2a6a44; --soft:#0f2116;
     --accent:#d4ffe1; --ok:#8dffb0; --bad:#ff6b57; --warn:#ffbf5e; --on:#030805;
@@ -346,12 +349,12 @@
 <main>
   <aside>
     <div class="filters">
-      <input id="q" type="search" placeholder="Search missions, briefs, debriefs">
+      <label for="q" style="display:contents">Search<input id="q" type="search" placeholder="Search missions, briefs, debriefs"></label>
       <div class="row">
-        <select id="harness"><option value="">All harnesses</option></select>
-        <select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option><option value="stale">stale (idle 2 days)</option></select>
+        <label for="harness" style="display:contents">Harness<select id="harness"><option value="">All harnesses</option></select></label>
+        <label for="status" style="display:contents">Status<select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option><option value="stale">stale (idle 2 days)</option></select></label>
       </div>
-      <select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option></select>
+      <label for="grade" style="display:contents">Grade<select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option></select></label>
     </div>
     <div class="rail-head"><span>Missions</span><span id="count"></span></div>
     <div class="mlist" id="mlist"></div>
@@ -395,12 +398,12 @@
     const r = await authed(path); const text = await r.text(); let json = {}; try { json = text ? JSON.parse(text) : {}; } catch (e) {}
     if (!r.ok) throw new Error(json.error || r.status); return json;
   };
-  // Shared pager (same markup on every page): ‹ Prev, first, current ±1, last, Next ›.
+  // Shared pager (same markup on every page that paginates): ‹ Prev, first, current ±1, last, Next ›.
   const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
   const pagerHTML = (page, pages, total, size, key) => {
     if (pages <= 1) return '';
     const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
-    return `<div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div>`;
+    return `<nav aria-label="Pagination"><div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" aria-label="Previous page" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" aria-label="Page ${i + 1}"${i === page ? ' aria-current="page"' : ''} class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" aria-label="Next page" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div></nav>`;
   };
   const label = s => String(s || '').replace(/-/g, ' ');
   const crewName = a => String(a || '').split(':').pop().replace(/^@/, '').trim().toLowerCase();
@@ -489,6 +492,7 @@
   function renderList() {
     const pages = Math.max(1, Math.ceil(state.missions.length / LIST_PAGE)); state.listPage = Math.min(Math.max(0, state.listPage), pages - 1);
     const shown = state.missions.slice(state.listPage * LIST_PAGE, (state.listPage + 1) * LIST_PAGE);
+    const focusedBtn = document.activeElement?.closest('[data-lp]');
     $('#mpager').innerHTML = pagerHTML(state.listPage, pages, state.missions.length, LIST_PAGE, 'lp');
     $('#mpager').querySelectorAll('[data-lp]').forEach(b => b.onclick = () => { state.listPage = pageFrom(b.dataset.lp, state.listPage); renderList(); $('aside').scrollTop = 0; });
     $('#mlist').innerHTML = state.missions.length ? shown.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''} s-${esc(m.outcome === 'failed' ? 'failed' : m.status)}${m.stale ? ' stale' : ''}" href="#${esc(m.id)}" ${state.current === m.id ? 'aria-current="true"' : ''}>
@@ -497,6 +501,7 @@
         <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>${m.stale ? `<span class="pill stale" title="No activity since ${esc(fmtWhen(m.last_activity))}">stale</span>` : ''}
           <span>${esc(m.harness || '—')}</span><span>${m.steps_done}/${m.steps} steps</span>${m.findings ? `<span>${m.findings} finding${m.findings === 1 ? '' : 's'}</span>` : ''}<span>${fmtDay(m.opened_at)}</span></span>
       </a>`).join('') : '<div class="none" style="padding:10px">No missions match.</div>';
+    if (focusedBtn) { const newBtn = $(`[data-lp="${focusedBtn.dataset.lp}"]`); if (newBtn) newBtn.focus(); }
   }
   const saveFilters = () => { try { localStorage.setItem('hud.filters', JSON.stringify({ harness: state.filters.harness, status: state.filters.status, grade: state.filters.grade })); } catch (e) {} };
   let qTimer; $('#q').oninput = e => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.filters.q = e.target.value.trim(); loadList().catch(showError); }, 250); };
@@ -591,7 +596,7 @@
       <div class="tiles" data-pane="summary">
         ${tile('Steps', `${done}/${steps.length}`, steps.length ? '' : 'none recorded', steps.length ? done / steps.length : null)}
         ${tile('Duration', esc(dur(m.opened_at, m.closed_at) || '—'), m.closed_at ? '' : 'still open')}
-        ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${v} ${k}`).join(' · '))}
+        ${tile('Findings', findings.length, Object.entries(fstatus).map(([k, v]) => `${esc(String(v))} ${esc(k)}`).join(' · '))}
         ${criteria.length ? tile('Criteria met', `${criteria.filter(c => c.met).length}/${criteria.length}`, criteria.some(c => c.met === null) ? 'no debrief yet' : '', criteria.length ? criteria.filter(c => c.met).length / criteria.length : null) : ''}
         ${tile('Patterns', d.patterns.length)}
         ${tile('Directives', d.directives.filter(x => x.status !== 'under-review').length, d.directives.some(x => x.status === 'under-review') ? `${d.directives.filter(x => x.status === 'under-review').length} under review` : '')}

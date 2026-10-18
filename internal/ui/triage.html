@@ -328,12 +328,12 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
-  // Shared pager (same markup on every page): ‹ Prev, first, current ±1, last, Next ›.
+  // Shared pager (same markup on every page that paginates): ‹ Prev, first, current ±1, last, Next ›.
   const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
   const pagerHTML = (page, pages, total, size, key) => {
     if (pages <= 1) return '';
     const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
-    return `<div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div>`;
+    return `<nav aria-label="Pagination"><div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" aria-label="Previous page" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" aria-label="Page ${i + 1}"${i === page ? ' aria-current="page"' : ''} class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" aria-label="Next page" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div></nav>`;
   };
   const RUNS_PAGE = 20, BROWSE_PAGE = 20;
   const state = { runsPage:0, browsePage:0, tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0, ids:null };
@@ -353,7 +353,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const human = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
   const catName = slug => (state.categories.find(c => c.slug === slug) || {}).name || slug;
-  const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
+  const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.role='status'; t.setAttribute('aria-live', 'polite'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   // API key (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3.1): asked for when the
   // service answers 401, kept in this browser, sent on every /v1 call.
   const KEY_STORE = 'bishop.apiKey';
@@ -396,7 +396,7 @@
       rows.map(c => { const n = count(c); return `<div class="cat ${state.category===c.slug?'on':''}" data-slug="${c.slug ?? ''}" title="${esc(c.name)}">
         <span>${esc(c.name)}</span>${n === '' ? '' : `<small class="count ${n === 0 ? 'zero' : ''}">${n}</small>`}</div>`; }).join('') +
       `<div class="keys"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>a</kbd> approve</span><span><kbd>r</kbd> reject</span><span><kbd>d</kbd> defer</span></div>`;
-    $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.focus = 0; render(); });
+    $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.browsePage = 0; state.focus = 0; render(); });
   }
 
   function findingCard(f) {
@@ -500,7 +500,7 @@
       (d.findings.length ? `<div class="list">${d.findings.slice(state.browsePage * BROWSE_PAGE, (state.browsePage + 1) * BROWSE_PAGE).map(f => findingCard(f)).join('')}</div>${pagerHTML(state.browsePage, Math.ceil(d.findings.length / BROWSE_PAGE), d.findings.length, BROWSE_PAGE, 'bp')}` : '<div class="empty">No findings match.</div>');
     view.querySelectorAll('[data-bp]').forEach(b => b.onclick = () => { state.browsePage = pageFrom(b.dataset.bp, state.browsePage); renderBrowse(); window.scrollTo(0, 0); });
     view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; state.browsePage = 0; renderBrowse(); });
-    view.querySelector('[data-clear]')?.addEventListener('click', e => { e.preventDefault(); state.ids = null; history.replaceState(null, '', '/triage'); renderBrowse(); });
+    view.querySelector('[data-clear]')?.addEventListener('click', e => { e.preventDefault(); state.ids = null; state.browsePage = 0; history.replaceState(null, '', '/triage'); renderBrowse(); });
     wireCards(view); focusCard(false);
   }
 
@@ -576,7 +576,7 @@
       const stalePill = r.stale ? ` <span class="pill stale">stale</span>` : '';
       const buttons = r.stale ? `<div class="btns"><button class="ok" data-close="done" data-run="${r.id}">Mark done</button><button class="bad" data-close="failed" data-run="${r.id}">Mark failed</button></div>` : '';
       const statusCol = statusPill + stalePill + buttons;
-      return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s">${esc(r.model || '—')}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono" title="started ${esc(r.started_at)} · last activity ${esc(r.last_activity_at || '')}">${esc(shortWhen(r.started_at))}<div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<div title="${esc(r.notes)}">${esc(r.notes)}</div>` : ''}</td></tr>`;
+      return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s" title="${esc(r.model || '—')}">${esc(r.model || '—')}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono"><details><summary>${esc(shortWhen(r.started_at))}</summary><div style="padding:8px">Started: ${esc(r.started_at || '—')}<br>Last activity: ${esc(r.last_activity_at || '—')}</div></details><div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<details><summary>Notes</summary><div style="padding:8px">${esc(r.notes)}</div></details>` : ''}</td></tr>`;
     }).join('');
     view.innerHTML = d.runs.length ? `<div class="table-wrap runs"><table><tr><th>#</th><th>Run</th><th>Model</th><th>Status</th><th class="num">Read → wr</th><th>Started / last</th><th>Notes</th></tr>` + rows + '</table></div>' + pagerHTML(state.runsPage, pages, d.runs.length, RUNS_PAGE, 'rp')
       : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';
@@ -631,7 +631,7 @@
   }
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('on')); b.classList.add('on');
-    state.tab = b.dataset.tab; state.focus = 0; window.scrollTo(0, 0); render();
+    state.tab = b.dataset.tab; state.focus = 0; state.browsePage = 0; window.scrollTo(0, 0); render();
   });
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
   refresh().catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });

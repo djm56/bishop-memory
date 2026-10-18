@@ -225,6 +225,11 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 		"empty.textContent = 'No crew activity yet.'",
 		"err.textContent = 'Cannot reach the service: ' + e.message",
 		`<a href="/crew" class="on" aria-current="page">Crew</a>`,
+		"card.tabIndex = 0",
+		"card.role = 'button'",
+		"card.setAttribute('aria-expanded'",
+		"setAttribute('aria-label', 'Pagination')",
+		"setAttribute('aria-current', 'page')",
 	}
 	for _, needle := range needles {
 		t.Run(needle, func(t *testing.T) {
@@ -241,6 +246,35 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 			t.Fatal("crew page contains innerHTML; data must reach the DOM through textContent or text nodes only")
 		}
 	})
+}
+
+// TestMissionsPageFiltersAreLabelled checks that the search, harness, status,
+// and grade filters in the missions page all have associated labels.
+func TestMissionsPageFiltersAreLabelled(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	needles := []string{
+		`<label for="q" style="display:contents">Search`,
+		`<label for="harness" style="display:contents">Harness`,
+		`<label for="status" style="display:contents">Status`,
+		`<label for="grade" style="display:contents">Grade`,
+	}
+	for _, needle := range needles {
+		t.Run(needle, func(t *testing.T) {
+			if !strings.Contains(page, needle) {
+				t.Fatalf("missions page does not contain labelled filter: %q", needle)
+			}
+		})
+	}
+}
+
+// TestMissionsPageEscapesFindingStatus checks that the finding status tile
+// escapes both the status key and its count value when rendering the findings
+// tile subline, to prevent XSS via tainted API strings.
+func TestMissionsPageEscapesFindingStatus(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	if !strings.Contains(page, "${esc(String(v))} ${esc(k)}") {
+		t.Fatalf("missions page does not escape finding status counts and keys")
+	}
 }
 
 // TestMissionsPageRendersReviewsSection is a source-text check only: it cannot

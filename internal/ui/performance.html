@@ -336,8 +336,7 @@
   .sec > h3 .hid { font:500 11px/1 var(--mono); letter-spacing:.08em; color:var(--warn); border:1px solid currentColor; padding:3px 6px }
   .sec > h3 .gear { order:3; font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:none; border:1px solid var(--line2); padding:6px 9px; cursor:pointer; text-shadow:inherit }
   .sec > h3 .gear:hover { color:var(--fg); border-color:var(--fg) }
-  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
-  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
   .modal-bg { position:fixed; inset:0; z-index:40; background:color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter:blur(2px); display:grid; place-items:center; padding:20px }
   .modal { width:min(460px, 100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25), var(--glowbox) }
   .modal .mh { padding:16px 18px 12px; border-bottom:1px solid var(--line2) }
@@ -388,7 +387,6 @@
   .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
   .pager:empty { display:none }
   .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
-  .seg button:disabled { opacity:.35; cursor:default; background:none }
   @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
 </style>
 </head>
@@ -429,6 +427,13 @@
   paintTheme();
 
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  // Remove dead pageFrom - the [data-pg] handler uses it, but only need the pagerHTML function.
+  // Shared pager (same markup on every page that paginates): ‹ Prev, first, current ±1, last, Next ›.
+  const pagerHTML = (page, pages, total, size, key) => {
+    if (pages <= 1) return '';
+    const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+    return `<nav aria-label="Pagination"><div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" aria-label="Previous page" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" aria-label="Page ${i + 1}"${i === page ? ' aria-current="page"' : ''} class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" aria-label="Next page" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div></nav>`;
+  };
   // API key (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3.1): asked for when the
   // service answers 401, kept in this browser, sent on every /v1 call.
   const KEY_STORE = 'bishop.apiKey';
@@ -523,13 +528,13 @@
         ${visible.length ? `<div class="board"><div class="bhead"><span>Avg</span><span>Harness</span><span>Distribution</span><span>Trend</span><span>Latest, newest first</span></div>${visible.map(harnessRow).join('')}</div>` : `<div class="none">${p.harnesses.length ? 'Every harness is hidden. Use Display\u2026 to bring some back.' : 'No finished missions yet.'}</div>`}</section>
       <section class="sec"><h3>Grades <span class="n">${grades.length}</span></h3>
         <div class="toolbar">
-          <select id="fh"><option value="*">All harnesses</option>${visible.map(h => `<option value="${esc(h.harness || '')}">${esc(h.harness || 'no harness')}</option>`).join('')}</select>
+          <label for="fh" style="display:contents">Full verdict<select id="fh"><option value="*">All harnesses</option>${visible.map(h => `<option value="${esc(h.harness || '')}">${esc(h.harness || 'no harness')}</option>`).join('')}</select></label>
           <div class="seg sm" id="fg">${chips.map(([v, l]) => `<button data-g="${v}" class="${f.grade === v ? 'on' : ''}">${l}<span class="c">${counts[v]}</span></button>`).join('')}</div>
           ${f.harnessSet || f.grade ? '<button class="clear" id="clear">Clear filters</button>' : ''}
         </div>
         ${grades.length ? `<div class="glist">${shown.map(gradeRow).join('')}</div>${pager}` : '<div class="none">No grades match.</div>'}
       </section>
-      ${state.settings ? `<div class="modal-bg" id="mbg"><div class="modal card" role="dialog" aria-label="Harness display">
+      ${state.settings ? `<div class="modal-bg" id="mbg"><div class="modal card" role="dialog" aria-modal="true" aria-label="Harness display">
         <div class="mh"><h3>Show harnesses</h3><span class="s">Hidden harnesses drop out of the leaderboard, the summary and the grade log. Nothing is deleted; tick a harness to bring it back.</span></div>
         <div class="mlist2">${p.harnesses.map(x => { const k = x.harness || ''; return `<label class="opt"><input type="checkbox" data-hk="${esc(k)}" ${state.hidden.has(k) ? '' : 'checked'}><span class="nm">${esc(x.harness || 'no harness')}</span><span class="s">${x.graded} graded</span>${x.avg_grade ? gradeBadge(x.avg_grade) : ''}</label>`; }).join('')}</div>
         <div class="mf"><button class="clear" data-all="1">Show all</button><button class="clear" data-all="0">Hide all</button><span class="spacer"></span><button class="btn ok" id="msave">Done</button></div>
@@ -538,17 +543,26 @@
     const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
     const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); };
     $('#fh').onchange = e => { state.page = 0; setH(e.target.value); };
-    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const v = b.dataset.pg; state.page = v === 'prev' ? state.page - 1 : v === 'next' ? state.page + 1 : Number(v); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76 }); });
+    const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
+    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { state.page = pageFrom(b.dataset.pg, state.page); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); });
     $('#opensettings').onclick = () => { state.settings = true; render(); };
     if (state.settings) {
       const close = () => { state.settings = false; render(); };
-      $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
-      $('#msave').onclick = close;
+      const modal = $('#mbg');
+      const prevFocus = document.activeElement;
+      if (modal) { modal.focus(); modal.onclick = e => { if (e.target.id === 'mbg') close(); }; }
+      $('#msave').onclick = () => { close(); if (prevFocus) prevFocus.focus(); };
       document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { c.checked ? state.hidden.delete(c.dataset.hk) : state.hidden.add(c.dataset.hk); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; });
-      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { p.harnesses.forEach(x => b.dataset.all === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); render(); });
-      document.onkeydown = e => { if (e.key === 'Escape' && state.settings) close(); };
+      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { p.harnesses.forEach(x => b.dataset.all === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); state.page = 0; render(); });
+      const handleEscape = e => { if (e.key === 'Escape' && state.settings) { e.preventDefault(); close(); if (prevFocus) prevFocus.focus(); } };
+      modal?.addEventListener('keydown', handleEscape);
     }
-    document.querySelectorAll('.brow').forEach(r => r.onclick = e => { if (e.target.closest('a')) return; state.page = 0; setH(r.dataset.h); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76, behavior:'smooth' }); });
+    document.querySelectorAll('.brow').forEach(r => {
+      r.tabIndex = 0; r.role = 'button';
+      const interact = e => { if (e.target.closest('a')) return; state.page = 0; setH(r.dataset.h); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); };
+      r.onclick = interact;
+      r.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); interact(e); } };
+    });
     document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; save(); render(); });
     const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; save(); render(); };
     document.querySelectorAll('.grow').forEach(r => {
