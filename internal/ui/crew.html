@@ -403,7 +403,7 @@
   function render(crew) {
     const view = $('#view');
     if (!crew || crew.length === 0) {
-      view.textContent = '';
+      view.textContent = ''; ui = null;
       const empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = 'No crew activity yet.';
@@ -414,35 +414,42 @@
     paintCrew();
   }
 
-  function paintCrew() {
-    const view = $('#view');
-    const existingQ = $('#cq'); const qValue = existingQ ? existingQ.value : cstate.q;
-    const isMounted = !!existingQ;
-    if (!isMounted) view.textContent = '';
-
-    const bar = el('div', 'toolbar');
-    let q = existingQ;
-    if (!q) {
-      q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = qValue;
-      const qlabel = el('label'); qlabel.textContent = 'Filter'; qlabel.style.display = 'contents'; qlabel.appendChild(q);
-      bar.appendChild(qlabel);
-    } else {
-      q.value = qValue;
-      bar.appendChild(q.parentElement);
-    }
+  // The page frame (summary, heading, toolbar, board container) is built once
+  // per mount by mountCrew; paintCrew only refills the parts that change, so
+  // the #cq input stays in the document and keeps focus and caret while typing.
+  let ui = null;
+  function mountCrew() {
+    const view = $('#view'); view.textContent = '';
+    const summary = el('div', 'card summary');
+    const headN = el('span', 'n');
+    const head = el('h3', '', 'Crew '); head.appendChild(headN);
+    const q = el('input'); q.type = 'search'; q.id = 'cq'; q.placeholder = 'Filter by name or role'; q.value = cstate.q;
+    const qlabel = el('label'); qlabel.textContent = 'Filter'; qlabel.style.display = 'contents'; qlabel.appendChild(q);
     q.oninput = () => { cstate.q = q.value; cstate.page = 0; paintCrew(); };
     const sel = el('select');
     [['active', 'Last active'], ['name', 'Name'], ['grade', 'Average grade'], ['firstpass', 'First-pass approval'], ['steps', 'Steps run'], ['mistakes', 'Most mistakes']].forEach(([v, l]) => { const o = el('option', '', l); o.value = v; sel.appendChild(o); });
     sel.value = cstate.sort;
     sel.onchange = () => { cstate.sort = sel.value; cstate.page = 0; try { localStorage.setItem('crew.sort', sel.value); } catch (e) {} paintCrew(); };
     const sortLabel = el('label', 'sortl', 'Sort '); sortLabel.appendChild(sel);
+    const cnt = el('span', 'cnt');
+    const bar = el('div', 'toolbar'); bar.append(qlabel, sortLabel, cnt);
+    const board = el('div'); board.id = 'crew-board-container';
+    const sec = el('section', 'sec'); sec.append(head, bar, board);
+    view.append(summary, sec);
+    return { q, summary, headN, cnt, board };
+  }
+
+  function paintCrew() {
+    const view = $('#view');
+    if (!ui || !view.contains(ui.q)) ui = mountCrew();
     const needle = cstate.q.trim().toLowerCase();
     const rows = cstate.all.filter(a => !needle || (String(a.agent) + ' ' + String(a.role || '')).toLowerCase().includes(needle)).sort(sorters[cstate.sort] || sorters.active);
-    bar.append(sortLabel, el('span', 'cnt', rows.length + ' of ' + cstate.all.length + ' agents'));
+    ui.cnt.textContent = rows.length + ' of ' + cstate.all.length + ' agents';
+    ui.headN.textContent = String(rows.length);
     // Summary strip, same shape as the performance page.
     const sum = (f) => cstate.all.reduce((n, a) => n + (f(a) || 0), 0);
     const approved = sum(a => a.first_pass_approved), reviewed = sum(a => a.reviewed_steps), rate = reviewed ? approved / reviewed : null;
-    const summary = el('div', 'card summary');
+    const summary = ui.summary; summary.textContent = '';
     const big = el('div', 'big');
     big.appendChild(el('span', 'grade lg solid ' + (rate == null ? '' : rate >= .85 ? 'gA' : rate >= .7 ? 'gB' : rate >= .55 ? 'gC' : 'gD'), rate == null ? '—' : String(Math.round(rate * 100))));
     const bigt = el('div'); bigt.append(el('div', 'k', 'First-pass approval'), el('div', 'v', rate == null ? '—' : Math.round(rate * 100) + '%'), el('div', 's', approved + ' of ' + reviewed + ' reviewed steps'));
@@ -452,17 +459,9 @@
     const kv = (k, v, s) => { const x = el('div', 'kv'); x.append(el('div', 'k', k), el('div', 'v', String(v))); if (s) x.appendChild(el('div', 's', s)); return x; };
     stats.append(kv('Agents', cstate.all.length), kv('Steps run', sum(a => a.steps_run)), kv('Re-reviews', sum(a => a.re_reviews)), kv('High-impact mistakes', sum(a => (a.mistakes || {}).high), sum(a => mtotal(a)) + ' recorded in all'));
     summary.append(big, mid, stats);
-    if (!isMounted) view.appendChild(summary);
-    const head = el('h3', '', 'Crew '); head.appendChild(el('span', 'n', String(rows.length)));
-    const sec = el('section', 'sec'); sec.append(head, bar);
-    if (!isMounted) view.appendChild(sec);
     const pages = Math.max(1, Math.ceil(rows.length / CREW_PAGE)); cstate.page = Math.min(cstate.page, pages - 1);
 
-    let boardContainer = document.getElementById('crew-board-container');
-    if (!boardContainer) {
-      boardContainer = el('div'); boardContainer.id = 'crew-board-container';
-      sec.appendChild(boardContainer);
-    }
+    const boardContainer = ui.board;
     boardContainer.textContent = '';
 
     const list = document.createElement('div');

@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -230,6 +234,7 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 		"card.setAttribute('aria-expanded'",
 		"setAttribute('aria-label', 'Pagination')",
 		"setAttribute('aria-current', 'page')",
+		"if (!ui || !view.contains(ui.q)) ui = mountCrew();",
 	}
 	for _, needle := range needles {
 		t.Run(needle, func(t *testing.T) {
@@ -253,7 +258,7 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 func TestMissionsPageFiltersAreLabelled(t *testing.T) {
 	page := serve(t, MissionsPageHandler()).Body.String()
 	needles := []string{
-		`<label for="q" style="display:contents">Search`,
+		`<label for="q" class="vh">Search</label><input id="q"`,
 		`<label for="harness" style="display:contents">Harness`,
 		`<label for="status" style="display:contents">Status`,
 		`<label for="grade" style="display:contents">Grade`,
@@ -342,22 +347,24 @@ func TestPagerConstDeclaredOnce(t *testing.T) {
 // TestSharedShellIdentical checks that the CSS shared shell block
 // (identical across all four pages) is byte-for-byte identical in each page.
 func TestSharedShellIdentical(t *testing.T) {
+	// Pages in sorted-name order; the first (crew) is the reference every
+	// other page is compared against.
 	pages := []struct {
 		name    string
 		handler gin.HandlerFunc
 	}{
-		{"missions", MissionsPageHandler()},
-		{"triage", TriagePageHandler()},
-		{"performance", PerformancePageHandler()},
 		{"crew", CrewPageHandler()},
+		{"missions", MissionsPageHandler()},
+		{"performance", PerformancePageHandler()},
+		{"triage", TriagePageHandler()},
 	}
 
 	const sharedStartMarker = "/* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */"
 	// Shared shell ends just after @media (max-width: 860px) { .subbar }
 	const sharedEndMarker = "@media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }"
 
-	shells := make(map[string]string)
-	for _, p := range pages {
+	shells := make([]string, len(pages))
+	for i, p := range pages {
 		page := serve(t, p.handler).Body.String()
 		start := strings.Index(page, sharedStartMarker)
 		if start == -1 {
@@ -368,16 +375,95 @@ func TestSharedShellIdentical(t *testing.T) {
 			t.Fatalf("%s page missing shared shell end marker", p.name)
 		}
 		end += start + len(sharedEndMarker)
-		shells[p.name] = page[start : end]
+		shells[i] = page[start:end]
 	}
 
-	// All shells must be identical
-	var canonical string
-	for name, shell := range shells {
-		if canonical == "" {
-			canonical = shell
-		} else if shell != canonical {
-			t.Errorf("%s page shared shell differs from canonical", name)
+	ref := shells[0]
+	for i := 1; i < len(pages); i++ {
+		if shells[i] == ref {
+			continue
 		}
+		n := 0
+		for n < len(ref) && n < len(shells[i]) && ref[n] == shells[i][n] {
+			n++
+		}
+		t.Errorf("%s page shared shell differs from %s page at byte %d (lengths %d vs %d)",
+			pages[i].name, pages[0].name, n, len(shells[i]), len(ref))
+	}
+}
+
+// TestPerformanceModalKeyListenerSourceText is a source-text check only: it
+// cannot run the page's JavaScript. It asserts the performance page adds the
+// modalKeys keydown listener once (in openModal) and removes it once (in
+// closeModal), so every open/close pair is balanced in the source, and that
+// the dead restoreFocus variable is gone. The absence check is paired with the
+// presence checks on the same page source.
+func TestPerformanceModalKeyListenerSourceText(t *testing.T) {
+	page := serve(t, PerformancePageHandler()).Body.String()
+	add := "document.addEventListener('keydown', modalKeys)"
+	rm := "document.removeEventListener('keydown', modalKeys)"
+	if n := strings.Count(page, add); n != 1 {
+		t.Errorf("performance page adds the modalKeys listener %d times, want 1", n)
+	}
+	if n := strings.Count(page, rm); n != 1 {
+		t.Errorf("performance page removes the modalKeys listener %d times, want 1", n)
+	}
+	if strings.Contains(page, "restoreFocus") {
+		t.Error("performance page still mentions restoreFocus")
+	}
+}
+
+var scriptBlock = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+
+// nodeCheck writes src to a temp .js file and runs `node --check` on it,
+// returning node's combined output and the command's error (nil when node
+// accepted the syntax).
+func nodeCheck(t *testing.T, node, src string) (string, error) {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "block.js")
+	if err := os.WriteFile(f, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, "--check", f).CombinedOutput()
+	return string(out), err
+}
+
+// TestEmbeddedScriptsParse extracts every inline <script>...</script> block from
+// each served page and runs `node --check` on it. It checks syntax only: it does
+// not execute the scripts, so it says nothing about runtime behaviour. It skips
+// when node is not on PATH. The control subtest feeds node a duplicate const
+// declaration and requires a failure, so a pass cannot come from a node that
+// accepts everything.
+func TestEmbeddedScriptsParse(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not on PATH; inline scripts were not syntax-checked")
+	}
+	t.Run("control rejects duplicate const", func(t *testing.T) {
+		if out, err := nodeCheck(t, node, "const a = 1;\nconst a = 2;\n"); err == nil {
+			t.Fatalf("control failed: node --check accepted a duplicate const (output %q)", out)
+		}
+	})
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"crew", CrewPageHandler()},
+		{"missions", MissionsPageHandler()},
+		{"performance", PerformancePageHandler()},
+		{"triage", TriagePageHandler()},
+	}
+	for _, p := range pages {
+		t.Run(p.name, func(t *testing.T) {
+			blocks := scriptBlock.FindAllStringSubmatch(serve(t, p.handler).Body.String(), -1)
+			if len(blocks) == 0 {
+				t.Fatalf("%s page: no <script> block found, nothing was checked", p.name)
+			}
+			for i, b := range blocks {
+				if out, err := nodeCheck(t, node, b[1]); err != nil {
+					t.Errorf("%s page: script block %d does not parse: %v\n%s", p.name, i+1, err, out)
+				}
+			}
+		})
 	}
 }

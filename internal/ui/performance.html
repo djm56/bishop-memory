@@ -340,7 +340,6 @@
   .sec > h3 .hid { font:500 11px/1 var(--mono); letter-spacing:.08em; color:var(--warn); border:1px solid currentColor; padding:3px 6px }
   .sec > h3 .gear { order:3; font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:none; border:1px solid var(--line2); padding:6px 9px; cursor:pointer; text-shadow:inherit }
   .sec > h3 .gear:hover { color:var(--fg); border-color:var(--fg) }
-  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
   .modal-bg { position:fixed; inset:0; z-index:40; background:color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter:blur(2px); display:grid; place-items:center; padding:20px }
   .modal { width:min(460px, 100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25), var(--glowbox) }
   .modal .mh { padding:16px 18px 12px; border-bottom:1px solid var(--line2) }
@@ -496,6 +495,25 @@
     </div>`;
   }
 
+  const focusSel = sel => { const el = $(sel); if (el) el.focus(); };
+  // Display dialog. modalKeys is the only keydown listener it adds: openModal
+  // adds it to document, closeModal removes it, and it looks the dialog up on
+  // each key press, so re-rendering the dialog does not orphan it.
+  const modalKeys = e => {
+    const m = $('.modal');
+    if (!state.settings || !m) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...m.querySelectorAll('button, input, select, textarea, [href]')].filter(x => !x.disabled);
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0], last = items[items.length - 1], at = document.activeElement;
+    if (!items.includes(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+  };
+  const openModal = () => { state.settings = true; document.addEventListener('keydown', modalKeys); render(); focusSel('.modal'); };
+  const closeModal = () => { state.settings = false; document.removeEventListener('keydown', modalKeys); render(); focusSel('#opensettings'); };
+
   function render() {
     const p = state.perf, o = p.overall, f = state.filters;
     const visible = p.harnesses.filter(h => !state.hidden.has(h.harness || ''));
@@ -538,42 +556,25 @@
         <div class="mf"><button class="clear" data-all="1">Show all</button><button class="clear" data-all="0">Hide all</button><span class="spacer"></span><button class="btn ok" id="msave">Done</button></div>
       </div></div>` : ''}`;
     $('#fh').value = f.harnessSet ? f.harness : '*';
-    let restoreFocus = null;
     const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
-    const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); restoreFocus = '#fh'; render(); const fh = $('#fh'); if (fh) fh.focus(); };
+    const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); focusSel('#fh'); };
     $('#fh').onchange = e => { state.page = 0; setH(e.target.value); };
-    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { state.page = pageFrom(b.dataset.pg, state.page); restoreFocus = `[data-pg="${b.dataset.pg}"]`; render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); const btn = $(`[data-pg="${b.dataset.pg}"]`); if (btn) btn.focus(); });
-    let openerSelector = null;
-    const handleEscape = e => { if (e.key === 'Escape' && state.settings) { e.preventDefault(); close(); } };
-    const close = () => { state.settings = false; document.removeEventListener('keydown', handleEscape); render(); const opener = openerSelector ? $(openerSelector) : null; if (opener) opener.focus(); };
-    $('#opensettings').onclick = () => { openerSelector = '#opensettings'; state.settings = true; render(); const modal = $('.modal'); if (modal) { modal.focus(); document.addEventListener('keydown', handleEscape); } };
+    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const to = b.dataset.pg; state.page = pageFrom(to, state.page); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); focusSel(`[data-pg="${to}"]`); });
+    $('#opensettings').onclick = openModal;
     if (state.settings) {
-      const modal = $('#mbg');
-      if (modal) { modal.onclick = e => { if (e.target.id === 'mbg') close(); }; }
-      $('#msave').onclick = () => { close(); };
-      document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { c.checked ? state.hidden.delete(c.dataset.hk) : state.hidden.add(c.dataset.hk); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; });
-      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { p.harnesses.forEach(x => b.dataset.all === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); state.page = 0; render(); });
-      const modal = $('.modal');
-      if (modal) {
-        const focusables = modal.querySelectorAll('[tabindex], button, [href], input, select, textarea');
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        modal.addEventListener('keydown', e => {
-          if (e.key === 'Tab') {
-            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-          }
-        });
-      }
+      $('#mbg').onclick = e => { if (e.target.id === 'mbg') closeModal(); };
+      $('#msave').onclick = closeModal;
+      document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { const k = c.dataset.hk; c.checked ? state.hidden.delete(k) : state.hidden.add(k); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; focusSel(`[data-hk="${CSS.escape(k)}"]`); });
+      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { const which = b.dataset.all; p.harnesses.forEach(x => which === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); state.page = 0; render(); focusSel(`[data-all="${which}"]`); });
     }
     document.querySelectorAll('.brow').forEach(r => {
       r.tabIndex = 0; r.role = 'button';
-      const interact = e => { if (e.target.closest('a')) return; state.page = 0; const h = r.dataset.h; restoreFocus = `[data-h="${h}"]`; if (f.harnessSet && f.harness === h) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = h; } save(); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); const brow = $(restoreFocus); if (brow) brow.focus(); };
+      const interact = e => { if (e.target.closest('a')) return; state.page = 0; const h = r.dataset.h; if (f.harnessSet && f.harness === h) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = h; } save(); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); focusSel(`[data-h="${CSS.escape(h)}"]`); };
       r.onclick = interact;
       r.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); interact(e); } };
     });
-    document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; restoreFocus = `#fg [data-g="${b.dataset.g}"]`; save(); render(); const btn = $(restoreFocus); if (btn) btn.focus(); });
-    const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; restoreFocus = '#clear'; save(); render(); const clear = $('#clear'); if (clear) clear.focus(); };
+    document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; const g = b.dataset.g; save(); render(); focusSel(`#fg [data-g="${g}"]`); });
+    const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; save(); render(); focusSel('#clear'); };
     document.querySelectorAll('.grow').forEach(r => {
       const p = r.querySelector('.gs p'), more = r.querySelector('[data-more]'), sb = r.querySelector('[data-sug]'), sug = r.querySelector('.sug');
       if (p.scrollHeight > p.clientHeight + 2) { more.hidden = false; more.onclick = () => { const open = p.classList.toggle('clamp'); more.classList.toggle('open', !open); more.textContent = open ? 'Full verdict' : 'Less'; }; }
