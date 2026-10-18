@@ -203,6 +203,13 @@ func TestMissionsPageRendersLessonsSection(t *testing.T) {
 // absence check is paired with a control: the missions page, served the same
 // way, does contain "innerHTML", so a pass means the page was searched rather
 // than that nothing was served.
+//
+// The name says "Renders" but the entry point is CrewPageHandler's served HTML
+// text, searched with strings.Contains; nothing is rendered. The last needle,
+// `if (!ui || !view.contains(ui.q)) ui = mountCrew();`, pins the one line in
+// the page's render function that mounts the filter once and reuses it. It
+// would still pass if paintCrew cleared #view or rebuilt #cq, so it does not
+// show that the filter keeps focus.
 func TestCrewPageRendersMetrics(t *testing.T) {
 	page := serve(t, CrewPageHandler()).Body.String()
 	needles := []string{
@@ -393,11 +400,13 @@ func TestSharedShellIdentical(t *testing.T) {
 }
 
 // TestPerformanceModalKeyListenerSourceText is a source-text check only: it
-// cannot run the page's JavaScript. It asserts the performance page adds the
-// modalKeys keydown listener once (in openModal) and removes it once (in
-// closeModal), so every open/close pair is balanced in the source, and that
-// the dead restoreFocus variable is gone. The absence check is paired with the
-// presence checks on the same page source.
+// cannot run the page's JavaScript. It asserts that the performance page source
+// contains the string adding the modalKeys keydown listener exactly once, the
+// string removing it exactly once, and no mention of restoreFocus. It does not
+// show that the add and remove sit in openModal and closeModal, that they are
+// wired to the buttons, or that Escape and the Tab trap work. The restoreFocus
+// absence check is paired with a presence check through the same strings.Contains
+// path on a comparable identifier, focusSel, which the page does contain.
 func TestPerformanceModalKeyListenerSourceText(t *testing.T) {
 	page := serve(t, PerformancePageHandler()).Body.String()
 	add := "document.addEventListener('keydown', modalKeys)"
@@ -408,12 +417,34 @@ func TestPerformanceModalKeyListenerSourceText(t *testing.T) {
 	if n := strings.Count(page, rm); n != 1 {
 		t.Errorf("performance page removes the modalKeys listener %d times, want 1", n)
 	}
+	if !strings.Contains(page, "focusSel") {
+		t.Error("control failed: performance page no longer contains focusSel, so the restoreFocus absence check proves nothing")
+	}
 	if strings.Contains(page, "restoreFocus") {
 		t.Error("performance page still mentions restoreFocus")
 	}
 }
 
-var scriptBlock = regexp.MustCompile(`(?s)<script>(.*?)</script>`)
+// TestTriageModelTruncatesBeforeEscapeSourceText is a source-text check only:
+// it cannot run the page's JavaScript. It asserts that the triage page source
+// contains the code-point truncation `[...String(r.model)].slice(0, 27)`
+// and does not contain `esc(r.model).substring`, the earlier form that cut the
+// string after escaping and could split an entity. The absence check is paired
+// with the presence check on the same served text.
+func TestTriageModelTruncatesBeforeEscapeSourceText(t *testing.T) {
+	page := serve(t, TriagePageHandler()).Body.String()
+	if !strings.Contains(page, "[...String(r.model)].slice(0, 27).join('')") {
+		t.Error("triage page does not truncate r.model by code point before escaping")
+	}
+	if strings.Contains(page, "esc(r.model).substring") {
+		t.Error("triage page truncates r.model after escaping (esc(r.model).substring)")
+	}
+}
+
+// scriptBlock matches an inline script element with or without attributes. It
+// ends at the first closing script tag, so a literal one inside a JavaScript
+// string would cut a block short.
+var scriptBlock = regexp.MustCompile(`(?s)<script\b[^>]*>(.*?)</script>`)
 
 // nodeCheck writes src to a temp .js file and runs `node --check` on it,
 // returning node's combined output and the command's error (nil when node
@@ -428,7 +459,7 @@ func nodeCheck(t *testing.T, node, src string) (string, error) {
 	return string(out), err
 }
 
-// TestEmbeddedScriptsParse extracts every inline <script>...</script> block from
+// TestEmbeddedScriptsParse extracts every inline script block (scriptBlock) from
 // each served page and runs `node --check` on it. It checks syntax only: it does
 // not execute the scripts, so it says nothing about runtime behaviour. It skips
 // when node is not on PATH. The control subtest feeds node a duplicate const

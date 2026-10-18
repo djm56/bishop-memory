@@ -495,7 +495,7 @@
     </div>`;
   }
 
-  const focusSel = sel => { const el = $(sel); if (el) el.focus(); };
+  const focusSel = (sel, opts) => { const el = $(sel); if (!el || el.disabled) return false; el.focus(opts); return true; };
   // Display dialog. modalKeys is the only keydown listener it adds: openModal
   // adds it to document, closeModal removes it, and it looks the dialog up on
   // each key press, so re-rendering the dialog does not orphan it.
@@ -559,7 +559,7 @@
     const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
     const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); focusSel('#fh'); };
     $('#fh').onchange = e => { state.page = 0; setH(e.target.value); };
-    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const to = b.dataset.pg; state.page = pageFrom(to, state.page); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); focusSel(`[data-pg="${to}"]`); });
+    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const to = b.dataset.pg; state.page = pageFrom(to, state.page); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); const keep = { preventScroll:true }; focusSel(`[data-pg="${to}"]`, keep) || focusSel('.pager [aria-current="page"]', keep); });
     $('#opensettings').onclick = openModal;
     if (state.settings) {
       $('#mbg').onclick = e => { if (e.target.id === 'mbg') closeModal(); };
@@ -569,7 +569,7 @@
     }
     document.querySelectorAll('.brow').forEach(r => {
       r.tabIndex = 0; r.role = 'button';
-      const interact = e => { if (e.target.closest('a')) return; state.page = 0; const h = r.dataset.h; if (f.harnessSet && f.harness === h) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = h; } save(); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); focusSel(`[data-h="${CSS.escape(h)}"]`); };
+      const interact = e => { if (e.target.closest('a')) return; state.page = 0; const h = r.dataset.h; if (f.harnessSet && f.harness === h) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = h; } save(); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); focusSel(`[data-h="${CSS.escape(h)}"]`, { preventScroll:true }); };
       r.onclick = interact;
       r.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); interact(e); } };
     });
