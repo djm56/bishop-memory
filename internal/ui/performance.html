@@ -368,6 +368,28 @@
     .logo-text { font-size:22px; padding-right:10px }
     .brand h1 { font-size:20px }
   }
+
+  /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
+  [hidden] { display:none !important }
+  header.top .brand h1 { font-size:24px }
+  @media (min-width: 861px) {
+    header.top { height:56px; gap:18px; flex-wrap:nowrap; row-gap:0 }
+    aside { top:56px; height:calc(100vh - 56px) }
+  }
+  @media (max-width: 1180px) { header.top .brand h1 { display:none } }
+  .subbar { position:sticky; top:56px; z-index:4; display:flex; align-items:stretch; gap:14px; padding:0 20px; min-height:44px; background:var(--bg); border-bottom:1px solid var(--line2) }
+  .subbar > :not(.subnav) { align-self:center }
+  .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
+  .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
+  .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
+  .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
+  .subnav button.on .n { color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .pager:empty { display:none }
+  .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
 </style>
 </head>
 <body>
@@ -388,6 +410,13 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
+  // Shared pager (same markup on every page): ‹ Prev, first, current ±1, last, Next ›.
+  const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
+  const pagerHTML = (page, pages, total, size, key) => {
+    if (pages <= 1) return '';
+    const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+    return `<div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div>`;
+  };
   const state = { perf:null, grades:[], filters:{ harness:'', harnessSet:false, grade:'' }, page:0, hidden:new Set(), settings:false };
   const PAGE = 20;
   try { state.hidden = new Set(JSON.parse(localStorage.getItem('perf.hidden') || '[]')); } catch (e) {}
@@ -478,8 +507,7 @@
     const grades = byH.filter(g => !f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient'));
     const pages = Math.max(1, Math.ceil(grades.length / PAGE)); state.page = Math.min(state.page, pages - 1);
     const shown = grades.slice(state.page * PAGE, state.page * PAGE + PAGE);
-    const pageBtns = [...Array(pages).keys()].map(i => `<button data-pg="${i}" class="${i === state.page ? 'on' : ''}">${i + 1}</button>`).join('');
-    const pager = pages > 1 ? `<div class="pager"><span>${state.page * PAGE + 1}\u2013${state.page * PAGE + shown.length} of ${grades.length}</span><div class="seg sm"><button data-pg="prev" ${state.page ? '' : 'disabled'}>\u2039 Prev</button>${pageBtns}<button data-pg="next" ${state.page < pages - 1 ? '' : 'disabled'}>Next \u203a</button></div></div>` : '';
+    const pager = pagerHTML(state.page, pages, grades.length, PAGE, 'pg');
     const chips = [['', 'All'], ...LETTERS.map(l => [l, l]), ['insufficient', 'n/e']].filter(([v]) => v === '' || counts[v] || f.grade === v);
     $('#view').innerHTML = `
       <div class="card summary">
