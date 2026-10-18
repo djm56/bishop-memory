@@ -131,13 +131,37 @@ func TestTriagePageRendersStaleRunsUI(t *testing.T) {
 	}
 }
 
+// closeButtonTag returns the opening <button ...> tag that carries
+// data-close="<kind>", whatever the order of its attributes, or "" when the
+// served source has no such tag.
+func closeButtonTag(page, kind string) string {
+	re := regexp.MustCompile(`<button[^>]*\bdata-close="` + regexp.QuoteMeta(kind) + `"[^>]*>`)
+	return re.FindString(page)
+}
+
+// cssRuleBody returns the text between the braces of the first rule in page
+// whose selector text is exactly selector and which starts its own line, and
+// whether such a rule exists. It does no cascade or specificity computation.
+func cssRuleBody(page, selector string) (string, bool) {
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(selector) + `\s*\{([^}]*)\}`)
+	m := re.FindStringSubmatch(page)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
 // TestTriagePageCloseRunButtonsMarkup is a source-text check only: it cannot run
-// the page's JavaScript. It asserts close run controls render with the correct
-// markup structure: separate from status pills, a "Close run:" label, buttons
-// with full aria-labels pinning the run id, and without the old filled classes
-// (must be outlined). Per-subtest assertions verify presence of individual
-// elements and the absence of old markup. Absence check uses a presence control
-// to verify the path exists.
+// the page's JavaScript or lay anything out. It searches the served triage
+// source for: the "Close run:" label, the close-btns and run-close wrapper
+// divs, each close button's aria-label with the run id interpolation, each
+// button's data-run attribute and the absence of a class attribute on each
+// button (the old filled markup used class="ok" and class="bad"), the statusCol
+// line that puts the status pills before the close controls, and the substrings
+// of the outlined/focus-visible CSS rules. It does not check that the rules win
+// the cascade. Each assertion is its own subtest with its own failure text. An
+// absence subtest first requires the same button tag to be found, so a pass
+// means the tag was searched rather than that nothing was served.
 func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
 	page := serve(t, TriagePageHandler()).Body.String()
 
@@ -159,68 +183,110 @@ func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
 		}
 	})
 
-	t.Run("close button aria-label with run id", func(t *testing.T) {
-		// Presence control: full aria-label template must exist.
-		if !strings.Contains(page, `aria-label="Close run `) {
-			t.Error("aria-label with 'Close run' prefix not found")
-		}
-		if !strings.Contains(page, ` as done"`) {
-			t.Error("aria-label with ' as done' suffix not found")
-		}
-		if !strings.Contains(page, ` as failed"`) {
-			t.Error("aria-label with ' as failed' suffix not found")
+	t.Run("status pills precede close controls", func(t *testing.T) {
+		if !strings.Contains(page, "const statusCol = statusPill + stalePill + buttons;") {
+			t.Error("statusCol line 'statusPill + stalePill + buttons' not found; close controls are not after the status pills")
 		}
 	})
 
-	t.Run("data-run attribute present", func(t *testing.T) {
-		if !strings.Contains(page, `data-run="`) {
-			t.Error("data-run attribute not found on close buttons")
-		}
-	})
+	for _, kind := range []string{"done", "failed"} {
+		t.Run("aria-label with run id: "+kind, func(t *testing.T) {
+			want := `aria-label="Close run ${esc(r.id)} as ` + kind + `"`
+			if !strings.Contains(page, want) {
+				t.Errorf("aria-label %s not found", want)
+			}
+		})
 
-	t.Run("old filled button classes absent", func(t *testing.T) {
-		// Absence control: verify old filled button markup is not present in run-close.
-		// Presence control: close button must exist to distinguish 'control works' from 'nothing present'.
-		hasCloseButton := strings.Contains(page, `class="btns close-btns"`)
-		hasOldDoneButton := strings.Contains(page, `class="ok" data-close="done"`)
-		hasOldFailedButton := strings.Contains(page, `class="bad" data-close="failed"`)
-		if !hasCloseButton {
-			t.Error("close-btns wrapper not found; cannot establish absence control")
-		}
-		if hasOldDoneButton {
-			t.Error("old filled .ok class found on done button")
-		}
-		if hasOldFailedButton {
-			t.Error("old filled .bad class found on failed button")
-		}
-	})
+		t.Run("data-run attribute: "+kind, func(t *testing.T) {
+			tag := closeButtonTag(page, kind)
+			if tag == "" {
+				t.Fatalf("no <button> tag with data-close=%q; cannot check data-run", kind)
+			}
+			if !strings.Contains(tag, `data-run="${esc(r.id)}"`) {
+				t.Errorf("data-run=\"${esc(r.id)}\" missing from the %s button tag: %s", kind, tag)
+			}
+		})
 
-	t.Run("root --faint variable and absence of old stale faint", func(t *testing.T) {
-		// Pin the base --faint value to #4f6e5a (default light fill).
-		// Assert that #5f7f69 (the old stale faint value) is not at :root.
-		if !strings.Contains(page, `--faint:#4f6e5a`) {
-			t.Error("root --faint variable not set to #4f6e5a")
-		}
-		if strings.Contains(page, `:root[data-theme=light] {`) && strings.Contains(page, `--faint:#5f7f69`) {
-			t.Error("old stale faint value #5f7f69 found in light-theme override")
-		}
-	})
+		t.Run("no class attribute on button: "+kind, func(t *testing.T) {
+			tag := closeButtonTag(page, kind)
+			if tag == "" {
+				t.Fatalf("no <button> tag with data-close=%q; cannot establish absence control", kind)
+			}
+			if strings.Contains(tag, "class=") {
+				t.Errorf("%s button tag carries a class attribute (old filled markup): %s", kind, tag)
+			}
+		})
+	}
+
+	cssCases := []struct{ selector, want string }{
+		{".runs .btns.close-btns", "gap:6px"},
+		{".runs .btns.close-btns", "margin-top:0"},
+		{".runs .btns.close-btns button", "background:none"},
+		{".runs .btns.close-btns button", "border:1px solid var(--line2)"},
+		{".runs .btns.close-btns button:focus-visible", "outline:2px solid var(--fg)"},
+	}
+	for _, tc := range cssCases {
+		t.Run("css "+tc.selector+" has "+tc.want, func(t *testing.T) {
+			body, ok := cssRuleBody(page, tc.selector)
+			if !ok {
+				t.Fatalf("css rule %q not found as its own line", tc.selector)
+			}
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("css rule %q lacks %q; body: %s", tc.selector, tc.want, body)
+			}
+		})
+	}
 
 	t.Run("pill.not-started/retired/superseded fill rule", func(t *testing.T) {
-		// Verify the not-started/retired/superseded pill fill rule exists.
-		// This rule is theme-agnostic (applies to all themes).
+		// This rule is unscoped, so it applies in every theme.
 		if !strings.Contains(page, `.pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }`) {
 			t.Error("pill not-started/retired/superseded fill rule not found")
 		}
 	})
 
 	t.Run("pill.stale fill rule", func(t *testing.T) {
-		// Verify the stale pill fill rule exists.
-		// This rule is theme-agnostic (applies to all themes).
+		// This rule is unscoped, so it applies in every theme.
 		if !strings.Contains(page, `.pill.stale { background:var(--warn); color:var(--on) }`) {
 			t.Error("pill stale fill rule not found")
 		}
 	})
+}
+
+// TestPagesPinBaseFaint is a source-text check only. For each of the four
+// pages it serves the page and asserts two things in separate subtests: some
+// bare `:root {` rule contains --faint:#4f6e5a, and the string #5f7f69 (the
+// retired --faint value) appears nowhere in the page. The absence subtest
+// first requires some bare `:root {` rule to set --faint (to any value), so a
+// pass means the page was searched. It does not compute contrast.
+func TestPagesPinBaseFaint(t *testing.T) {
+	rootRe := regexp.MustCompile(`(?m)^\s*:root \{([^}]*)\}`)
+	pages := map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler(), "crew": CrewPageHandler()}
+	for name, h := range pages {
+		page := serve(t, h).Body.String()
+		roots := rootRe.FindAllStringSubmatch(page, -1)
+
+		t.Run(name+"/root rule sets --faint:#4f6e5a", func(t *testing.T) {
+			for _, m := range roots {
+				if strings.Contains(m[1], "--faint:#4f6e5a") {
+					return
+				}
+			}
+			t.Errorf("%s: no bare :root rule contains --faint:#4f6e5a", name)
+		})
+
+		t.Run(name+"/retired #5f7f69 absent", func(t *testing.T) {
+			hasFaint := false
+			for _, m := range roots {
+				hasFaint = hasFaint || strings.Contains(m[1], "--faint:")
+			}
+			if !hasFaint {
+				t.Fatalf("%s: no bare :root rule sets --faint; cannot establish absence control", name)
+			}
+			if strings.Contains(page, "#5f7f69") {
+				t.Errorf("%s: retired value #5f7f69 found in page", name)
+			}
+		})
+	}
 }
 
 // TestMissionsPageRendersDebriefSections is a source-text check only: it cannot
