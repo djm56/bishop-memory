@@ -31,7 +31,7 @@ go test -race ./... -count=1
 | `cmd/mcpd` | `main_test.go` | Dot-segment ids are refused before any request; every tool's method and path matches exactly one registered route |
 | `cmd/memoryd` | `main_test.go` | SIGTERM shuts down gracefully (subprocess test under `t.TempDir()`) |
 | `internal/importer` | `mission_test.go` | Mission documents get `mission_id`, every document its `harness`; an unchanged file is re-tagged and its stale kind corrected, and a later sync with no harness keeps the stored one; a root pointed at a repository skips its `.claude` and `.git` trees; `SyncMission` imports only the named mission's files and refuses an id that is not one path segment; `SyncAgents` makes one crew row per name, and a second harness defining the same agent updates it; `CrewName` normalises `@Hicks`, `hicks`, `harness:hicks` |
-| `internal/ui` | `ui_test.go` | Both pages are served as HTML, link both icons, and carry the Triage / Missions switch |
+| `internal/ui` | `ui_test.go` | Four pages (crew, missions, performance, triage) are served as HTML, link both icons, and carry the Triage / Missions switch. TestEmbeddedScriptsParse runs `node --check` on every inline script block (skips if node unavailable). TestSharedShellIdentical verifies the CSS shell block is identical across pages. Source-text tests verify page structure (filters labelled, findings statuses escaped, debrief sections present, reviews table present, crew metrics rendered, performance modal keyboard listener present, triage model truncates before escaping) — these check the source only and cannot run or execute scripts. |
 | `internal/importer`, `internal/middleware`, `internal/config` | — | Import kinds and hashing, recovery and request id, loopback detection |
 
 ## Conventions

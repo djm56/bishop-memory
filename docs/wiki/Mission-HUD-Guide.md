@@ -29,17 +29,25 @@ Below 860 pixels wide the layout stacks: the header wraps and the mission list s
 
 The crew page at `http://127.0.0.1:8787/crew` shows per-agent metrics across all missions: how many steps each agent ran, their first-pass approval rate on reviews, how many review rounds they needed, their recurring mistakes by severity, service records, and their average grade over the missions they worked on.
 
-Each agent appears as a card:
+The page displays a sortable, filterable, paginated leaderboard. Click a row to expand it and see the full details; the expanded view shows all metrics for that agent.
 
-| Item | Shows |
+The leaderboard columns are:
+
+| Column | Shows |
 |---|---|
-| Steps run | Done out of recorded total |
-| First-pass approval | Percentage and count; null when the agent has reviewed no steps |
-| Re-reviews | Count of fix rounds on steps this agent wrote. Only counts fix rounds when the review's Verdict line named one (decision P3); when reviews lack fix rounds, re-reviews equal (review count - 1) per reviewed step, so a single review gives 0. Null if no reviews exist. |
-| Mistakes | Badges for each severity (high, med, low, unrated). Top 5 most recent or most severe are shown in order: severity first, then by mission date (newest), then by insertion order. |
-| Service records | Total count and breakdown by source (self-reported vs bishop-observed). |
-| Average grade | Letter grade and count of graded missions, shared credit (the grade of every graded mission this agent has a step on). Null when the agent has no graded missions. |
-| Last active | Date and time of the agent's most recent step end, or null if never recorded. |
+| Grade | Letter grade (A–F) from graded missions where this agent has a step |
+| Name | Agent name (sortable) |
+| Steps | Done out of recorded total (sortable) |
+| First-pass approval | Percentage and count (null when the agent has reviewed no steps) |
+| Re-reviews | Count of fix rounds on steps this agent wrote (sortable). Only counts fix rounds when the review's Verdict line named one (decision P3); when reviews lack fix rounds, re-reviews equal (review count - 1) per reviewed step, so a single review gives 0. Null if no reviews exist. |
+| Mistakes | Badges for each severity (high, med, low, unrated). Top 5 most recent or most severe shown in order: severity first, then by mission date (newest), then by insertion order. Hover a badge for details. |
+| Last active | Date and time of the agent's most recent step end (sortable), or null if never recorded. |
+
+The expanded row also shows service records (total count and breakdown by source: self-reported vs bishop-observed).
+
+**Filtering and sorting:**
+
+Use the **Filter by role** dropdown to narrow to agents with a specific role (developer, reviewer, etc.). Click any column header to sort by it; click again to reverse. The leaderboard is paginated; use the pager to navigate.
 
 **Known gaps and caveats:**
 
@@ -47,8 +55,6 @@ Each agent appears as a card:
 - **Re-reviews and fix rounds.** Re-review counts match fix rounds only when a review's Verdict line carries them (e.g., `Verdict: APPROVED; fix_round=1`). Older reviews rely on review count, and a mission with only one review per step shows 0 re-reviews. Small samples should show "x of y" context.
 - **Average grade is shared credit.** When a mission is graded, every agent who worked on it shares that grade in their average. A 1-agent mission weighted equally to a 6-agent mission means the single agent's grade carries more weight in their average. Missions with few grades over many steps may skew the result.
 - **Non-crew names.** Agent names not in the crew table (such as "senior (general-purpose)" or "operator") appear as their own rows with no role until the harnesses write crew names (decision P5).
-
-Sorted by steps run (descending), then by name.
 
 ## The mission list
 
@@ -67,11 +73,13 @@ Click a mission to open it on the right. With no `#` in the URL the newest missi
 
 ## One mission
 
-### Header and tiles
+The mission detail is organized into tabs. Click a tab to view that section; use keyboard navigation (left and right arrows) to move between tabs.
+
+### Summary tab: header, grade, and tiles
 
 The header gives the id, harness, owner, priority when it is not `normal`, status and outcome, the grade when there is one, the title, when it opened and closed, and the next action or blockers when the mission records them.
 
-The tiles below it:
+The tiles show an at-a-glance summary:
 
 | Tile | Shows |
 |---|---|
@@ -82,49 +90,41 @@ The tiles below it:
 | Patterns | Patterns discovered on this mission |
 | Directives | Directives ratified from proposals whose evidence includes this mission's findings |
 
-### Grade
+The grade section shows the [mission grader](Mission-Grading)'s verdict: the letter, **Why**, **Suggestions** for the next mission, and the counts the grade rests on (criteria, steps, injected steps, escalations, findings). Before the nightly run the section says the mission is not graded yet, and while a mission is open that it is graded once finished.
 
-The [mission grader](Mission-Grading)'s verdict: the letter, **Why**, **Suggestions** for the next mission, and the counts the grade rests on (criteria, steps, injected steps, escalations, findings). Before the nightly run the section says the mission is not graded yet, and while a mission is open that it is graded once finished.
-
-### Brief
+### Brief tab
 
 The goal from `BRIEF.md`, and the brief's **Acceptance Criteria** list. Each criterion is ticked or crossed from the debrief's **Acceptance Criteria Outcome** section, in order: a `- [x]` line ticks it, a `- [ ]` line crosses it, and the text after ` — ` on that line is shown as its evidence. Until there is a debrief the boxes are empty and the tile says `no debrief yet`. **Full brief** shows the whole file.
 
 When the section says **No brief imported**, the mission's files have not reached the database; see [Troubleshooting](Troubleshooting#mission-hud).
 
-### Steps
+### Steps tab
 
 ![The step timeline, with each step's agent, crew role, status, start time and duration, above the mission's findings](images/missions-steps-light.png)
 
-A timeline of the mission's steps in step order. Each step shows its number, its agent and that agent's crew role (hover the agent for the full description; `human operator` for a step the operator ran; a **not in crew** tag when the harness wrote a name no agent definition has, such as `senior (general-purpose)`), its phase, status, start time and duration, and the one-line summary the harness wrote when the step finished. **Notes and N journal events** expands to the step's `PROGRESS.md` notes and every flight-recorder event recorded against the step.
+The **Steps** section shows a timeline of the mission's steps in step order. Each step shows its number, its agent and that agent's crew role (hover the agent for the full description; `human operator` for a step the operator ran; a **not in crew** tag when the harness wrote a name no agent definition has, such as `senior (general-purpose)`), its phase, status, start time and duration, and the one-line summary the harness wrote when the step finished. **Notes and N journal events** expands to the step's `PROGRESS.md` notes and every flight-recorder event recorded against the step.
 
 Start and end times are recorded by the service as the step moves to `in-progress` and then `done` or `failed`. Steps recorded before the HUD existed have times only if the backfill below found them in the journal.
 
-### Reviews
+The **Reviews** section shows one row per review step by `@apone`: the step, a verdict badge (**approved**, **not approved**, or **unknown** when the notes carry no verdict wording, as with a review that was not run), the step it reviewed, and its CRITICAL and warning counts and fix round, with **—** where the notes give none. Verdicts are read from the step's notes when the page loads, so they reflect the notes as written: a fixed `Verdict:` line is exact; older free-text notes are read for words such as APPROVED, NOT APPROVED, CHANGES REQUESTED or NO-GO.
 
-One row per review step by `@apone`: the step, a verdict badge (**approved**, **not approved**, or **unknown** when the notes carry no verdict wording, as with a review that was not run), the step it reviewed, and its CRITICAL and warning counts and fix round, with **—** where the notes give none. Verdicts are read from the step's notes when the page loads, so they reflect the notes as written: a fixed `Verdict:` line is exact; older free-text notes are read for words such as APPROVED, NOT APPROVED, CHANGES REQUESTED or NO-GO.
-
-### Findings
+### Findings tab
 
 The findings linked to this mission, each with its id, date, status, triage category (or `uncategorised`), a **directive candidate** tag where the classifier set one, the target, the classifier's summary (or the suggestion) and the processor's recommendation and rationale. A decided finding shows its approver, date and note. **Open in triage →** takes you to the finding on the review page.
 
-### Deliverables
+### Debrief tab
 
-The debrief's **Deliverables Changed** bullets, one row each in order: the path (or `—` when the bullet names none) and the note. With no rows the section says why: no deliverables listed in the debrief, no debrief imported for a closed mission, or the debrief is written when the mission closes.
+This tab contains four sections from the debrief:
 
-### Agent mistakes
+**Deliverables** — the debrief's **Deliverables Changed** bullets, one row each in order: the path (or `—` when the bullet names none) and the note. With no rows the section says why: no deliverables listed in the debrief, no debrief imported for a closed mission, or the debrief is written when the mission closes.
 
-The debrief's **Sub-Agent Mistakes and Corrections** table, one card per row: the agent (as `@name`, or the cell as written when no crew name could be read), the impact level and its note, the mistake, and **fixed** and **prevent** lines for the correction and prevention. Empty states are worded as for Deliverables.
+**Agent mistakes** — the debrief's **Sub-Agent Mistakes and Corrections** table, one card per row: the agent (as `@name`, or the cell as written when no crew name could be read), the impact level and its note, the mistake, and **fixed** and **prevent** lines for the correction and prevention. Empty states are worded as for Deliverables.
 
-### Lessons
+**Lessons** — the debrief's **Wrong Assumptions** table, one card per row: the assumption, why it was wrong, and a **fixed** line for the correction. Below them, one card for **Similar Future Missions**: a **reuse when** line with the trigger, and the reuse checklist as a numbered list. Either part is left out when the debrief has none. Empty states are worded as for Deliverables.
 
-The debrief's **Wrong Assumptions** table, one card per row: the assumption, why it was wrong, and a **fixed** line for the correction. Below them, one card for **Similar Future Missions**: a **reuse when** line with the trigger, and the reuse checklist as a numbered list. Either part is left out when the debrief has none. Empty states are worded as for Deliverables.
+**Debrief** — the full `DEBRIEF.md`, rendered. An open mission says the debrief is written when the mission closes.
 
-### Debrief
-
-`DEBRIEF.md`, rendered. An open mission says the debrief is written when the mission closes.
-
-### Patterns, directives, crew, service records
+### Context tab
 
 Each section appears only when there is something in it.
 
@@ -132,10 +132,7 @@ Each section appears only when there is something in it.
 - **Directives** ratified from proposals that cite this mission's findings as evidence.
 - **Crew**: every agent named on a step, with its description from the harness's agent definitions.
 - **Service records** for those agents dated from the day the mission opened to the day it closed (today, while it is open).
-
-### Journal
-
-**Show every flight-recorder event** lists the mission's whole journal: time, step, agent, event and note. The time is when the event happened as the harness recorded it, falling back to when the service stored it; hover a time to see the stored time when the two differ. A `mission.updated` note lists the fields that changed, from and to. **PROGRESS.md as written** shows the file as the database holds it.
+- **Journal** — the mission's whole flight-recorder audit trail: time, step, agent, event and note. The time is when the event happened as the harness recorded it, falling back to when the service stored it; hover a time to see the stored time when the two differ. A `mission.updated` note lists the fields that changed, from and to. **PROGRESS.md as written** shows the file as the database holds it.
 
 ## How data gets there
 

@@ -107,7 +107,7 @@ On OpenCode instead (cheaper models, your own OpenCode config and key): skip the
 
 ## 6. Following a mission
 
-The mission HUD at `http://127.0.0.1:8787/missions` (also where `/` lands) shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, start time, duration and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew and service records that came out of it. A **Triage / Missions** switch in the header moves between it and the review page.
+The mission HUD at `http://127.0.0.1:8787/missions` (also where `/` lands) shows one mission at a time with tabbed detail sections: the brief with its acceptance criteria ticked from the debrief; a steps tab showing the timeline with each agent's crew role, start time, duration and summary and the review verdicts; findings with their triage state; the debrief (split across deliverables, agent mistakes, lessons and full debrief sections); and patterns, directives, crew and service records. The crew page shows per-agent metrics (steps, approval rate, re-reviews, mistakes, average grade) as a sortable, filterable, paginated leaderboard. A **Triage / Missions** switch in the header moves between the HUD and the review page.
 
 ![The mission HUD](images/missions-light.png)
 
@@ -118,7 +118,7 @@ curl -X POST http://127.0.0.1:8787/v1/documents/sync     # every registered harn
 make mission-links APPLY=1                                # once, to link older findings and steps
 ```
 
-After that each mission update re-imports its own three files. With the service on another machine, the sync above cannot see the harness files; the reconciler pushes them instead (see [Server Install](Server-Install#9-first-upload-of-each-memory-tree)). [Mission HUD Guide](Mission-HUD-Guide) covers the page, the backfill and `make scratch-clean` for old workspace scratch.
+After that each mission update re-imports its own three files. With the service on another machine, the sync above cannot see the harness files; the reconciler pushes them instead (see [Server Install](Server-Install#9-first-upload-of-each-memory-tree)). [Mission HUD Guide](Mission-HUD-Guide) covers the pages, the crew leaderboard, the tabbed detail interface, the backfill and `make scratch-clean` for old workspace scratch.
 
 ## 7. Keeping Markdown and the service in step
 
