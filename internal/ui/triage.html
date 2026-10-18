@@ -239,9 +239,11 @@
   .cat-block { margin-bottom:32px } .cat-title { margin-bottom:14px } .group { margin-bottom:22px }
   .rec, .pill { border-color:transparent; color:var(--on); background:var(--faint); text-shadow:none }
   .rec.approve { background:var(--ok); color:var(--on) } .rec.reject { background:var(--bad); color:var(--on) } .rec.defer { background:var(--warn); color:var(--on) } .rec.supersede { background:var(--faint); color:var(--on) }
-  .pill.approved, .pill.applied, .pill.accepted, .pill.finished { background:var(--ok); color:var(--on) }
-  .pill.rejected, .pill.declined, .pill.failed { background:var(--bad); color:var(--on) }
-  .pill.running, .pill.proposed, .pill.pending { background:var(--run); color:var(--on) }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.finished, .pill.done, .pill.complete { background:var(--ok); color:var(--on) }
+  .pill.rejected, .pill.declined, .pill.failed, .pill.blocked { background:var(--bad); color:var(--on) }
+  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress { background:var(--run); color:var(--on) }
+  .pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }
+  .pill.stale { background:var(--warn); color:var(--on) }
   .cat.on { background:var(--fg); color:var(--on); border-left-color:var(--fg); text-shadow:none } .cat.on .count, .cat.on .count::before, .cat.on .count::after { color:var(--on) }
   .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
 
@@ -301,6 +303,12 @@
   .runs td.notes div { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
   .runs .btns { margin-top:6px; gap:4px; flex-wrap:nowrap } .runs .btns button { padding:4px 7px; font-size:10px }
   .runs td.mono.s { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .run-close { margin-top:8px }
+  .close-label { font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-bottom:4px }
+  .close-btns { gap:6px; margin-top:0 }
+  .close-btns button { padding:7px 12px; font-size:11.5px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--line2); background:none; color:var(--fg); cursor:pointer; text-shadow:inherit }
+  .close-btns button:hover { background:var(--soft); border-color:var(--fg) }
+  .close-btns button:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
 </style>
 </head>
 <body>
@@ -579,7 +587,7 @@
     const rows = d.runs.slice(state.runsPage * RUNS_PAGE, (state.runsPage + 1) * RUNS_PAGE).map(r => {
       const statusPill = `<span class="pill ${esc(r.status)}">${esc(r.status)}</span>`;
       const stalePill = r.stale ? ` <span class="pill stale">stale</span>` : '';
-      const buttons = r.stale ? `<div class="btns"><button class="ok" data-close="done" data-run="${r.id}">Mark done</button><button class="bad" data-close="failed" data-run="${r.id}">Mark failed</button></div>` : '';
+      const buttons = r.stale ? `<div class="run-close"><div class="close-label">Close run:</div><div class="btns close-btns"><button data-close="done" data-run="${r.id}" aria-label="Close run ${r.id} as done">Done</button><button data-close="failed" data-run="${r.id}" aria-label="Close run ${r.id} as failed">Failed</button></div></div>` : '';
       const statusCol = statusPill + stalePill + buttons;
       return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s">${r.model ? `<details><summary>${esc([...String(r.model)].length > 30 ? [...String(r.model)].slice(0, 27).join('') + '…' : r.model)}</summary><div style="padding:8px">${esc(r.model)}</div></details>` : '—'}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono"><details><summary>${esc(shortWhen(r.started_at))}</summary><div style="padding:8px">Started: ${esc(r.started_at || '—')}<br>Last activity: ${esc(r.last_activity_at || '—')}</div></details><div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<details><summary>Notes</summary><div style="padding:8px">${esc(r.notes)}</div></details>` : ''}</td></tr>`;
     }).join('');

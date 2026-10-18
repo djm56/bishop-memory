@@ -252,7 +252,12 @@
   .mrow { position:relative; border-left:4px solid var(--line2); padding:10px 28px 10px 12px; margin-bottom:3px; background:var(--panel); border-top:1px solid var(--line); border-bottom:1px solid var(--line); border-right:1px solid var(--line) }
   .mrow.s-in-progress { border-left-color:var(--run) } .mrow.s-complete { border-left-color:var(--ok) } .mrow.s-blocked, .mrow.s-failed { border-left-color:var(--bad) } .mrow.s-not-started { border-left-color:var(--line2) } .mrow.stale { border-left-color:var(--warn) }
   .mrow .pill { border-color:transparent; color:var(--on); background:var(--faint); text-shadow:none }
-  .mrow .pill.in-progress { background:var(--run) } .mrow .pill.complete { background:var(--ok) } .mrow .pill.blocked, .mrow .pill.failed { background:var(--bad) } .mrow .pill.stale { background:var(--warn) }
+  .mrow .pill.in-progress, .mrow .pill.running, .mrow .pill.under-review { background:var(--run) }
+  .mrow .pill.complete, .mrow .pill.done, .mrow .pill.approved, .mrow .pill.applied, .mrow .pill.accepted, .mrow .pill.active, .mrow .pill.finished { background:var(--ok) }
+  .mrow .pill.blocked, .mrow .pill.failed, .mrow .pill.rejected, .mrow .pill.declined { background:var(--bad) }
+  .mrow .pill.not-started, .mrow .pill.retired, .mrow .pill.superseded { background:var(--faint) }
+  .mrow .pill.proposed, .mrow .pill.pending { background:var(--run) }
+  .mrow .pill.stale { background:var(--warn) }
   .mrow .grade { background:currentColor } .mrow .grade { -webkit-text-fill-color:var(--on); text-shadow:none }
   .mrow:hover { background:var(--soft); border-color:var(--line2) }
   .mrow.on, .mrow.on:hover { background:var(--fg); border-color:var(--fg); color:var(--on); text-shadow:none; box-shadow:var(--glowbox) }
@@ -262,7 +267,12 @@
   .head { padding:14px 18px; margin-bottom:16px; border:1px solid var(--fg); border-left:6px solid var(--fg); background:var(--panel); box-shadow:var(--glowbox) }
   .head .ids .id { background:var(--fg); color:var(--on); padding:2px 8px; text-shadow:none }
   .head h2 { font-size:34px; margin:8px 0 6px }
-  .head .pill.in-progress { background:var(--run); color:var(--on); border-color:var(--run); text-shadow:none } .head .pill.complete, .head .pill.succeeded { background:var(--ok); color:var(--on); border-color:var(--ok); text-shadow:none } .head .pill.blocked, .head .pill.failed { background:var(--bad); color:var(--on); border-color:var(--bad); text-shadow:none }
+  .head .pill.in-progress, .head .pill.running, .head .pill.under-review { background:var(--run); color:var(--on); border-color:var(--run); text-shadow:none }
+  .head .pill.complete, .head .pill.succeeded, .head .pill.done, .head .pill.approved, .head .pill.applied, .head .pill.accepted, .head .pill.active, .head .pill.finished { background:var(--ok); color:var(--on); border-color:var(--ok); text-shadow:none }
+  .head .pill.blocked, .head .pill.failed, .head .pill.rejected, .head .pill.declined { background:var(--bad); color:var(--on); border-color:var(--bad); text-shadow:none }
+  .head .pill.not-started, .head .pill.retired, .head .pill.superseded { background:var(--faint); color:var(--on); border-color:var(--faint); text-shadow:none }
+  .head .pill.proposed, .head .pill.pending { background:var(--run); color:var(--on); border-color:var(--run); text-shadow:none }
+  .head .pill.stale { background:var(--warn); color:var(--on); border-color:var(--warn); text-shadow:none }
   .tiles { gap:0; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); border:1px solid var(--line2); background:var(--panel); margin:0 0 24px }
   .tile { border:0; border-right:1px solid var(--line); background:none; padding:10px 14px }
   .tile:last-child { border-right:0 }

@@ -231,6 +231,14 @@
   .verdict h4 { margin:12px 0 4px; font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--faint) }
   .verdict p { margin:0; text-wrap:pretty; max-width:90ch }
   .signals { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px }
+  /* Light theme pill background colours */
+  :root[data-theme=light] .pill, :root[data-theme=light] .rec { border-color:transparent; background:var(--faint); color:var(--on); text-shadow:none }
+  :root[data-theme=light] .pill.approved, :root[data-theme=light] .pill.applied, :root[data-theme=light] .pill.accepted, :root[data-theme=light] .pill.finished, :root[data-theme=light] .pill.done, :root[data-theme=light] .pill.complete { background:var(--ok) }
+  :root[data-theme=light] .pill.rejected, :root[data-theme=light] .pill.declined, :root[data-theme=light] .pill.failed, :root[data-theme=light] .pill.blocked { background:var(--bad) }
+  :root[data-theme=light] .pill.running, :root[data-theme=light] .pill.proposed, :root[data-theme=light] .pill.pending, :root[data-theme=light] .pill.in-progress { background:var(--run); color:var(--on) }
+  :root[data-theme=light] .pill.not-started, :root[data-theme=light] .pill.retired, :root[data-theme=light] .pill.superseded { background:var(--faint) }
+  :root[data-theme=light] .pill.stale { background:var(--warn) }
+  :root[data-theme=light] .rec.approve { background:var(--ok) } :root[data-theme=light] .rec.reject { background:var(--bad) } :root[data-theme=light] .rec.defer { background:var(--warn) }
   @media (max-width: 1100px) { .stats { display:none } .two { grid-template-columns:1fr } }
   @media (max-width: 860px) {
     header.top { height:auto; flex-wrap:wrap; padding:10px 16px; gap:10px 14px }

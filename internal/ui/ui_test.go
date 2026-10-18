@@ -131,6 +131,39 @@ func TestTriagePageRendersStaleRunsUI(t *testing.T) {
 	}
 }
 
+// TestTriagePageCloseRunButtonsMarkup is a source-text check only: it cannot run
+// the page's JavaScript. It asserts that close run controls render on their own
+// line (distinct from status pills), include a "Close run:" label, have buttons
+// without the filled `.ok` class (must be outlined), and carry the correct data
+// attributes and aria-labels for keyboard accessibility and operator action.
+// The test verifies the new markup structure and absence of the old filled style.
+func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
+	page := serve(t, TriagePageHandler()).Body.String()
+	// Positive controls: the markup must be present for the buttons to work.
+	needles := []string{
+		`<div class="close-label">Close run:</div>`,
+		`<div class="btns close-btns">`,
+		`data-close="done"`,
+		`data-close="failed"`,
+		`aria-label="Close run`,
+		`as done"`,
+		`as failed"`,
+	}
+	for _, needle := range needles {
+		if !strings.Contains(page, needle) {
+			t.Errorf("triage page does not contain %q", needle)
+		}
+	}
+	// Absence control: close buttons must not have the `.ok` filled class.
+	// If the old broken markup is present, this test will fail.
+	if strings.Contains(page, `class="ok" data-close="done"`) {
+		t.Error("triage page contains the broken .ok class on close-done button")
+	}
+	if strings.Contains(page, `class="bad" data-close="failed"`) {
+		t.Error("triage page contains the filled .bad class on close-failed button")
+	}
+}
+
 // TestMissionsPageRendersDebriefSections is a source-text check only: it cannot
 // run the page's JavaScript. It asserts that the mission page reads the HUD's
 // deliverables and agent_mistakes fields with an empty-array fallback, renders a
