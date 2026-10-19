@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -333,6 +334,70 @@ func TestBriefPrepHandler_RejectsEmptyGoal(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTriageNextUnclassifiedHandler_DefaultBatchSize verifies that the
+// triage_next_unclassified tool applies the correct default and cap
+// to the limit parameter. Default is 20; max is 200.
+func TestTriageNextUnclassifiedHandler_DefaultBatchSize(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    map[string]any
+		wantQS  int64 // want limit in query string
+	}{
+		{"no limit", map[string]any{}, 20},
+		{"explicit 20", map[string]any{"limit": float64(20)}, 20},
+		{"explicit 50", map[string]any{"limit": float64(50)}, 50},
+		{"explicit 100", map[string]any{"limit": float64(100)}, 100},
+		{"explicit 200 (max)", map[string]any{"limit": float64(200)}, 200},
+		{"exceed max 500", map[string]any{"limit": float64(500)}, 200},
+		{"exceed max 1000", map[string]any{"limit": float64(1000)}, 200},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var capturedQS string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedQS = r.URL.RawQuery
+				w.WriteHeader(http.StatusOK)
+				_, _ = w.Write([]byte(`{"findings":[]}`))
+			}))
+			defer server.Close()
+
+			c := &client{httpClient: server.Client(), baseURL: server.URL, harness: "test"}
+			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
+
+			result, err := makeTool("triage_next_unclassified", "GET", []string{"v1", "findings"}, makeNextUnclassifiedHandler(c))(context.Background(), req)
+			if err != nil {
+				t.Fatalf("%s: handler returned Go error %v", tc.name, err)
+			}
+			if result.IsError {
+				t.Fatalf("%s: handler returned error: %v", tc.name, resultText(t, result))
+			}
+
+			u, err := url.Parse("http://example.com?" + capturedQS)
+			if err != nil {
+				t.Fatalf("%s: parse query string %q: %v", tc.name, capturedQS, err)
+			}
+			limitStr := u.Query().Get("limit")
+			if limitStr == "" {
+				t.Fatalf("%s: limit not in query string %q", tc.name, capturedQS)
+			}
+			limitVal, err := strconv.ParseInt(limitStr, 10, 64)
+			if err != nil {
+				t.Fatalf("%s: parse limit %q: %v", tc.name, limitStr, err)
+			}
+			if limitVal != tc.wantQS {
+				t.Errorf("%s: query limit = %d, want %d", tc.name, limitVal, tc.wantQS)
+			}
+		})
+	}
+}
+
+// makeTool is a helper to construct an MCP tool handler for testing.
+// It wraps the handler so it can be called directly.
+func makeTool(name string, method string, pathParts []string, handler toolHandler) toolHandler {
+	return handler
 }
 
 // TestBriefPrepHandler_ForwardsQueryParams drives makeBriefPrepHandler

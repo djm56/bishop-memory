@@ -737,7 +737,7 @@ Fetch the next batch of findings that have no classification yet, oldest first. 
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|
-| `limit` | integer | no | Batch size, default 50, max 200. |
+| `limit` | integer | no | Batch size, default 20, max 200. |
 
 
 **Example call**

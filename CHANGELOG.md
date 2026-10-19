@@ -35,6 +35,7 @@ here ahead of an actual release.
 
 ### Changed
 
+- **Classifier batch size lowered from 50 to 20** — reduces reasoning-budget exhaustion when processing large backlogs. The agent still loops batch by batch until all findings are classified.
 - **The pages have the MU/TH/UR design**: a MU/TH/UR wordmark in the header, a blue in-progress colour, solid status pills, mission rows edged by status, and a tighter mission header and tiles. `/performance` is reorganised into a summary bar, one row per harness (click to filter), a paged grade list with grade buttons, and **Display…** to hide harnesses. Headers fit at every width: on `/triage` the summary counts give way below 1800px and the header wraps to two rows below 1600px, and on phones long text wraps instead of widening the page.
 - **Search ranks scratch lower** — `GET /v1/memory/search` (and `memory_search`) counts `workspace` documents at half their bm25 score, so findings, patterns, directives, briefs and debriefs come first for the same match; `rank` is the weighted value.
 - **`mission.updated` journal notes say what changed** — each changed field as `field: "old" → "new"`, or `Mission updated (no change)`, instead of the bare "Mission updated".
