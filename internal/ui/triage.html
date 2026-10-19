@@ -14,7 +14,7 @@
 </script>
 <style>
   :root {
-    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#5f7f69; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
+    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#4f6e5a; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
     --accent:#0b5a2c; --ok:#1b6834; --bad:#a3301c; --warn:#7a4f06; --on:#f4f7ef;
     --glow:none; --glowbox:none;
     --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; --sans:var(--mono); --disp:"VT323", var(--mono);
@@ -53,6 +53,7 @@
   .seg button, .seg a { border:0; border-right:1px solid var(--line2); background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:9px 12px; cursor:pointer; text-decoration:none; text-shadow:inherit }
   .seg > :last-child { border-right:0 }
   .seg button:hover, .seg a:hover { color:var(--fg); background:var(--soft) }
+  .seg button:focus-visible, .seg a:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
   .seg button.on, .seg a.on { background:var(--fg); color:var(--on); text-shadow:none }
   .seg.sm button { padding:7px 9px; font-size:11px }
   .spacer { flex:1 }
@@ -235,9 +236,11 @@
   .cat-block { margin-bottom:32px } .cat-title { margin-bottom:14px } .group { margin-bottom:22px }
   .rec, .pill { border-color:transparent; color:var(--on); background:var(--faint); text-shadow:none }
   .rec.approve { background:var(--ok); color:var(--on) } .rec.reject { background:var(--bad); color:var(--on) } .rec.defer { background:var(--warn); color:var(--on) } .rec.supersede { background:var(--faint); color:var(--on) }
-  .pill.approved, .pill.applied, .pill.accepted, .pill.finished { background:var(--ok); color:var(--on) }
-  .pill.rejected, .pill.declined, .pill.failed { background:var(--bad); color:var(--on) }
-  .pill.running, .pill.proposed, .pill.pending { background:var(--run); color:var(--on) }
+  .pill.approved, .pill.applied, .pill.accepted, .pill.finished, .pill.done, .pill.complete { background:var(--ok); color:var(--on) }
+  .pill.rejected, .pill.declined, .pill.failed, .pill.blocked { background:var(--bad); color:var(--on) }
+  .pill.running, .pill.proposed, .pill.pending, .pill.in-progress { background:var(--run); color:var(--on) }
+  .pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }
+  .pill.stale { background:var(--warn); color:var(--on) }
   .cat.on { background:var(--fg); color:var(--on); border-left-color:var(--fg); text-shadow:none } .cat.on .count, .cat.on .count::before, .cat.on .count::after { color:var(--on) }
   .logo-text { font:400 30px/1 var(--disp); letter-spacing:.12em; color:var(--fg); text-shadow:var(--glow); white-space:nowrap; padding-right:14px; border-right:1px solid var(--line2) }
 
@@ -262,21 +265,55 @@
     header.top { height:104px; flex-wrap:wrap; align-content:center; row-gap:10px }
     aside { top:104px; height:calc(100vh - 104px) }
   }
+
+  /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
+  [hidden] { display:none !important }
+  header.top .brand h1 { font-size:24px }
+  @media (min-width: 861px) {
+    header.top { height:56px; gap:18px; flex-wrap:nowrap; row-gap:0 }
+    aside { top:56px; height:calc(100vh - 56px) }
+  }
+  @media (max-width: 1180px) { header.top .brand h1 { display:none } }
+  .subbar { position:sticky; top:56px; z-index:4; display:flex; align-items:stretch; gap:14px; padding:0 20px; min-height:44px; background:var(--bg); border-bottom:1px solid var(--line2) }
+  .subbar > :not(.subnav) { align-self:center }
+  .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
+  .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
+  .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px }
+  .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
+  .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
+  .subnav button.on .n { color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .pager:empty { display:none }
+  .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
+  /* Triage: tabs + approver live in the sub-bar, so the header matches the other pages. */
+  @media (min-width: 861px) { aside { top:100px; height:calc(100vh - 100px) } }
+  @media (min-width: 861px) and (max-width: 1800px) { #stats { display:inline } }
+  @media (max-width: 1280px) { #stats { display:none !important } }
+  .runs table { table-layout:auto }
+  .runs td { vertical-align:middle }
+  .runs td .s, .runs td.s { font-size:11.5px; color:var(--muted) }
+  .runs td.num, .runs td.st { white-space:nowrap }
+  .runs td.notes { min-width:120px; max-width:420px; color:var(--muted) }
+  .runs td.notes div { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+  .runs .btns { margin-top:6px; gap:4px; flex-wrap:nowrap } .runs .btns button { padding:4px 7px; font-size:10px }
+  .runs td.mono.s { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .run-close { margin-top:8px }
+  .close-label { font-size:11px; letter-spacing:.06em; color:var(--muted); margin-bottom:4px }
+  .runs .btns.close-btns { gap:6px; margin-top:0 }
+  .runs .btns.close-btns button { padding:7px 12px; font-size:11.5px; font-weight:500; letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--line2); background:none; color:var(--fg); cursor:pointer; text-shadow:inherit }
+  .runs .btns.close-btns button:hover { background:var(--soft); border-color:var(--fg) }
+  .runs .btns.close-btns button:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
 </style>
 </head>
 <body>
 <header class="top">
   <div class="brand"><span class="logo-text" aria-label="MU/TH/UR">MU/TH/UR</span><h1>Findings Triage</h1></div>
   <nav class="seg" aria-label="Pages"><a href="/triage" class="on">Triage</a><a href="/missions">Missions</a><a href="/performance">Performance</a><a href="/crew">Crew</a></nav>
-  <nav class="seg tabs" id="tabs">
-    <button data-tab="pending" class="on">Pending</button>
-    <button data-tab="browse">Browse</button>
-    <button data-tab="directives">Directives</button>
-    <button data-tab="runs">Runs</button>
-  </nav>
   <span class="spacer"></span>
   <span id="stats" class="stats"></span>
-  <label class="approver">Approver <input id="approver" placeholder="your name"></label>
   <button id="signout" class="signout" hidden title="Forget the API key stored in this browser">Forget key</button>
   <div class="seg sm" id="theme" title="Theme">
     <button data-set="system">Auto</button>
@@ -284,6 +321,16 @@
     <button data-set="dark">Dark</button>
   </div>
 </header>
+<div class="subbar">
+  <nav class="subnav" id="tabs" aria-label="Triage views">
+    <button data-tab="pending" class="on">Pending</button>
+    <button data-tab="browse">Browse</button>
+    <button data-tab="directives">Directives</button>
+    <button data-tab="runs">Runs</button>
+  </nav>
+  <span class="spacer"></span>
+  <label class="approver">Approver <input id="approver" placeholder="your name"></label>
+</div>
 <main>
   <aside id="rail"></aside>
   <section id="view"><div class="empty">Loading…</div></section>
@@ -291,7 +338,15 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
-  const state = { tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0, ids:null };
+  // Shared pager (same markup on every page that paginates): ‹ Prev, first, current ±1, last, Next ›.
+  const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
+  const pagerHTML = (page, pages, total, size, key) => {
+    if (pages <= 1) return '';
+    const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+    return `<nav aria-label="Pagination"><div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" aria-label="Previous page" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" aria-label="Page ${i + 1}"${i === page ? ' aria-current="page"' : ''} class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" aria-label="Next page" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div></nav>`;
+  };
+  const RUNS_PAGE = 20, BROWSE_PAGE = 20;
+  const state = { runsPage:0, browsePage:0, tab:'pending', category:null, browseStatus:'proposed', categories:[], pending:null, focus:0, ids:null };
   // /triage?finding=12 (or ?finding=12,13) opens Browse on just those findings;
   // the mission HUD links here.
   const linked = new URLSearchParams(location.search).get('finding');
@@ -308,7 +363,7 @@
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const human = k => k.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
   const catName = slug => (state.categories.find(c => c.slug === slug) || {}).name || slug;
-  const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
+  const toast = msg => { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className='toast'; t.role='status'; t.setAttribute('aria-live', 'polite'); t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   // API key (docs/plans/NETWORK-DEPLOYMENT-PLAN.md §3.1): asked for when the
   // service answers 401, kept in this browser, sent on every /v1 call.
   const KEY_STORE = 'bishop.apiKey';
@@ -351,7 +406,7 @@
       rows.map(c => { const n = count(c); return `<div class="cat ${state.category===c.slug?'on':''}" data-slug="${c.slug ?? ''}" title="${esc(c.name)}">
         <span>${esc(c.name)}</span>${n === '' ? '' : `<small class="count ${n === 0 ? 'zero' : ''}">${n}</small>`}</div>`; }).join('') +
       `<div class="keys"><span><kbd>j</kbd> <kbd>k</kbd> move</span><span><kbd>a</kbd> approve</span><span><kbd>r</kbd> reject</span><span><kbd>d</kbd> defer</span></div>`;
-    $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.focus = 0; render(); });
+    $('#rail').querySelectorAll('.cat').forEach(el => el.onclick = () => { state.category = el.dataset.slug || null; state.browsePage = 0; state.focus = 0; render(); });
   }
 
   function findingCard(f) {
@@ -449,11 +504,13 @@
     const view = $('#view');
     const q = new URLSearchParams(); if (state.category) q.set('category', state.category); if (state.browseStatus) q.set('status', state.browseStatus); if (state.ids) q.set('ids', state.ids); q.set('limit', '200');
     const d = await api('GET', '/v1/findings?' + q.toString());
+    state.browsePage = Math.min(state.browsePage, Math.max(0, Math.ceil(d.findings.length / BROWSE_PAGE) - 1));
     const statuses = ['proposed','approved','applied','rejected','retired','superseded',''];
     view.innerHTML = `<div class="filter"><div class="seg sm">${statuses.map(s => `<button data-st="${s}" class="${s===state.browseStatus?'on':''}">${s||'all'}</button>`).join('')}</div><span>${d.findings.length} shown</span>${state.ids ? `<span>Only #${esc(state.ids.split(',').join(', #'))} · <a href="/triage" data-clear>show all</a></span>` : ''}</div>` +
-      (d.findings.length ? `<div class="list">${d.findings.map(f => findingCard(f)).join('')}</div>` : '<div class="empty">No findings match.</div>');
-    view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; renderBrowse(); });
-    view.querySelector('[data-clear]')?.addEventListener('click', e => { e.preventDefault(); state.ids = null; history.replaceState(null, '', '/triage'); renderBrowse(); });
+      (d.findings.length ? `<div class="list">${d.findings.slice(state.browsePage * BROWSE_PAGE, (state.browsePage + 1) * BROWSE_PAGE).map(f => findingCard(f)).join('')}</div>${pagerHTML(state.browsePage, Math.ceil(d.findings.length / BROWSE_PAGE), d.findings.length, BROWSE_PAGE, 'bp')}` : '<div class="empty">No findings match.</div>');
+    view.querySelectorAll('[data-bp]').forEach(b => b.onclick = () => { state.browsePage = pageFrom(b.dataset.bp, state.browsePage); renderBrowse(); window.scrollTo(0, 0); });
+    view.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { state.browseStatus = b.dataset.st; state.browsePage = 0; renderBrowse(); });
+    view.querySelector('[data-clear]')?.addEventListener('click', e => { e.preventDefault(); state.ids = null; state.browsePage = 0; history.replaceState(null, '', '/triage'); renderBrowse(); });
     wireCards(view); focusCard(false);
   }
 
@@ -521,16 +578,19 @@
 
   async function renderRuns() {
     const d = await api('GET', '/v1/triage/runs?limit=100');
-    const rows = d.runs.map(r => {
+    const view = $('#view');
+    const pages = Math.max(1, Math.ceil(d.runs.length / RUNS_PAGE)); state.runsPage = Math.min(state.runsPage, pages - 1);
+    const shortWhen = s => s ? String(s).replace(/^\d{4}-/, '').slice(0, 11) : '—';
+    const rows = d.runs.slice(state.runsPage * RUNS_PAGE, (state.runsPage + 1) * RUNS_PAGE).map(r => {
       const statusPill = `<span class="pill ${esc(r.status)}">${esc(r.status)}</span>`;
       const stalePill = r.stale ? ` <span class="pill stale">stale</span>` : '';
-      const statusCol = statusPill + stalePill;
-      const buttons = r.stale ? `<div class="btns" style="margin-top:0"><button class="ok" data-close="done" data-run="${r.id}">Mark done</button><button class="bad" data-close="failed" data-run="${r.id}">Mark failed</button></div>` : '';
-      return `<tr><td class="mono">${r.id}</td><td>${esc(r.kind)}</td><td>${esc(r.category||'')}</td><td class="mono">${esc(r.model||'')}</td><td>${statusCol}</td><td class="num">${r.considered}</td><td class="num">${r.written}</td><td class="num">${r.accepted}</td><td class="num">${r.declined}</td><td class="mono">${esc(r.started_at)}</td><td class="mono">${esc(r.last_activity_at)}</td><td>${esc(r.notes||'')}</td><td>${buttons}</td></tr>`;
+      const buttons = r.stale ? `<div class="run-close"><div class="close-label">Close run:</div><div class="btns close-btns"><button data-close="done" data-run="${esc(r.id)}" aria-label="Close run ${esc(r.id)} as done">Done</button><button data-close="failed" data-run="${esc(r.id)}" aria-label="Close run ${esc(r.id)} as failed">Failed</button></div></div>` : '';
+      const statusCol = statusPill + stalePill + buttons;
+      return `<tr><td class="mono">${r.id}</td><td><b>${esc(r.kind)}</b>${r.category ? `<div class="s">${esc(r.category)}</div>` : ''}</td><td class="mono s">${r.model ? `<details><summary>${esc([...String(r.model)].length > 30 ? [...String(r.model)].slice(0, 27).join('') + '…' : r.model)}</summary><div style="padding:8px">${esc(r.model)}</div></details>` : '—'}</td><td class="st">${statusCol}</td><td class="num" title="read ${r.considered} · written ${r.written} · accepted ${r.accepted} · declined ${r.declined}">${r.considered} → ${r.written}<div class="s">${r.accepted} acc · ${r.declined} dec</div></td><td class="mono"><details><summary>${esc(shortWhen(r.started_at))}</summary><div style="padding:8px">Started: ${esc(r.started_at || '—')}<br>Last activity: ${esc(r.last_activity_at || '—')}</div></details><div class="s">${esc(shortWhen(r.last_activity_at))}</div></td><td class="notes">${r.notes ? `<details><summary>Notes</summary><div style="padding:8px">${esc(r.notes)}</div></details>` : ''}</td></tr>`;
     }).join('');
-    const view = $('#view');
-    view.innerHTML = d.runs.length ? `<div class="table-wrap"><table><tr><th>#</th><th>Kind</th><th>Category</th><th>Model</th><th>Status</th><th class="num">Read</th><th class="num">Written</th><th class="num">Accepted</th><th class="num">Declined</th><th>Started</th><th>Last activity</th><th>Notes</th><th>Actions</th></tr>` + rows + '</table></div>'
+    view.innerHTML = d.runs.length ? `<div class="table-wrap runs"><table><tr><th>#</th><th>Run</th><th>Model</th><th>Status</th><th class="num">Read → wr</th><th>Started / last</th><th>Notes</th></tr>` + rows + '</table></div>' + pagerHTML(state.runsPage, pages, d.runs.length, RUNS_PAGE, 'rp')
       : '<div class="empty">No runs yet. <code>make triage-classify</code> starts the first one.</div>';
+    view.querySelectorAll('[data-rp]').forEach(b => b.onclick = () => { state.runsPage = pageFrom(b.dataset.rp, state.runsPage); renderRuns(); window.scrollTo(0, 0); });
     view.querySelectorAll('[data-close]').forEach(b => b.onclick = async () => {
       const status = b.dataset.close, run = b.dataset.run;
       let who; try { who = approver(); } catch (e) { return; }
@@ -581,7 +641,7 @@
   }
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('on')); b.classList.add('on');
-    state.tab = b.dataset.tab; state.focus = 0; window.scrollTo(0, 0); render();
+    state.tab = b.dataset.tab; state.focus = 0; state.browsePage = 0; window.scrollTo(0, 0); render();
   });
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === state.tab));
   refresh().catch(e => { $('#view').innerHTML = `<div class="empty">Cannot reach the service: ${esc(e.message)}</div>`; });

@@ -14,7 +14,7 @@
 </script>
 <style>
   :root {
-    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#5f7f69; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
+    --bg:#e7eddf; --panel:#f4f7ef; --fg:#11361f; --muted:#3c6449; --faint:#4f6e5a; --line:#cad8c5; --line2:#93ae98; --soft:#dfe8d9;
     --accent:#0b5a2c; --ok:#1b6834; --bad:#a3301c; --warn:#7a4f06; --on:#f4f7ef;
     --glow:none; --glowbox:none;
     --mono:"IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace; --sans:var(--mono); --disp:"VT323", var(--mono);
@@ -53,6 +53,7 @@
   .seg button, .seg a { border:0; border-right:1px solid var(--line2); background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; padding:9px 12px; cursor:pointer; text-decoration:none; text-shadow:inherit }
   .seg > :last-child { border-right:0 }
   .seg button:hover, .seg a:hover { color:var(--fg); background:var(--soft) }
+  .seg button:focus-visible, .seg a:focus-visible { outline:2px solid var(--fg); outline-offset:2px }
   .seg button.on, .seg a.on { background:var(--fg); color:var(--on); text-shadow:none }
   .seg.sm button { padding:7px 9px; font-size:11px }
   .spacer { flex:1 }
@@ -336,8 +337,6 @@
   .sec > h3 .hid { font:500 11px/1 var(--mono); letter-spacing:.08em; color:var(--warn); border:1px solid currentColor; padding:3px 6px }
   .sec > h3 .gear { order:3; font:500 11px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); background:none; border:1px solid var(--line2); padding:6px 9px; cursor:pointer; text-shadow:inherit }
   .sec > h3 .gear:hover { color:var(--fg); border-color:var(--fg) }
-  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:10px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
-  .seg button:disabled { opacity:.35; cursor:default; background:none }
   .modal-bg { position:fixed; inset:0; z-index:40; background:color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter:blur(2px); display:grid; place-items:center; padding:20px }
   .modal { width:min(460px, 100%); max-height:calc(100vh - 40px); display:flex; flex-direction:column; padding:0; box-shadow:0 20px 60px rgba(0,0,0,.25), var(--glowbox) }
   .modal .mh { padding:16px 18px 12px; border-bottom:1px solid var(--line2) }
@@ -368,6 +367,29 @@
     .logo-text { font-size:22px; padding-right:10px }
     .brand h1 { font-size:20px }
   }
+
+  /* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */
+  [hidden] { display:none !important }
+  header.top .brand h1 { font-size:24px }
+  @media (min-width: 861px) {
+    header.top { height:56px; gap:18px; flex-wrap:nowrap; row-gap:0 }
+    aside { top:56px; height:calc(100vh - 56px) }
+  }
+  @media (max-width: 1180px) { header.top .brand h1 { display:none } }
+  .subbar { position:sticky; top:56px; z-index:4; display:flex; align-items:stretch; gap:14px; padding:0 20px; min-height:44px; background:var(--bg); border-bottom:1px solid var(--line2) }
+  .subbar > :not(.subnav) { align-self:center }
+  .subnav { display:flex; overflow-x:auto; scrollbar-width:none }
+  .subnav button { flex:none; display:flex; align-items:center; gap:7px; min-height:44px; padding:0 14px; border:0; border-bottom:2px solid transparent; background:none; color:var(--muted); font:500 11.5px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase; cursor:pointer; text-shadow:inherit }
+  .subnav button:hover { color:var(--fg); background:var(--soft) }
+  .subnav button:focus-visible { outline:2px solid var(--fg); outline-offset:-2px }
+  .subnav button.on { color:var(--fg); border-bottom-color:var(--fg); font-weight:600 }
+  .subnav .n { font-size:11px; color:var(--faint); font-weight:500 }
+  .subnav button.on .n { color:var(--fg) }
+  .pager { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:10px; margin-top:12px; font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-variant-numeric:tabular-nums }
+  .pager:empty { display:none }
+  .pager .gap { display:grid; place-items:center; padding:0 8px; color:var(--faint); border-right:1px solid var(--line2) }
+  .seg button:disabled { opacity:.35; cursor:default; background:none }
+  @media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }
 </style>
 </head>
 <body>
@@ -388,6 +410,12 @@
 <script>
 (() => {
   const $ = (s, el=document) => el.querySelector(s);
+  const pageFrom = (v, cur) => v === 'prev' ? cur - 1 : v === 'next' ? cur + 1 : Number(v);
+  const pagerHTML = (page, pages, total, size, key) => {
+    if (pages <= 1) return '';
+    const nums = []; for (let i = 0; i < pages; i++) { if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…'); }
+    return `<nav aria-label="Pagination"><div class="pager"><span>${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}</span><div class="seg sm"><button data-${key}="prev" aria-label="Previous page" ${page ? '' : 'disabled'}>‹ Prev</button>${nums.map(i => i === '…' ? '<span class="gap">…</span>' : `<button data-${key}="${i}" aria-label="Page ${i + 1}"${i === page ? ' aria-current="page"' : ''} class="${i === page ? 'on' : ''}">${i + 1}</button>`).join('')}<button data-${key}="next" aria-label="Next page" ${page < pages - 1 ? '' : 'disabled'}>Next ›</button></div></div></nav>`;
+  };
   const state = { perf:null, grades:[], filters:{ harness:'', harnessSet:false, grade:'' }, page:0, hidden:new Set(), settings:false };
   const PAGE = 20;
   try { state.hidden = new Set(JSON.parse(localStorage.getItem('perf.hidden') || '[]')); } catch (e) {}
@@ -464,6 +492,25 @@
     </div>`;
   }
 
+  const focusSel = (sel, opts) => { const el = $(sel); if (!el || el.disabled) return false; el.focus(opts); return true; };
+  // Display dialog. modalKeys is the only keydown listener it adds: openModal
+  // adds it to document, closeModal removes it, and it looks the dialog up on
+  // each key press, so re-rendering the dialog does not orphan it.
+  const modalKeys = e => {
+    const m = $('.modal');
+    if (!state.settings || !m) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeModal(); return; }
+    if (e.key !== 'Tab') return;
+    const items = [...m.querySelectorAll('button, input, select, textarea, [href]')].filter(x => !x.disabled);
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0], last = items[items.length - 1], at = document.activeElement;
+    if (!items.includes(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+  };
+  const openModal = () => { state.settings = true; document.addEventListener('keydown', modalKeys); render(); focusSel('.modal'); };
+  const closeModal = () => { state.settings = false; document.removeEventListener('keydown', modalKeys); render(); focusSel('#opensettings'); };
+
   function render() {
     const p = state.perf, o = p.overall, f = state.filters;
     const visible = p.harnesses.filter(h => !state.hidden.has(h.harness || ''));
@@ -478,8 +525,7 @@
     const grades = byH.filter(g => !f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient'));
     const pages = Math.max(1, Math.ceil(grades.length / PAGE)); state.page = Math.min(state.page, pages - 1);
     const shown = grades.slice(state.page * PAGE, state.page * PAGE + PAGE);
-    const pageBtns = [...Array(pages).keys()].map(i => `<button data-pg="${i}" class="${i === state.page ? 'on' : ''}">${i + 1}</button>`).join('');
-    const pager = pages > 1 ? `<div class="pager"><span>${state.page * PAGE + 1}\u2013${state.page * PAGE + shown.length} of ${grades.length}</span><div class="seg sm"><button data-pg="prev" ${state.page ? '' : 'disabled'}>\u2039 Prev</button>${pageBtns}<button data-pg="next" ${state.page < pages - 1 ? '' : 'disabled'}>Next \u203a</button></div></div>` : '';
+    const pager = pagerHTML(state.page, pages, grades.length, PAGE, 'pg');
     const chips = [['', 'All'], ...LETTERS.map(l => [l, l]), ['insufficient', 'n/e']].filter(([v]) => v === '' || counts[v] || f.grade === v);
     $('#view').innerHTML = `
       <div class="card summary">
@@ -495,34 +541,37 @@
         ${visible.length ? `<div class="board"><div class="bhead"><span>Avg</span><span>Harness</span><span>Distribution</span><span>Trend</span><span>Latest, newest first</span></div>${visible.map(harnessRow).join('')}</div>` : `<div class="none">${p.harnesses.length ? 'Every harness is hidden. Use Display\u2026 to bring some back.' : 'No finished missions yet.'}</div>`}</section>
       <section class="sec"><h3>Grades <span class="n">${grades.length}</span></h3>
         <div class="toolbar">
-          <select id="fh"><option value="*">All harnesses</option>${visible.map(h => `<option value="${esc(h.harness || '')}">${esc(h.harness || 'no harness')}</option>`).join('')}</select>
+          <label for="fh" style="display:contents">Harness<select id="fh"><option value="*">All harnesses</option>${visible.map(h => `<option value="${esc(h.harness || '')}">${esc(h.harness || 'no harness')}</option>`).join('')}</select></label>
           <div class="seg sm" id="fg">${chips.map(([v, l]) => `<button data-g="${v}" class="${f.grade === v ? 'on' : ''}">${l}<span class="c">${counts[v]}</span></button>`).join('')}</div>
           ${f.harnessSet || f.grade ? '<button class="clear" id="clear">Clear filters</button>' : ''}
         </div>
         ${grades.length ? `<div class="glist">${shown.map(gradeRow).join('')}</div>${pager}` : '<div class="none">No grades match.</div>'}
       </section>
-      ${state.settings ? `<div class="modal-bg" id="mbg"><div class="modal card" role="dialog" aria-label="Harness display">
+      ${state.settings ? `<div class="modal-bg" id="mbg"><div class="modal card" role="dialog" aria-modal="true" aria-label="Harness display" tabindex="-1">
         <div class="mh"><h3>Show harnesses</h3><span class="s">Hidden harnesses drop out of the leaderboard, the summary and the grade log. Nothing is deleted; tick a harness to bring it back.</span></div>
         <div class="mlist2">${p.harnesses.map(x => { const k = x.harness || ''; return `<label class="opt"><input type="checkbox" data-hk="${esc(k)}" ${state.hidden.has(k) ? '' : 'checked'}><span class="nm">${esc(x.harness || 'no harness')}</span><span class="s">${x.graded} graded</span>${x.avg_grade ? gradeBadge(x.avg_grade) : ''}</label>`; }).join('')}</div>
         <div class="mf"><button class="clear" data-all="1">Show all</button><button class="clear" data-all="0">Hide all</button><span class="spacer"></span><button class="btn ok" id="msave">Done</button></div>
       </div></div>` : ''}`;
     $('#fh').value = f.harnessSet ? f.harness : '*';
     const save = () => { try { localStorage.setItem('perf.filters', JSON.stringify(state.filters)); } catch (e) {} };
-    const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); };
+    const setH = v => { if (v === '*' || (f.harnessSet && f.harness === v)) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = v; } save(); render(); focusSel('#fh'); };
     $('#fh').onchange = e => { state.page = 0; setH(e.target.value); };
-    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const v = b.dataset.pg; state.page = v === 'prev' ? state.page - 1 : v === 'next' ? state.page + 1 : Number(v); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76 }); });
-    $('#opensettings').onclick = () => { state.settings = true; render(); };
+    document.querySelectorAll('[data-pg]').forEach(b => b.onclick = () => { const to = b.dataset.pg; state.page = pageFrom(to, state.page); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56 }); const keep = { preventScroll:true }; focusSel(`[data-pg="${to}"]`, keep) || focusSel('.pager [aria-current="page"]', keep); });
+    $('#opensettings').onclick = openModal;
     if (state.settings) {
-      const close = () => { state.settings = false; render(); };
-      $('#mbg').onclick = e => { if (e.target.id === 'mbg') close(); };
-      $('#msave').onclick = close;
-      document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { c.checked ? state.hidden.delete(c.dataset.hk) : state.hidden.add(c.dataset.hk); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; });
-      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { p.harnesses.forEach(x => b.dataset.all === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); render(); });
-      document.onkeydown = e => { if (e.key === 'Escape' && state.settings) close(); };
+      $('#mbg').onclick = e => { if (e.target.id === 'mbg') closeModal(); };
+      $('#msave').onclick = closeModal;
+      document.querySelectorAll('[data-hk]').forEach(c => c.onchange = () => { const k = c.dataset.hk; c.checked ? state.hidden.delete(k) : state.hidden.add(k); saveHidden(); state.page = 0; const y = $('.mlist2').scrollTop; render(); $('.mlist2').scrollTop = y; focusSel(`[data-hk="${CSS.escape(k)}"]`); });
+      document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { const which = b.dataset.all; p.harnesses.forEach(x => which === '1' ? state.hidden.delete(x.harness || '') : state.hidden.add(x.harness || '')); saveHidden(); state.page = 0; render(); focusSel(`[data-all="${which}"]`); });
     }
-    document.querySelectorAll('.brow').forEach(r => r.onclick = e => { if (e.target.closest('a')) return; state.page = 0; setH(r.dataset.h); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 76, behavior:'smooth' }); });
-    document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; save(); render(); });
-    const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; save(); render(); };
+    document.querySelectorAll('.brow').forEach(r => {
+      r.tabIndex = 0; r.role = 'button';
+      const interact = e => { if (e.target.closest('a')) return; state.page = 0; const h = r.dataset.h; if (f.harnessSet && f.harness === h) { f.harnessSet = false; f.harness = ''; } else { f.harnessSet = true; f.harness = h; } save(); render(); const t = document.querySelectorAll('.sec')[1]; window.scrollTo({ top: t.getBoundingClientRect().top + scrollY - 56, behavior:'smooth' }); focusSel(`[data-h="${CSS.escape(h)}"]`, { preventScroll:true }); };
+      r.onclick = interact;
+      r.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('a')) { e.preventDefault(); interact(e); } };
+    });
+    document.querySelectorAll('#fg button').forEach(b => b.onclick = () => { f.grade = b.dataset.g; state.page = 0; const g = b.dataset.g; save(); render(); focusSel(`#fg [data-g="${g}"]`); });
+    const c = $('#clear'); if (c) c.onclick = () => { f.harnessSet = false; f.harness = ''; f.grade = ''; state.page = 0; save(); render(); focusSel('#clear'); };
     document.querySelectorAll('.grow').forEach(r => {
       const p = r.querySelector('.gs p'), more = r.querySelector('[data-more]'), sb = r.querySelector('[data-sug]'), sug = r.querySelector('.sug');
       if (p.scrollHeight > p.clientHeight + 2) { more.hidden = false; more.onclick = () => { const open = p.classList.toggle('clamp'); more.classList.toggle('open', !open); more.textContent = open ? 'Full verdict' : 'Less'; }; }

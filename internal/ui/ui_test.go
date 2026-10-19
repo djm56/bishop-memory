@@ -4,6 +4,10 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -127,6 +131,164 @@ func TestTriagePageRendersStaleRunsUI(t *testing.T) {
 	}
 }
 
+// closeButtonTag returns the opening <button ...> tag that carries
+// data-close="<kind>", whatever the order of its attributes, or "" when the
+// served source has no such tag.
+func closeButtonTag(page, kind string) string {
+	re := regexp.MustCompile(`<button[^>]*\bdata-close="` + regexp.QuoteMeta(kind) + `"[^>]*>`)
+	return re.FindString(page)
+}
+
+// cssRuleBody returns the text between the braces of the first rule in page
+// whose selector text is exactly selector and which starts its own line, and
+// whether such a rule exists. It does no cascade or specificity computation.
+func cssRuleBody(page, selector string) (string, bool) {
+	re := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(selector) + `\s*\{([^}]*)\}`)
+	m := re.FindStringSubmatch(page)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
+}
+
+// TestTriagePageCloseRunButtonsMarkup is a source-text check only: it cannot run
+// the page's JavaScript or lay anything out. It searches the served triage
+// source for: the "Close run:" label, the close-btns and run-close wrapper
+// divs, each close button's aria-label with the run id interpolation, each
+// button's data-run attribute and the absence of a class attribute on each
+// button (the old filled markup used class="ok" and class="bad"), the statusCol
+// line that puts the status pills before the close controls, and the substrings
+// of the outlined/focus-visible CSS rules. It does not check that the rules win
+// the cascade. Each assertion is its own subtest with its own failure text. An
+// absence subtest first requires the same button tag to be found, so a pass
+// means the tag was searched rather than that nothing was served.
+func TestTriagePageCloseRunButtonsMarkup(t *testing.T) {
+	page := serve(t, TriagePageHandler()).Body.String()
+
+	t.Run("close-label element", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="close-label">Close run:</div>`) {
+			t.Error("close-label div with text 'Close run:' not found")
+		}
+	})
+
+	t.Run("close-btns wrapper", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="btns close-btns">`) {
+			t.Error("close-btns wrapper not found")
+		}
+	})
+
+	t.Run("run-close wrapper", func(t *testing.T) {
+		if !strings.Contains(page, `<div class="run-close">`) {
+			t.Error("run-close wrapper not found")
+		}
+	})
+
+	t.Run("status pills precede close controls", func(t *testing.T) {
+		if !strings.Contains(page, "const statusCol = statusPill + stalePill + buttons;") {
+			t.Error("statusCol line 'statusPill + stalePill + buttons' not found; close controls are not after the status pills")
+		}
+	})
+
+	for _, kind := range []string{"done", "failed"} {
+		t.Run("aria-label with run id: "+kind, func(t *testing.T) {
+			want := `aria-label="Close run ${esc(r.id)} as ` + kind + `"`
+			if !strings.Contains(page, want) {
+				t.Errorf("aria-label %s not found", want)
+			}
+		})
+
+		t.Run("data-run attribute: "+kind, func(t *testing.T) {
+			tag := closeButtonTag(page, kind)
+			if tag == "" {
+				t.Fatalf("no <button> tag with data-close=%q; cannot check data-run", kind)
+			}
+			if !strings.Contains(tag, `data-run="${esc(r.id)}"`) {
+				t.Errorf("data-run=\"${esc(r.id)}\" missing from the %s button tag: %s", kind, tag)
+			}
+		})
+
+		t.Run("no class attribute on button: "+kind, func(t *testing.T) {
+			tag := closeButtonTag(page, kind)
+			if tag == "" {
+				t.Fatalf("no <button> tag with data-close=%q; cannot establish absence control", kind)
+			}
+			if strings.Contains(tag, "class=") {
+				t.Errorf("%s button tag carries a class attribute (old filled markup): %s", kind, tag)
+			}
+		})
+	}
+
+	cssCases := []struct{ selector, want string }{
+		{".runs .btns.close-btns", "gap:6px"},
+		{".runs .btns.close-btns", "margin-top:0"},
+		{".runs .btns.close-btns button", "background:none"},
+		{".runs .btns.close-btns button", "border:1px solid var(--line2)"},
+		{".runs .btns.close-btns button:focus-visible", "outline:2px solid var(--fg)"},
+	}
+	for _, tc := range cssCases {
+		t.Run("css "+tc.selector+" has "+tc.want, func(t *testing.T) {
+			body, ok := cssRuleBody(page, tc.selector)
+			if !ok {
+				t.Fatalf("css rule %q not found as its own line", tc.selector)
+			}
+			if !strings.Contains(body, tc.want) {
+				t.Errorf("css rule %q lacks %q; body: %s", tc.selector, tc.want, body)
+			}
+		})
+	}
+
+	t.Run("pill.not-started/retired/superseded fill rule", func(t *testing.T) {
+		// This rule is unscoped, so it applies in every theme.
+		if !strings.Contains(page, `.pill.not-started, .pill.retired, .pill.superseded { background:var(--faint); color:var(--on) }`) {
+			t.Error("pill not-started/retired/superseded fill rule not found")
+		}
+	})
+
+	t.Run("pill.stale fill rule", func(t *testing.T) {
+		// This rule is unscoped, so it applies in every theme.
+		if !strings.Contains(page, `.pill.stale { background:var(--warn); color:var(--on) }`) {
+			t.Error("pill stale fill rule not found")
+		}
+	})
+}
+
+// TestPagesPinBaseFaint is a source-text check only. For each of the four
+// pages it serves the page and asserts two things in separate subtests: some
+// bare `:root {` rule contains --faint:#4f6e5a, and the string #5f7f69 (the
+// retired --faint value) appears nowhere in the page. The absence subtest
+// first requires some bare `:root {` rule to set --faint (to any value), so a
+// pass means the page was searched. It does not compute contrast.
+func TestPagesPinBaseFaint(t *testing.T) {
+	rootRe := regexp.MustCompile(`(?m)^\s*:root \{([^}]*)\}`)
+	pages := map[string]gin.HandlerFunc{"triage": TriagePageHandler(), "missions": MissionsPageHandler(), "performance": PerformancePageHandler(), "crew": CrewPageHandler()}
+	for name, h := range pages {
+		page := serve(t, h).Body.String()
+		roots := rootRe.FindAllStringSubmatch(page, -1)
+
+		t.Run(name+"/root rule sets --faint:#4f6e5a", func(t *testing.T) {
+			for _, m := range roots {
+				if strings.Contains(m[1], "--faint:#4f6e5a") {
+					return
+				}
+			}
+			t.Errorf("%s: no bare :root rule contains --faint:#4f6e5a", name)
+		})
+
+		t.Run(name+"/retired #5f7f69 absent", func(t *testing.T) {
+			hasFaint := false
+			for _, m := range roots {
+				hasFaint = hasFaint || strings.Contains(m[1], "--faint:")
+			}
+			if !hasFaint {
+				t.Fatalf("%s: no bare :root rule sets --faint; cannot establish absence control", name)
+			}
+			if strings.Contains(page, "#5f7f69") {
+				t.Errorf("%s: retired value #5f7f69 found in page", name)
+			}
+		})
+	}
+}
+
 // TestMissionsPageRendersDebriefSections is a source-text check only: it cannot
 // run the page's JavaScript. It asserts that the mission page reads the HUD's
 // deliverables and agent_mistakes fields with an empty-array fallback, renders a
@@ -199,6 +361,13 @@ func TestMissionsPageRendersLessonsSection(t *testing.T) {
 // absence check is paired with a control: the missions page, served the same
 // way, does contain "innerHTML", so a pass means the page was searched rather
 // than that nothing was served.
+//
+// The name says "Renders" but the entry point is CrewPageHandler's served HTML
+// text, searched with strings.Contains; nothing is rendered. The last needle,
+// `if (!ui || !view.contains(ui.q)) ui = mountCrew();`, pins the one line in
+// the page's render function that mounts the filter once and reuses it. It
+// would still pass if paintCrew cleared #view or rebuilt #cq, so it does not
+// show that the filter keeps focus.
 func TestCrewPageRendersMetrics(t *testing.T) {
 	page := serve(t, CrewPageHandler()).Body.String()
 	needles := []string{
@@ -225,6 +394,12 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 		"empty.textContent = 'No crew activity yet.'",
 		"err.textContent = 'Cannot reach the service: ' + e.message",
 		`<a href="/crew" class="on" aria-current="page">Crew</a>`,
+		"card.tabIndex = 0",
+		"card.role = 'button'",
+		"card.setAttribute('aria-expanded'",
+		"setAttribute('aria-label', 'Pagination')",
+		"setAttribute('aria-current', 'page')",
+		"if (!ui || !view.contains(ui.q)) ui = mountCrew();",
 	}
 	for _, needle := range needles {
 		t.Run(needle, func(t *testing.T) {
@@ -241,6 +416,40 @@ func TestCrewPageRendersMetrics(t *testing.T) {
 			t.Fatal("crew page contains innerHTML; data must reach the DOM through textContent or text nodes only")
 		}
 	})
+}
+
+// TestMissionsPageFiltersAreLabelled checks that the search, harness, status,
+// and grade filters in the missions page all have associated labels.
+func TestMissionsPageFiltersAreLabelled(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	needles := []string{
+		`<label for="q" class="vh">Search</label><input id="q"`,
+		`<label for="harness" style="display:contents">Harness`,
+		`<label for="status" style="display:contents">Status`,
+		`<label for="grade" style="display:contents">Grade`,
+	}
+	for _, needle := range needles {
+		t.Run(needle, func(t *testing.T) {
+			if !strings.Contains(page, needle) {
+				t.Fatalf("missions page does not contain labelled filter: %q", needle)
+			}
+		})
+	}
+}
+
+// TestMissionsPageFindingStatusSourceText is a source-text check only: it
+// cannot run the page's JavaScript. It asserts that the mission page template
+// escapes both the status key and its count value in the findings tile subline
+// by checking the template string in the page source.
+func TestMissionsPageFindingStatusSourceText(t *testing.T) {
+	page := serve(t, MissionsPageHandler()).Body.String()
+	if !strings.Contains(page, "${esc(String(v))} ${esc(k)}") {
+		t.Fatalf("missions page does not escape finding status counts and keys")
+	}
+	// Absence control: the raw form without esc() must NOT appear.
+	if strings.Contains(page, "${v} ${k}") {
+		t.Fatalf("missions page contains unescaped finding status template")
+	}
 }
 
 // TestMissionsPageRendersReviewsSection is a source-text check only: it cannot
@@ -276,5 +485,174 @@ func TestMissionsPageRendersReviewsSection(t *testing.T) {
 		if !strings.Contains(page, needle) {
 			t.Errorf("missions page does not contain %q", needle)
 		}
+	}
+}
+
+// TestPagerConstDeclaredOnce checks that each page using pagerHTML template
+// (missions, triage, performance) declares it exactly once. A duplicate
+// declaration is a SyntaxError that prevents the page from loading.
+func TestPagerConstDeclaredOnce(t *testing.T) {
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"missions", MissionsPageHandler()},
+		{"triage", TriagePageHandler()},
+		{"performance", PerformancePageHandler()},
+	}
+	for _, p := range pages {
+		page := serve(t, p.handler).Body.String()
+		count := strings.Count(page, "const pagerHTML")
+		if count != 1 {
+			t.Errorf("%s page declares pagerHTML %d times, want 1", p.name, count)
+		}
+	}
+}
+
+// TestSharedShellIdentical checks that the CSS shared shell block
+// (identical across all four pages) is byte-for-byte identical in each page.
+func TestSharedShellIdentical(t *testing.T) {
+	// Pages in sorted-name order; the first (crew) is the reference every
+	// other page is compared against.
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"crew", CrewPageHandler()},
+		{"missions", MissionsPageHandler()},
+		{"performance", PerformancePageHandler()},
+		{"triage", TriagePageHandler()},
+	}
+
+	const sharedStartMarker = "/* ---- Shared shell (same block on every page): header, in-page tabs, pager ---- */"
+	// Shared shell ends just after @media (max-width: 860px) { .subbar }
+	const sharedEndMarker = "@media (max-width: 860px) { .subbar { position:static; padding:0 16px; flex-wrap:wrap } }"
+
+	shells := make([]string, len(pages))
+	for i, p := range pages {
+		page := serve(t, p.handler).Body.String()
+		start := strings.Index(page, sharedStartMarker)
+		if start == -1 {
+			t.Fatalf("%s page missing shared shell start marker", p.name)
+		}
+		end := strings.Index(page[start:], sharedEndMarker)
+		if end == -1 {
+			t.Fatalf("%s page missing shared shell end marker", p.name)
+		}
+		end += start + len(sharedEndMarker)
+		shells[i] = page[start:end]
+	}
+
+	ref := shells[0]
+	for i := 1; i < len(pages); i++ {
+		if shells[i] == ref {
+			continue
+		}
+		n := 0
+		for n < len(ref) && n < len(shells[i]) && ref[n] == shells[i][n] {
+			n++
+		}
+		t.Errorf("%s page shared shell differs from %s page at byte %d (lengths %d vs %d)",
+			pages[i].name, pages[0].name, n, len(shells[i]), len(ref))
+	}
+}
+
+// TestPerformanceModalKeyListenerSourceText is a source-text check only: it
+// cannot run the page's JavaScript. It asserts that the performance page source
+// contains the string adding the modalKeys keydown listener exactly once, the
+// string removing it exactly once, and no mention of restoreFocus. It does not
+// show that the add and remove sit in openModal and closeModal, that they are
+// wired to the buttons, or that Escape and the Tab trap work. The restoreFocus
+// absence check is paired with a presence check through the same strings.Contains
+// path on a comparable identifier, focusSel, which the page does contain.
+func TestPerformanceModalKeyListenerSourceText(t *testing.T) {
+	page := serve(t, PerformancePageHandler()).Body.String()
+	add := "document.addEventListener('keydown', modalKeys)"
+	rm := "document.removeEventListener('keydown', modalKeys)"
+	if n := strings.Count(page, add); n != 1 {
+		t.Errorf("performance page adds the modalKeys listener %d times, want 1", n)
+	}
+	if n := strings.Count(page, rm); n != 1 {
+		t.Errorf("performance page removes the modalKeys listener %d times, want 1", n)
+	}
+	if !strings.Contains(page, "focusSel") {
+		t.Error("control failed: performance page no longer contains focusSel, so the restoreFocus absence check proves nothing")
+	}
+	if strings.Contains(page, "restoreFocus") {
+		t.Error("performance page still mentions restoreFocus")
+	}
+}
+
+// TestTriageModelTruncatesBeforeEscapeSourceText is a source-text check only:
+// it cannot run the page's JavaScript. It asserts that the triage page source
+// contains the code-point truncation `[...String(r.model)].slice(0, 27)`
+// and does not contain `esc(r.model).substring`, the earlier form that cut the
+// string after escaping and could split an entity. The absence check is paired
+// with the presence check on the same served text.
+func TestTriageModelTruncatesBeforeEscapeSourceText(t *testing.T) {
+	page := serve(t, TriagePageHandler()).Body.String()
+	if !strings.Contains(page, "[...String(r.model)].slice(0, 27).join('')") {
+		t.Error("triage page does not truncate r.model by code point before escaping")
+	}
+	if strings.Contains(page, "esc(r.model).substring") {
+		t.Error("triage page truncates r.model after escaping (esc(r.model).substring)")
+	}
+}
+
+// scriptBlock matches an inline script element with or without attributes. It
+// ends at the first closing script tag, so a literal one inside a JavaScript
+// string would cut a block short.
+var scriptBlock = regexp.MustCompile(`(?s)<script\b[^>]*>(.*?)</script>`)
+
+// nodeCheck writes src to a temp .js file and runs `node --check` on it,
+// returning node's combined output and the command's error (nil when node
+// accepted the syntax).
+func nodeCheck(t *testing.T, node, src string) (string, error) {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "block.js")
+	if err := os.WriteFile(f, []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, "--check", f).CombinedOutput()
+	return string(out), err
+}
+
+// TestEmbeddedScriptsParse extracts every inline script block (scriptBlock) from
+// each served page and runs `node --check` on it. It checks syntax only: it does
+// not execute the scripts, so it says nothing about runtime behaviour. It skips
+// when node is not on PATH. The control subtest feeds node a duplicate const
+// declaration and requires a failure, so a pass cannot come from a node that
+// accepts everything.
+func TestEmbeddedScriptsParse(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not on PATH; inline scripts were not syntax-checked")
+	}
+	t.Run("control rejects duplicate const", func(t *testing.T) {
+		if out, err := nodeCheck(t, node, "const a = 1;\nconst a = 2;\n"); err == nil {
+			t.Fatalf("control failed: node --check accepted a duplicate const (output %q)", out)
+		}
+	})
+	pages := []struct {
+		name    string
+		handler gin.HandlerFunc
+	}{
+		{"crew", CrewPageHandler()},
+		{"missions", MissionsPageHandler()},
+		{"performance", PerformancePageHandler()},
+		{"triage", TriagePageHandler()},
+	}
+	for _, p := range pages {
+		t.Run(p.name, func(t *testing.T) {
+			blocks := scriptBlock.FindAllStringSubmatch(serve(t, p.handler).Body.String(), -1)
+			if len(blocks) == 0 {
+				t.Fatalf("%s page: no <script> block found, nothing was checked", p.name)
+			}
+			for i, b := range blocks {
+				if out, err := nodeCheck(t, node, b[1]); err != nil {
+					t.Errorf("%s page: script block %d does not parse: %v\n%s", p.name, i+1, err, out)
+				}
+			}
+		})
 	}
 }

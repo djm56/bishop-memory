@@ -40,6 +40,7 @@ here ahead of an actual release.
 - **`mission.updated` journal notes say what changed** — each changed field as `field: "old" → "new"`, or `Mission updated (no change)`, instead of the bare "Mission updated".
 - **The triage page and the mission HUD have a new look**: a green terminal style in IBM Plex Mono and VT323, with the same light, dark and auto themes, and the wiki screenshots regenerated to match. The pages' behaviour is unchanged, except that the HUD now scrolls its mission list, not the whole page, to show the selected mission.
 - `scripts/clean-scratch.py` works through the API and runs on the machine that holds the harness checkouts. Its `--url` option replaces `--db`.
+- **HUD page redesign with shared shell** — crew, missions, performance, and triage pages rebuilt from operator designs with a unified header, in-page sub-tabs, and pagination pager shared across all four pages. Crew page is a sortable, filterable, paginated leaderboard with expandable rows. Missions detail is organized into tabs. Triage Browse and Runs tabs are paginated; Runs table condensed with expandable model ID, notes, and timestamps. Crew leaderboard rows and performance harness rows are keyboard-operable, filters are labelled, and focus is kept on re-render; the triage category rail is still mouse-only. Performance settings dialog closes on Escape with focus trap and restore. Light-theme faint text raised to 4.74:1 contrast. Animations respect prefers-reduced-motion. Fixed unescaped finding-status text on missions summary. Tests: TestEmbeddedScriptsParse runs node --check on inline scripts; shared-shell identity and source-text tests documented. No API changes.
 
 ### Breaking Changes
 
@@ -74,6 +75,12 @@ here ahead of an actual release.
   `internal/config/config.go`'s `Config.HTTPHost` docblock.
 
 ### Fixed
+
+- **Triage page Runs tab: close-run controls now sit on their own line.** A stale run's close controls now sit on their own line under the status tags, labelled "Close run:" with outlined Done and Failed buttons (each with an aria-label naming the run). Previously the small filled "Mark done"/"Mark failed" buttons looked like status tags, so a stale run appeared to show every status.
+
+- **Default light theme: base `--faint` colour is now #4f6e5a on all four HUD pages.** The base light theme sets `--faint` to #4f6e5a (crew, missions, performance, triage). The darker value previously applied only after explicitly choosing light; with the default system theme on a light-mode OS, faint text and grey status tags (not-started, retired, superseded) fell to 4.10:1 contrast. Status tags for done, complete, blocked, in-progress, stale, not-started, retired and superseded now have background fills on the triage and missions pages.
+
+- **Tests: ui_test.go pins the close-control markup and base --faint value.** TestTriagePageCloseRunButtonsMarkup guards the close-run buttons' aria-labels, data-run attributes, and outlined CSS; TestPagesPinBaseFaint asserts that all four HUD pages define `--faint:#4f6e5a` in their root rule.
 
 - **HUD journal times** — events show when they happened (`occurred_at`, the harness's `YYYY-MM-DD HH:MM UTC` now parsed) rather than when the service stored them, with the stored time on hover.
 - **HUD agent roles** — a step by the operator shows `human operator`, and a name no agent definition has (such as `senior (general-purpose)`) shows a **not in crew** tag instead of a blank role.

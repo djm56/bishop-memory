@@ -1,13 +1,16 @@
 # Mission HUD — Plan
 
-Status: phases 1 and 3 shipped (merged to `main`); phase 2 un-deferred by
-memory insight decision P1 — `mission_criteria` (c325080), `agent_mistakes`
-(2347527), `mission_deliverables` (a53c1ac) and `mission_lessons` (1e78378)
-shipped and live; review verdicts and later stages follow the memory insight
-plan's build order (`MEMORY-INSIGHT-PLAN.md` §9). §2.4 sync and backfill run
-on the live database.
-How the shipped pages work is in the wiki: `../wiki/Mission-HUD-Guide.md`.
-Date: 2026-10-16.
+Status: phases 1 and 3 shipped and merged to `main` (main head 6c653ac);
+phase 2 tables live — `mission_criteria` (c325080), `agent_mistakes`
+(2347527), `mission_deliverables` (a53c1ac), `mission_lessons` (1e78378);
+review verdicts parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page
+and GET /v1/crew (stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP
+tool (stage 3, 3112a24). Built and deployed live (memoryd sha1 b15baa93) but
+not yet merged to main: branch `feat/hud-redesign` (10 commits ahead of main)
+and `fix/triage-run-actions` on top of it. §2.4 sync and backfill run on the
+live database. How the shipped pages work is in the wiki:
+`../wiki/Mission-HUD-Guide.md`. Outstanding items in §8.
+Date: 2026-10-19.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each
@@ -208,8 +211,9 @@ only when the operator runs it.
    mission; most finished steps have `ended_at`.
 2. Phase 3 endpoints and page against phase 1 data. The page is useful
    without phase 2.
-3. Phase 2 — criteria parsing shipped (c325080, live); remaining tables
-   follow the memory insight plan.
+3. Phase 2 — all four tables live (mission_criteria, agent_mistakes,
+   mission_deliverables, mission_lessons); remaining stages follow the memory
+   insight plan.
 
 ## 6. Decisions (settled 2026-10-08)
 
@@ -234,3 +238,20 @@ only when the operator runs it.
 - **Sync cost.** Syncing every harness walks every memory tree, including
   workspace scratch. This is acceptable on demand. The per-mission sync on
   `PATCH` reads only three files.
+
+## 8. Outstanding
+
+- **Operator to merge and push** `feat/hud-redesign`, then `fix/triage-run-actions`.
+- **Browser check** of the triage close controls (look, focus-visible, pill
+  fills) — verified by code reading only so far.
+- **Triage category rail** is mouse-only; no keyboard access.
+- **Pager focus edge cases** on the HUD pages.
+- **Stray `bin/memoryd.new`** left in checkout; to be removed.
+- **Stale triage run 89** to be closed as Failed via Triage → Runs.
+- **Scheduled triage agents** (classify/triage/grade via opencode) were
+  failing on an expired model API key as of 2026-10-19; operator is replacing
+  the key. Any runs left `running` by that failure need closing as Failed.
+- **Remaining memory insight stages** per `MEMORY-INSIGHT-PLAN.md` §9: stages
+  4 (Retrieval log and directive citations), 5 (Operator actions on the HUD),
+  6 (Cross-harness views), 7 (Cost and usage), and 8 (Git deliverables and
+  operator interventions).
