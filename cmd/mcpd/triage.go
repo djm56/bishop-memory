@@ -69,7 +69,7 @@ func registerTriageTools(s *server.MCPServer, c *client) {
 	s.AddTool(
 		mcp.NewTool("triage_next_unclassified",
 			mcp.WithDescription("Fetch the next batch of findings that have no classification yet, oldest first. Returns {\"findings\":[...]}; an empty list means classification is complete."),
-			mcp.WithInteger("limit", mcp.Description("Batch size, default 50, max 200.")),
+			mcp.WithInteger("limit", mcp.Description("Batch size, default 20, max 200.")),
 		),
 		makeNextUnclassifiedHandler(c),
 	)
@@ -276,7 +276,7 @@ func intArg(args map[string]any, key string) (int64, bool) {
 
 func makeNextUnclassifiedHandler(c *client) toolHandler {
 	return makeGetProxy(c, "triage_next_unclassified", func(args map[string]any, q url.Values) {
-		limit := int64(50)
+		limit := int64(20)
 		if n, ok := intArg(args, "limit"); ok && n > 0 {
 			limit = n
 		}

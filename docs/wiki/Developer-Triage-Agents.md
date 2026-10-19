@@ -6,7 +6,7 @@ Three headless agents (on Claude Code by default, or on OpenCode), two skills, o
 
 | Piece | File | Role |
 |---|---|---|
-| Classifier | `.claude/agents/findings-classifier.md` | Haiku. Reads unclassified findings in batches of 50, writes one classification each |
+| Classifier | `.claude/agents/findings-classifier.md` | Haiku. Reads unclassified findings in batches of 20, writes one classification each |
 | Processor | `.claude/agents/findings-processor.md` | Sonnet. One category per run: groups, recommendations, directive drafts |
 | OpenCode twins | `.opencode/agents/findings-classifier.md`, `.opencode/agents/findings-processor.md` | The same two agents for `opencode run` (`TRIAGE_ENGINE=opencode`); defaults `opencode-go/glm-5.3-flash` and `opencode-go/glm-5.2` |
 | Grader | `.claude/agents/mission-grader.md`, `.opencode/agents/mission-grader.md` | Sonnet, or `opencode-go/glm-5.2`. Grades up to 10 finished missions A–F per run from the database only; see [Mission Grading](Mission-Grading) |
@@ -22,7 +22,7 @@ On the **opencode engine** the runner passes the same server through `OPENCODE_C
 
 ## What a run looks like
 
-**Classify.** `triage_run_start(kind=classify)` → `triage_categories` → loop: `triage_next_unclassified(limit=50)` → `triage_classify(items)` → until empty or 300 classified → `triage_run_finish`. 314 findings took two runs of 23 and 8 turns, about $0.70 in total, with confidence 0.85–0.95 and two findings marked LOW.
+**Classify.** `triage_run_start(kind=classify)` → `triage_categories` → loop: `triage_next_unclassified(limit=20)` → `triage_classify(items)` → until empty or 300 classified → `triage_run_finish`. Measured with batches of 50: 314 findings took two runs of 23 and 8 turns, about $0.70 in total, with confidence 0.85–0.95 and two findings marked LOW.
 
 **Process.** `triage_run_start(kind=process, category)` → `triage_categories`, `triage_recent_decisions(category)` → `triage_category_findings(category, limit)` → read each finding → `Read` the target doctrine file under the harness checkout → `triage_group_create` per group → one `triage_recommend` batch → `directive_propose` per qualifying group → `triage_run_finish`. 30 brief-writing findings took 24 turns and $0.34.
 

@@ -50,7 +50,7 @@ Goal: every finding carries exactly one primary category from
 
 1. Call `triage_categories`. The slugs it returns are the only legal values.
    Read every description and the examples; they are written for you.
-2. Call `triage_next_unclassified` with `limit: 50`. An empty list means you
+2. Call `triage_next_unclassified` with `limit: 20`. An empty list means you
    are done: finish the run and stop.
 3. For each finding, read the suggestion AND the rationale. Decide:
    - `category`: the one slug whose description fits best. Ask "which file or
