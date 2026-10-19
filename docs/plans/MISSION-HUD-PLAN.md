@@ -6,9 +6,9 @@ phase 2 tables live — `mission_criteria` (c325080), `agent_mistakes`
 review verdicts parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page
 and GET /v1/crew (stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP
 tool (stage 3, 3112a24). Built and deployed live (memoryd sha1 b15baa93) but
-NOT merged to main — branch `feat/hud-redesign` with 16 commits ahead plus
-`fix/triage-run-actions` on top of it remain unmerged. §2.4 sync and backfill
-run on the live database. How the shipped pages work is in the wiki:
+not yet merged to main: branch `feat/hud-redesign` (10 commits ahead of main)
+and `fix/triage-run-actions` on top of it. §2.4 sync and backfill run on the
+live database. How the shipped pages work is in the wiki:
 `../wiki/Mission-HUD-Guide.md`. Outstanding items in §8.
 Date: 2026-10-19.
 
