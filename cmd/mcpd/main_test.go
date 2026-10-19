@@ -336,10 +336,10 @@ func TestBriefPrepHandler_RejectsEmptyGoal(t *testing.T) {
 	}
 }
 
-// TestTriageNextUnclassifiedHandler_DefaultBatchSize verifies that the
-// triage_next_unclassified tool applies the correct default and cap
-// to the limit parameter. Default is 20; max is 200.
-func TestTriageNextUnclassifiedHandler_DefaultBatchSize(t *testing.T) {
+// TestTriageNextUnclassifiedHandler_Limit verifies that the
+// triage_next_unclassified tool applies the correct default (20) and cap (200)
+// to the limit parameter, and that zero, negative and string limits are handled.
+func TestTriageNextUnclassifiedHandler_Limit(t *testing.T) {
 	cases := []struct {
 		name   string
 		args   map[string]any
