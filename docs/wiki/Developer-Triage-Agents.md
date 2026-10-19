@@ -22,7 +22,7 @@ On the **opencode engine** the runner passes the same server through `OPENCODE_C
 
 ## What a run looks like
 
-**Classify.** `triage_run_start(kind=classify)` → `triage_categories` → loop: `triage_next_unclassified(limit=20)` → `triage_classify(items)` → until empty or 300 classified → `triage_run_finish`. 314 findings took two runs of 23 and 8 turns, about $0.70 in total, with confidence 0.85–0.95 and two findings marked LOW.
+**Classify.** `triage_run_start(kind=classify)` → `triage_categories` → loop: `triage_next_unclassified(limit=20)` → `triage_classify(items)` → until empty or 300 classified → `triage_run_finish`. Measured with batches of 50: 314 findings took two runs of 23 and 8 turns, about $0.70 in total, with confidence 0.85–0.95 and two findings marked LOW.
 
 **Process.** `triage_run_start(kind=process, category)` → `triage_categories`, `triage_recent_decisions(category)` → `triage_category_findings(category, limit)` → read each finding → `Read` the target doctrine file under the harness checkout → `triage_group_create` per group → one `triage_recommend` batch → `directive_propose` per qualifying group → `triage_run_finish`. 30 brief-writing findings took 24 turns and $0.34.
 

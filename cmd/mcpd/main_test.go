@@ -341,11 +341,14 @@ func TestBriefPrepHandler_RejectsEmptyGoal(t *testing.T) {
 // to the limit parameter. Default is 20; max is 200.
 func TestTriageNextUnclassifiedHandler_DefaultBatchSize(t *testing.T) {
 	cases := []struct {
-		name    string
-		args    map[string]any
-		wantQS  int64 // want limit in query string
+		name   string
+		args   map[string]any
+		wantQS int64 // want limit in query string
 	}{
 		{"no limit", map[string]any{}, 20},
+		{"limit 0", map[string]any{"limit": float64(0)}, 20},
+		{"limit -5", map[string]any{"limit": float64(-5)}, 20},
+		{"string limit 30", map[string]any{"limit": "30"}, 30},
 		{"explicit 20", map[string]any{"limit": float64(20)}, 20},
 		{"explicit 50", map[string]any{"limit": float64(50)}, 50},
 		{"explicit 100", map[string]any{"limit": float64(100)}, 100},
@@ -367,7 +370,7 @@ func TestTriageNextUnclassifiedHandler_DefaultBatchSize(t *testing.T) {
 			c := &client{httpClient: server.Client(), baseURL: server.URL, harness: "test"}
 			req := mcp.CallToolRequest{Params: mcp.CallToolParams{Arguments: tc.args}}
 
-			result, err := makeTool("triage_next_unclassified", "GET", []string{"v1", "findings"}, makeNextUnclassifiedHandler(c))(context.Background(), req)
+			result, err := makeNextUnclassifiedHandler(c)(context.Background(), req)
 			if err != nil {
 				t.Fatalf("%s: handler returned Go error %v", tc.name, err)
 			}
@@ -392,12 +395,6 @@ func TestTriageNextUnclassifiedHandler_DefaultBatchSize(t *testing.T) {
 			}
 		})
 	}
-}
-
-// makeTool is a helper to construct an MCP tool handler for testing.
-// It wraps the handler so it can be called directly.
-func makeTool(name string, method string, pathParts []string, handler toolHandler) toolHandler {
-	return handler
 }
 
 // TestBriefPrepHandler_ForwardsQueryParams drives makeBriefPrepHandler

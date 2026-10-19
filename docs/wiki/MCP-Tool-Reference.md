@@ -743,7 +743,7 @@ Fetch the next batch of findings that have no classification yet, oldest first. 
 **Example call**
 ```json
 {
-  "limit": 50
+  "limit": 20
 }
 ```
 
