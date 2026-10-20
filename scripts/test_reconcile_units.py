@@ -127,7 +127,8 @@ class MissionsFolderLookupTests(_TempRoot):
 class ApproverDefaultTests(_TempRoot):
     """reconcile_findings() records APPROVER_DEFAULT when the Markdown names no Approver."""
 
-    def test_empty_approver_falls_back_to_default(self):
+    def _decision_approvers(self):
+        """Run reconcile_findings() over one finding with no Approver and one with Approver Donovan; return approver by route."""
         findings_dir = os.path.join(self.root, reconcile.BISHOP_LAYOUT.findings_dir)
         os.makedirs(findings_dir)
         with open(os.path.join(findings_dir, reconcile.BISHOP_LAYOUT.findings_file), "w", encoding="utf-8") as fh:
@@ -144,10 +145,15 @@ class ApproverDefaultTests(_TempRoot):
         with redirect_stderr(io.StringIO()):
             counts = reconcile.reconcile_findings(client, self.root)
         self.assertEqual(counts["decided"], 2, msg=f"expected two decisions, got counts {counts}")
+        return {w["path"]: w["payload"]["approver"] for w in client.written}
 
-        approvers = {w["path"]: w["payload"]["approver"] for w in client.written}
+    def test_empty_approver_falls_back_to_default(self):
+        approvers = self._decision_approvers()
         self.assertEqual(approvers.get("/v1/findings/f-alpha/decision"), "FINDINGS.md",
                          msg="empty Approver: decision did not fall back to APPROVER_DEFAULT")
+
+    def test_explicit_approver_is_carried(self):
+        approvers = self._decision_approvers()
         self.assertEqual(approvers.get("/v1/findings/f-beta/decision"), "Donovan",
                          msg="explicit Approver: decision did not carry the Markdown value")
 
