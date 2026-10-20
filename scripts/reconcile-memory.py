@@ -611,18 +611,21 @@ def parse_journal(root):
 
 def mission_candidate(text):
     """The mission-id candidate in a Mission value, or "" when the value has none."""
+    # .search() takes the first candidate only: a value naming two ids
+    # ("mission-A and mission-B") yields mission-A, per plan section 7, Phase 2.
     match = MISSION_CANDIDATE.search(text or "")
     return match.group(0) if match else ""
 
 
-def parse_findings(root, known_missions=()):
+def parse_findings(root, known_missions):
     """
     findings/FINDINGS.md -> finding dicts.
 
-    known_missions is the set of mission ids the reconciler knows about. A
-    finding's **Mission** candidate is linked only when it equals one of them.
-    A candidate that equals none is left unlinked, and its "_mission_candidate"
-    carries it so reconcile_findings() can warn with the value.
+    known_missions is required: the set of mission ids the reconciler knows
+    about. A finding's **Mission** candidate is linked only when it equals one
+    of them. A candidate that equals none is left unlinked, and its
+    "_mission_candidate" carries it so reconcile_findings() can warn with the
+    value.
     """
     out = []
     for entry in entries(os.path.join(root, BISHOP_LAYOUT.findings_dir, BISHOP_LAYOUT.findings_file)):
@@ -883,7 +886,8 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     # though some steps were never even compared.
     # "warned" counts parsed steps whose status is outside the step set. Those
     # steps are still sent, without a status, and sit inside the "parsed" total
-    # like any other; "warned" is not a term in the sum above.
+    # like any other; "warned" is not a term in the sum above. Under skip_steps
+    # nothing is warned or counted: no step is sent, so there is nothing to warn about.
     status_counts = {"parsed": 0, "created": 0, "updated": 0, "unchanged": 0, "failed": 0,
                       "fetch_failed": 0, "skipped_fetch_failed": 0, "warned": 0}
 
@@ -893,15 +897,17 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
         steps = parse_steps(root, mission["id"])
         all_parsed_steps[mission["id"]] = steps
         status_counts["parsed"] += len(steps)
-        for step in steps:
+
+    # If skipping, we're done — report parsed count only, no warnings, fetches or writes
+    if skip_steps:
+        return status_counts
+
+    for mission in parsed_missions:
+        for step in all_parsed_steps[mission["id"]]:
             if step["_status_raw"] and step["_status_raw"] not in STEP_STATUSES:
                 print(f"  [WARN] {mission['id']} step {step['step']}: status {step['_status_raw']!r} "
                       f"is not a step status; step sent without a status", file=sys.stderr)
                 status_counts["warned"] += 1
-
-    # If skipping, we're done — report parsed count only, no fetches or writes
-    if skip_steps:
-        return status_counts
 
     # Fetch all existing steps (keyed by (mission_id, step))
     # Track which missions had successful fetches so we can skip writes for failed ones
@@ -997,6 +1003,9 @@ def reconcile_journal(client, parsed_missions, root):
     # failure: the GET succeeded, but completeness cannot be verified. It is
     # counted as "warned" (one per mission) and its events as
     # "skipped_journal_cap", never under "fetch_failed" or "failed".
+    # A capped mission with no events in the local journal is still warned
+    # once, but skipped_journal_cap stays 0, so it does not set the exit
+    # status: only events actually skipped at the cap do. This is intended.
     # Note: "parsed" here also excludes events for missions this run never
     # heard of at all (see the `not any(...)` filter below) — that's a
     # separate, deliberate scope filter, not a fetch failure, and is not
@@ -1054,7 +1063,7 @@ def reconcile_journal(client, parsed_missions, root):
     return status_counts
 
 
-def reconcile_findings(client, root, harness="", known_missions=()):
+def reconcile_findings(client, root, harness="", *, known_missions):
     """
     Create missing findings, and mirror a human decision recorded in the file.
 
@@ -1065,8 +1074,10 @@ def reconcile_findings(client, root, harness="", known_missions=()):
     writes status back here (scripts/export-decisions.py does that, from the
     operator's own decisions).
 
-    known_missions is passed to parse_findings(). A Mission value that names a
-    candidate matching none of them is left unlinked and counted as "warned".
+    known_missions is required and is passed to parse_findings(). A Mission
+    value that names a candidate matching none of them is left unlinked, and
+    is counted as "warned" and named in a WARN line only when the entry is
+    created; an entry already at the service is not warned.
     """
     status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0, "decided": 0, "warned": 0}
 
@@ -1092,10 +1103,6 @@ def reconcile_findings(client, root, harness="", known_missions=()):
     findings = parse_findings(root, known_missions)
     status_counts["parsed"] = len(findings)
     for finding in findings:
-        if finding["_mission_candidate"] and not finding["mission_id"]:
-            print(f"  [WARN] {finding['finding_date']} {finding['target']}: Mission "
-                  f"{finding['_mission_candidate']} names no known mission; entry left unlinked", file=sys.stderr)
-            status_counts["warned"] += 1
         key = (finding["finding_date"], finding["target"], finding["suggestion"])
         md_status = finding["_status"] if finding["_status"] in FINDING_STATUSES else "proposed"
         payload = {k: v for k, v in finding.items() if not k.startswith("_")}
@@ -1103,6 +1110,12 @@ def reconcile_findings(client, root, harness="", known_missions=()):
             payload["harness"] = harness
         row = existing.get(key) or undated.get(key[1:])
         if row is None:
+            # Warned only when the entry is about to be sent, so the count and the
+            # WARN line describe entries this run creates, not ones already at the service.
+            if finding["_mission_candidate"] and not finding["mission_id"]:
+                print(f"  [WARN] {finding['finding_date']} {finding['target']}: Mission "
+                      f"{finding['_mission_candidate']} names no known mission; entry left unlinked", file=sys.stderr)
+                status_counts["warned"] += 1
             if not client.write("POST", "/v1/findings", prune(payload),
                                 f"{finding['finding_date']} {finding['target']}"):
                 status_counts["failed"] += 1

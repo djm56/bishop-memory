@@ -1,39 +1,53 @@
 #!/usr/bin/env python3
 """
-Unit tests for three reads in reconcile-memory.py, each on a tiny temp fixture
-with a mock client, so nothing touches a real memory root or a running service.
+Unit tests for scripts/reconcile-memory.py. Most cases run on a tiny temp fixture
+or on the shipped fixture (testdata/memory) with a mock client. The main() cases
+run the reconciler as a subprocess, pointed at a fake HTTP service on 127.0.0.1.
+Nothing touches a real memory root or the live service.
 
   - parse_steps(): the step table in missions/<id>/PROGRESS.md, file present
     and file absent. Each case has its own assertion message.
   - The missions folder lookup through BISHOP_LAYOUT. The declared folder name
     is read; a name the layout does not declare is not read.
   - reconcile_findings(): an empty Approver falls back to APPROVER_DEFAULT.
-  - parse_findings() and parse_steps() on the shipped fixture (testdata/memory):
-    the **Mission** link each fixture finding receives, and the status each
-    fixture step row keeps. Each case whose name ends in current_behaviour
-    asserts what the reconciler does today. The result the plan intends for
-    that case is cited in the comment above its assertion.
-  - reconcile_findings() on the same fixture: a Mission candidate that names no
-    known mission is counted as a warning and left out of the create payload.
+  - parse_findings() on the shipped fixture: the **Mission** link each fixture
+    finding receives. The comment above each assertion says what it pins, and
+    cites the plan section where the case follows one.
+  - parse_steps() on the shipped fixture: the status each step row keeps.
+  - reconcile_steps() on the shipped fixture: an unknown status is warned and
+    counted on the reconcile path, and under skip_steps nothing is warned.
+  - reconcile_findings() on the shipped fixture: a Mission candidate that names
+    no known mission is warned and left out of the create payload, and is not
+    warned when its entry already exists at the service.
   - reconcile_journal(): a mission at the 100-row journal cap is counted as
-    skipped (journal cap), apart from a fetch failure, and below the cap is not.
+    skipped (journal cap), apart from a fetch failure; below the cap it is not;
+    a capped mission with no local events is warned and skips nothing.
+  - main() exit status and summary for the journal cap: cap skips alone exit 1
+    and name the cap; no cap skips exit 0; a capped mission with no local events
+    exits 0.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
 literal names, so a change to the declared value fails them.
 """
+import http.server
 import importlib.util
 import io
+import json
 import os
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 import urllib.parse
 from contextlib import redirect_stderr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+RECONCILER = os.path.join(HERE, "reconcile-memory.py")
+LIVE_PORT = 8787  # the live memoryd; the fake service must never bind it
 sys.path.insert(0, HERE)
-_spec = importlib.util.spec_from_file_location("reconcile_memory", os.path.join(HERE, "reconcile-memory.py"))
+_spec = importlib.util.spec_from_file_location("reconcile_memory", RECONCILER)
 reconcile = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(reconcile)
 
@@ -153,7 +167,7 @@ class ApproverDefaultTests(_TempRoot):
         ]
         client = MockClient(findings=existing)
         with redirect_stderr(io.StringIO()):
-            counts = reconcile.reconcile_findings(client, self.root)
+            counts = reconcile.reconcile_findings(client, self.root, known_missions=())
         self.assertEqual(counts["decided"], 2, msg=f"expected two decisions, got counts {counts}")
         return {w["path"]: w["payload"]["approver"] for w in client.written}
 
@@ -280,6 +294,23 @@ class FindingWarningTests(unittest.TestCase):
         self.assertNotIn("mission_id", payloads["Unarchived plain id link"],
                          msg="unarchived plain id: create payload carries a mission_id for an unknown candidate")
 
+    def test_existing_unknown_candidate_is_not_warned(self):
+        # Both unknown-candidate entries already exist at the service, so neither is
+        # sent again. Their WARN lines and the "warned" count are for entries this run
+        # creates, so neither is warned. The existing rows reuse the keys of a first run.
+        _, _, first = self._run()
+        existing = [{"id": f"f-{t}", "status": "proposed", "finding_date": first[t]["finding_date"],
+                     "target": t, "suggestion": first[t]["suggestion"]}
+                    for t in ("Retry suffix link", "Unarchived plain id link")]
+        client = MockClient(findings=existing)
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_findings(client, FIXTURE_ROOT, known_missions=_fixture_known_missions())
+        self.assertEqual(counts["warned"], 0,
+                         msg=f"existing unknown candidates: entries already at the service were counted as warned: {counts}")
+        self.assertNotIn("names no known mission", stderr.getvalue(),
+                         msg="existing unknown candidates: a WARN line was printed for an entry already at the service")
+
 
 class StepStatusTests(unittest.TestCase):
     """
@@ -337,6 +368,20 @@ class StepWarningTests(unittest.TestCase):
                          msg="unknown status: step 3 payload carries a status")
         self.assertEqual(payloads["mission-20260904-01 step 1"].get("status"), "done",
                          msg="unknown status: known status of step 1 not sent")
+
+    def test_skip_steps_warns_and_counts_nothing(self):
+        # Under skip_steps no step is sent, so the unknown status is not warned: no
+        # WARN line, no count, no request. The parsed count still reports the three rows read.
+        client = MockClient()
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_steps(client, [{"id": FIXTURE_MISSION}], FIXTURE_ROOT, skip_steps=True)
+        self.assertEqual(counts["warned"], 0,
+                         msg=f"skip steps: a step was counted as warned under --skip-steps: {counts}")
+        self.assertNotIn("[WARN]", stderr.getvalue(),
+                         msg="skip steps: a WARN line was printed under --skip-steps")
+        self.assertEqual(counts["parsed"], 3, msg=f"skip steps: parsed count is not the three rows read: {counts}")
+        self.assertEqual(client.written, [], msg="skip steps: a write was sent under --skip-steps")
 
 
 class JournalClient(MockClient):
@@ -403,6 +448,116 @@ class JournalCapTests(unittest.TestCase):
                          msg=f"fetch failure: expected 3 events skipped for the fetch failure: {counts}")
         self.assertEqual(counts["skipped_journal_cap"], 0,
                          msg=f"fetch failure: the failed GET was counted as the journal cap: {counts}")
+
+    def test_capped_mission_without_local_events_is_warned_not_skipped(self):
+        # mission-20261009-02 has no events in the fixture's journal. At the cap it is
+        # warned once, and no event is skipped for the cap, so it does not set the exit status.
+        counts, stderr = self._run_for("mission-20261009-02", JournalClient({"mission-20261009-02": 100}))
+        self.assertEqual(counts["warned"], 1,
+                         msg=f"capped without local events: expected 1 warned mission, got counts {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"capped without local events: a journal cap skip was counted with no events: {counts}")
+        self.assertEqual(counts["fetch_failed"], 0,
+                         msg=f"capped without local events: the cap was counted as a fetch failure: {counts}")
+        self.assertIn("[WARN] mission-20261009-02: journal at 100-row cap", stderr,
+                      msg="capped without local events: no WARN line names the mission")
+
+    def _run_for(self, mission_id, client):
+        """Run reconcile_journal() for one mission of the fixture; return (counts, stderr text)."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_journal(client, [{"id": mission_id}], FIXTURE_ROOT)
+        return counts, stderr.getvalue()
+
+
+class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
+    """Answers each GET with an empty body, except a flight-recorder GET, which gets the rows the server names."""
+
+    def do_GET(self):
+        url = urllib.parse.urlsplit(self.path)
+        if url.path == "/v1/flight-recorder":
+            mission = urllib.parse.parse_qs(url.query)["mission_id"][0]
+            rows = [{"mission_id": mission, "occurred_at": f"row {i}", "step": "", "event": "e", "note": "n"}
+                    for i in range(self.server.capped.get(mission, 0))]
+            body = {"flight_recorder": rows}
+        else:
+            body = {}
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        # Keep the test output clean.
+        pass
+
+
+def _run_main(capped):
+    """
+    Run the reconciler as a subprocess, dry-run with --include-journal, against a fake
+    service. capped maps a mission id to the number of journal rows the fake returns for it.
+    Return the CompletedProcess.
+    """
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ExitFakeHandler)
+    if server.server_address[1] == LIVE_PORT:
+        server.server_close()
+        raise RuntimeError("fake service bound the live memoryd port")
+    server.capped = capped
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        # Minimal environment, as in test_reconcile_golden.py: no client.env on this machine can change the run.
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "BISHOP_MEMORY_CLIENT_ENV": os.path.join(tempfile.gettempdir(), "bishop-memory-no-such-client.env"),
+        }
+        cmd = [sys.executable, "-I", RECONCILER, "--root", FIXTURE_ROOT,
+               "--url", f"http://127.0.0.1:{server.server_address[1]}",
+               "--harness", "fixture", "--dry-run", "--include-journal"]
+        return subprocess.run(cmd, env=env, capture_output=True, timeout=120)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class JournalCapExitTests(unittest.TestCase):
+    """main() exit status and summary for the journal cap, run as a subprocess against a fake service."""
+
+    def test_cap_skips_only_exits_1_and_names_cap(self):
+        # The fixture's FIXTURE_MISSION has three journal events. At 100 rows the cap skips
+        # all three, and nothing else in the run is a problem: the run exits 1 and the
+        # summary names the cap.
+        proc = _run_main({FIXTURE_MISSION: 100})
+        out = proc.stdout.decode("utf-8")
+        err = proc.stderr.decode("utf-8", "replace")
+        self.assertEqual(proc.returncode, 1,
+                         msg=f"journal cap only: exit code is {proc.returncode}, expected 1; stderr: {err}")
+        self.assertIn("3 skipped (journal cap)", out,
+                      msg="journal cap only: the summary does not name 3 skipped (journal cap)")
+        self.assertNotIn("fetch failed", out,
+                         msg="journal cap only: the cap is reported as a fetch failure")
+
+    def test_no_cap_skips_exits_0(self):
+        # Positive control: no mission at the cap, so no skip and no problem; the run exits 0.
+        proc = _run_main({})
+        out = proc.stdout.decode("utf-8")
+        self.assertEqual(proc.returncode, 0,
+                         msg=f"no cap skips: exit code is {proc.returncode}, expected 0; stderr: {proc.stderr.decode('utf-8', 'replace')}")
+        self.assertNotIn("journal cap", out, msg="no cap skips: the summary names the journal cap")
+
+    def test_capped_mission_without_local_events_exits_0(self):
+        # mission-20261009-02 has no local events, so the cap skips none and the run exits 0.
+        proc = _run_main({"mission-20261009-02": 100})
+        out = proc.stdout.decode("utf-8")
+        err = proc.stderr.decode("utf-8", "replace")
+        self.assertEqual(proc.returncode, 0,
+                         msg=f"capped without local events: exit code is {proc.returncode}, expected 0; stderr: {err}")
+        self.assertIn("[WARN] mission-20261009-02: journal at 100-row cap", err,
+                      msg="capped without local events: no WARN line names the mission")
+        self.assertNotIn("skipped (journal cap)", out,
+                         msg="capped without local events: the summary names a journal cap skip")
 
 
 if __name__ == "__main__":
