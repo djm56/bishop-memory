@@ -548,8 +548,24 @@ def brief_goal(root, mission_id):
     return " ".join(match.group(1).split())
 
 
+# The step statuses the mission-steps API accepts (internal/api/missions.go,
+# missionStepRequest.Status, binding oneof). A PROGRESS.md status outside this set
+# is not sent.
+STEP_STATUSES = ("pending", "in-progress", "done", "failed")
+
+
+def step_payload(step):
+    """The create/update payload for a parsed step: the keys without a leading underscore, empty values pruned."""
+    return prune({k: v for k, v in step.items() if not k.startswith("_")})
+
+
 def parse_steps(root, mission_id):
-    """missions/<id>/PROGRESS.md -> step dicts."""
+    """
+    missions/<id>/PROGRESS.md -> step dicts.
+
+    A status outside STEP_STATUSES is kept in "_status_raw" and not in "status",
+    so the payload omits it. reconcile_steps() warns with the raw value.
+    """
     path = os.path.join(root, BISHOP_LAYOUT.missions_dir, mission_id, BISHOP_LAYOUT.progress)
     if not os.path.isfile(path):
         return []
@@ -563,8 +579,9 @@ def parse_steps(root, mission_id):
             "step": truncate(step, 16),
             "phase": truncate(phase, 64),
             "agent": truncate(agent, 128),
-            "status": status if status in {"pending", "in-progress", "done", "failed"} else "",
+            "status": status if status in STEP_STATUSES else "",
             "notes": truncate(notes, 2000),
+            "_status_raw": status,
         })
     return steps
 
@@ -864,8 +881,11 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     # failure quietly removes its steps from every bucket after "parsed",
     # and the summary line looks like a clean, fully-examined run even
     # though some steps were never even compared.
+    # "warned" counts parsed steps whose status is outside the step set. Those
+    # steps are still sent, without a status, and sit inside the "parsed" total
+    # like any other; "warned" is not a term in the sum above.
     status_counts = {"parsed": 0, "created": 0, "updated": 0, "unchanged": 0, "failed": 0,
-                      "fetch_failed": 0, "skipped_fetch_failed": 0}
+                      "fetch_failed": 0, "skipped_fetch_failed": 0, "warned": 0}
 
     # Parse steps eagerly for all missions (to report true parsed count even during outages)
     all_parsed_steps = {}
@@ -873,6 +893,11 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
         steps = parse_steps(root, mission["id"])
         all_parsed_steps[mission["id"]] = steps
         status_counts["parsed"] += len(steps)
+        for step in steps:
+            if step["_status_raw"] and step["_status_raw"] not in STEP_STATUSES:
+                print(f"  [WARN] {mission['id']} step {step['step']}: status {step['_status_raw']!r} "
+                      f"is not a step status; step sent without a status", file=sys.stderr)
+                status_counts["warned"] += 1
 
     # If skipping, we're done — report parsed count only, no fetches or writes
     if skip_steps:
@@ -912,7 +937,7 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     #      comparing, or a stored NULL against a payload that omits the field will read as different forever.
     def steps_equal(parsed_payload, stored_step):
         """Compare parsed (pruned) payload against stored step. Return True if they're the same."""
-        payload = prune(parsed_payload)
+        payload = step_payload(parsed_payload)
         # Only keys in the payload matter; omitted fields are not differences.
         for key in payload:
             stored_value = stored_step.get(key)
@@ -936,7 +961,7 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
 
         for step in steps:
             key = (mission["id"], step["step"])
-            payload = prune(step)
+            payload = step_payload(step)
 
             if key in existing_steps:
                 # Step exists: check if it differs
@@ -1349,8 +1374,9 @@ def main():
         # "parsed" even when some missions' step-fetch failed and others'
         # didn't — see fetch_failure_note() and reconcile_steps().
         fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))
+        warned_note = f", {counts['warned']} warned" if counts['warned'] > 0 else ""
         print(f"[steps] {counts['parsed']} parsed, {counts['created']} created, {counts['updated']} updated, " +
-              f"{counts['unchanged']} unchanged, {counts['failed']} failed{fetch_status}")
+              f"{counts['unchanged']} unchanged, {counts['failed']} failed{warned_note}{fetch_status}")
         total_failed_operations += counts['failed']
         total_fetch_failures += counts.get('fetch_failed', 0)
         total_entities += counts['created'] + counts['updated']

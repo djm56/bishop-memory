@@ -37,11 +37,11 @@ confirm. CI sets UPDATE_GOLDEN to the empty string (.github/workflows/ci.yml),
 so update mode never runs in CI. The test itself fails whenever the variable is
 non-empty, so a stray value cannot turn the gate into a pass.
 
-The golden shows a finding's mission link only as its date and target, and a
-finding whose candidate names no known mission as a WARN line on stderr. A
-finding's link is pinned by FindingMissionLinkTests in scripts/test_reconcile_units.py,
-which reads the shipped fixture. A step's label carries no status, so a step
-status that is not in the step set is pinned by StepStatusTests in the same file.
+The golden shows a finding's mission link only as its date and target. A
+finding whose candidate names no known mission, and a step whose status is not
+in the step set, each appear as a WARN line on stderr and in the summary's
+"warned" count. The links are pinned by FindingMissionLinkTests and the step
+statuses by StepStatusTests and StepWarningTests in scripts/test_reconcile_units.py.
 """
 import difflib
 import http.server

@@ -294,16 +294,46 @@ class StepStatusTests(unittest.TestCase):
         self.assertEqual(self._steps()["1"]["status"], "done",
                          msg="known status: step 1 status 'done' not carried")
 
-    def test_unknown_step_status_current_behaviour_is_blanked(self):
-        # Current behaviour: step 3 carries "blocked", which is outside the step set.
-        # The row is kept and its status is replaced with "", so the payload omits
-        # status and nothing records the rejected value.
-        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
-        # rejected value is preserved and the row is counted as a warning.
+    def test_unknown_step_status_is_kept_raw_and_not_sent(self):
+        # Step 3 carries "blocked", which is outside the step set. The row is kept,
+        # its status is "" so the payload omits it, and the value as written is kept
+        # in _status_raw for the warning (docs/plans/HARNESS-PORTABILITY-PLAN.md,
+        # section 7, Phase 2).
         steps = self._steps()
-        self.assertIn("3", steps, msg="unknown status: step 3 row was dropped, not kept with a blank status")
+        self.assertIn("3", steps, msg="unknown status: step 3 row was dropped")
         self.assertEqual(steps["3"]["status"], "",
-                         msg="unknown status: current behaviour is a blank status for step 3")
+                         msg="unknown status: step 3 status is not blank, so an invalid value would be sent")
+        self.assertEqual(steps["3"]["_status_raw"], "blocked",
+                         msg="unknown status: the value as written was not preserved for the warning")
+
+
+class StepWarningTests(unittest.TestCase):
+    """reconcile_steps() on the shipped fixture: an unknown status is warned, counted and not sent."""
+
+    def _run(self):
+        """Run reconcile_steps() with no existing steps; return (counts, stderr text, payloads by label)."""
+        client = MockClient()
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_steps(client, [{"id": FIXTURE_MISSION}], FIXTURE_ROOT)
+        payloads = {w["label"]: w["payload"] for w in client.written if w["method"] == "POST"}
+        return counts, stderr.getvalue(), payloads
+
+    def test_unknown_status_is_warned_and_counted(self):
+        # The fixture has one status outside the step set (step 3), so one warning.
+        counts, stderr, _ = self._run()
+        self.assertEqual(counts["warned"], 1,
+                         msg=f"unknown status: expected 1 warned step, got counts {counts}")
+        self.assertIn("[WARN] mission-20260904-01 step 3: status 'blocked' is not a step status",
+                      stderr, msg="unknown status: no WARN line names step 3 and the value 'blocked'")
+
+    def test_unknown_status_is_not_in_payload(self):
+        # Step 3's payload has no status key. Step 1's known status is still sent.
+        _, _, payloads = self._run()
+        self.assertNotIn("status", payloads["mission-20260904-01 step 3"],
+                         msg="unknown status: step 3 payload carries a status")
+        self.assertEqual(payloads["mission-20260904-01 step 1"].get("status"), "done",
+                         msg="unknown status: known status of step 1 not sent")
 
 
 if __name__ == "__main__":

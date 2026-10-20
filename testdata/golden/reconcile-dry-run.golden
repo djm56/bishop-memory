@@ -28,7 +28,7 @@
   [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 1 (update)
   [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 2
   [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 3
-[steps] 3 parsed, 2 created, 1 updated, 0 unchanged, 0 failed
+[steps] 3 parsed, 2 created, 1 updated, 0 unchanged, 0 failed, 1 warned
   [dry-run] POST /v1/flight-recorder  2026-09-04 05:12 UTC step-sync
   [dry-run] POST /v1/flight-recorder  2026-09-04 05:45 UTC step-sync
   [dry-run] POST /v1/flight-recorder  2026-09-04 06:09 UTC complete
@@ -50,6 +50,7 @@
 
 [reconcile] would send 26 requests, 20 entities created/updated
 --- stderr ---
+  [WARN] mission-20260904-01 step 3: status 'blocked' is not a step status; step sent without a status
   [WARN] 2026-10-09 Retry suffix link: Mission mission-20261009-02-retry names no known mission; entry left unlinked
   [WARN] 2026-10-09 Unarchived plain id link: Mission mission-20261009-77 names no known mission; entry left unlinked
 --- requests received by fake ---
