@@ -252,9 +252,9 @@ class FindingWarningTests(unittest.TestCase):
         return counts, stderr.getvalue(), payloads
 
     def test_unknown_candidates_are_warned(self):
-        # Two fixture entries name a candidate that no known mission matches: the
-        # retry value and the unarchived id. Each is counted and printed as a WARN
-        # line (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
+        # Fixture entries whose candidate matches no known mission are each counted
+        # and printed as a WARN line (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7,
+        # Phase 2). The entries are in testdata/memory/findings/FINDINGS.md.
         counts, stderr, _ = self._run()
         self.assertEqual(counts["warned"], 2,
                          msg=f"unknown candidates: expected 2 warned findings, got counts {counts}")
@@ -323,7 +323,7 @@ class StepWarningTests(unittest.TestCase):
         return counts, stderr.getvalue(), payloads
 
     def test_unknown_status_is_warned_and_counted(self):
-        # The fixture has one status outside the step set (step 3), so one warning.
+        # The fixture's status outside the step set (step 3) is counted as a warning.
         counts, stderr, _ = self._run()
         self.assertEqual(counts["warned"], 1,
                          msg=f"unknown status: expected 1 warned step, got counts {counts}")
@@ -370,7 +370,8 @@ class JournalCapTests(unittest.TestCase):
         return counts, stderr.getvalue()
 
     def test_mission_at_cap_is_skipped_as_journal_cap(self):
-        # The fixture has three events for the mission. At 100 rows the mission is
+        # The fixture's events for the mission are in testdata/memory/state/FLIGHT-RECORDER.md.
+        # At 100 rows the mission is
         # capped: its events are counted as skipped (journal cap), its mission is
         # counted once as warned, and neither counts as a fetch failure or a failure.
         counts, stderr = self._run(JournalClient({FIXTURE_MISSION: 100}))
@@ -384,7 +385,7 @@ class JournalCapTests(unittest.TestCase):
                       msg="journal cap: no WARN line names the mission")
 
     def test_mission_below_cap_is_reconciled(self):
-        # Positive control: at 99 rows the mission is not capped, so its three
+        # Positive control: at 99 rows the mission is not capped, so its
         # events are written and none is counted as skipped for the cap.
         counts, stderr = self._run(JournalClient({FIXTURE_MISSION: 99}))
         self.assertEqual(counts["skipped_journal_cap"], 0,
