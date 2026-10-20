@@ -15,6 +15,11 @@ jobs:
   verify:
     name: build, vet, fmt, test
     runs-on: ubuntu-latest
+    # UPDATE_GOLDEN rewrites a golden file and fails the test on purpose (see
+    # the golden test docblocks). CI forces it empty so update mode can never
+    # run in CI; the Go and Python tests both read the empty string as unset.
+    env:
+      UPDATE_GOLDEN: ""
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,3 +58,9 @@ jobs:
 
       - name: go test -race
         run: go test -race ./... -count=1
+
+      # The Python suite under scripts/, the same command `make test` runs.
+      # It includes the reconciler golden test (scripts/test_reconcile_golden.py),
+      # which runs against a local fake service and never the live daemon.
+      - name: python unittest (scripts/)
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'

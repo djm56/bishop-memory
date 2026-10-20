@@ -62,6 +62,44 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
+
+
+# --------------------------------------------------------------------------
+# Memory-tree layout
+# --------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Layout:
+    """Names of the memory tree the reconciler reads.
+
+    Each name is one path element. service_records_dir is relative to
+    findings_dir, and agents_dir sits beside the memory root. BISHOP_LAYOUT
+    is the Bishop tree and the only instance in use. The parsers below read
+    it, so the names are kept in this one place.
+    """
+    state_dir: str = "state"
+    missions_dir: str = "missions"
+    findings_dir: str = "findings"
+    reference_dir: str = "reference"
+    service_records_dir: str = "service-records"
+    agents_dir: str = "agents"
+    mission_archive: str = "MISSION-ARCHIVE.md"
+    current_mission: str = "CURRENT-MISSION.md"
+    flight_recorder: str = "FLIGHT-RECORDER.md"
+    brief: str = "BRIEF.md"
+    progress: str = "PROGRESS.md"
+    findings_file: str = "FINDINGS.md"
+    patterns_file: str = "PATTERNS.md"
+    directives_file: str = "DIRECTIVES.md"
+
+
+BISHOP_LAYOUT = Layout()
+
+# Approver recorded on a reconciled decision when the Markdown row names none.
+# It labels the source of the decision, not a path, so it is not read from the
+# layout: a layout change to findings_file leaves it unchanged.
+APPROVER_DEFAULT = "FINDINGS.md"
 
 
 # --------------------------------------------------------------------------
@@ -223,7 +261,7 @@ def memory_files(root):
 
 def agent_files(root):
     """Yield the agent definitions beside a memory root (<root>/../agents/*.md)."""
-    agents = os.path.join(os.path.dirname(os.path.realpath(root)), "agents")
+    agents = os.path.join(os.path.dirname(os.path.realpath(root)), BISHOP_LAYOUT.agents_dir)
     if not os.path.isdir(agents):
         return
     for name in sorted(os.listdir(agents)):
@@ -418,7 +456,7 @@ def parse_missions(root):
     missions = {}
 
     # First, load archive missions (closed, authoritative on outcome)
-    path = os.path.join(root, "state", "MISSION-ARCHIVE.md")
+    path = os.path.join(root, BISHOP_LAYOUT.state_dir, BISHOP_LAYOUT.mission_archive)
     if os.path.isfile(path):
         text = open(path, encoding="utf-8").read()
         for cells in table_rows(text, 4):
@@ -443,7 +481,7 @@ def parse_missions(root):
     # gate below never fired, the live mission never entered `missions`,
     # and reconcile_steps() never even requested its PROGRESS.md. Fixed by
     # parsing the actual bullet shape instead.
-    path = os.path.join(root, "state", "CURRENT-MISSION.md")
+    path = os.path.join(root, BISHOP_LAYOUT.state_dir, BISHOP_LAYOUT.current_mission)
     if os.path.isfile(path):
         text = open(path, encoding="utf-8").read()
         mission_id = ""
@@ -494,7 +532,7 @@ def parse_missions(root):
 
 def brief_goal(root, mission_id):
     """First paragraph under `## Goal` in a mission's BRIEF.md."""
-    path = os.path.join(root, "missions", mission_id, "BRIEF.md")
+    path = os.path.join(root, BISHOP_LAYOUT.missions_dir, mission_id, BISHOP_LAYOUT.brief)
     if not os.path.isfile(path):
         return ""
     text = open(path, encoding="utf-8").read()
@@ -506,7 +544,7 @@ def brief_goal(root, mission_id):
 
 def parse_steps(root, mission_id):
     """missions/<id>/PROGRESS.md -> step dicts."""
-    path = os.path.join(root, "missions", mission_id, "PROGRESS.md")
+    path = os.path.join(root, BISHOP_LAYOUT.missions_dir, mission_id, BISHOP_LAYOUT.progress)
     if not os.path.isfile(path):
         return []
     text = open(path, encoding="utf-8").read()
@@ -527,7 +565,7 @@ def parse_steps(root, mission_id):
 
 def parse_journal(root):
     """state/FLIGHT-RECORDER.md -> event dicts."""
-    path = os.path.join(root, "state", "FLIGHT-RECORDER.md")
+    path = os.path.join(root, BISHOP_LAYOUT.state_dir, BISHOP_LAYOUT.flight_recorder)
     if not os.path.isfile(path):
         return []
     text = open(path, encoding="utf-8").read()
@@ -551,7 +589,7 @@ def parse_journal(root):
 def parse_findings(root):
     """findings/FINDINGS.md -> finding dicts."""
     out = []
-    for entry in entries(os.path.join(root, "findings", "FINDINGS.md")):
+    for entry in entries(os.path.join(root, BISHOP_LAYOUT.findings_dir, BISHOP_LAYOUT.findings_file)):
         date, target = split_heading_date(entry_heading(entry))
         suggestion = entry_field(entry, "Suggestion")
         if not suggestion:
@@ -587,7 +625,7 @@ def directive_field(entry, name):
 def parse_directives(root):
     """reference/DIRECTIVES.md -> directive dicts keyed by DIR-NNN."""
     out = []
-    for entry in entries(os.path.join(root, "reference", "DIRECTIVES.md")):
+    for entry in entries(os.path.join(root, BISHOP_LAYOUT.reference_dir, BISHOP_LAYOUT.directives_file)):
         match = DIRECTIVE_HEADING.match(entry_heading(entry))
         if not match:
             continue  # the file's prose headings are not entries
@@ -610,7 +648,7 @@ def parse_directives(root):
 def parse_patterns(root):
     """findings/PATTERNS.md -> pattern dicts."""
     out = []
-    for entry in entries(os.path.join(root, "findings", "PATTERNS.md")):
+    for entry in entries(os.path.join(root, BISHOP_LAYOUT.findings_dir, BISHOP_LAYOUT.patterns_file)):
         name = entry_heading(entry)
         if not name:
             continue
@@ -634,7 +672,7 @@ def parse_patterns(root):
 
 def parse_service_records(root):
     """findings/service-records/<agent>.md -> service record dicts."""
-    directory = os.path.join(root, "findings", "service-records")
+    directory = os.path.join(root, BISHOP_LAYOUT.findings_dir, BISHOP_LAYOUT.service_records_dir)
     if not os.path.isdir(directory):
         return []
     out = []
@@ -1031,8 +1069,8 @@ def reconcile_findings(client, root, harness=""):
         if md_status != "proposed" and row.get("status") != md_status:
             decision = {
                 "status": md_status,
-                "approver": finding["_approver"] or "FINDINGS.md",
-                "note": "reconciled from FINDINGS.md",
+                "approver": finding["_approver"] or APPROVER_DEFAULT,
+                "note": f"reconciled from {BISHOP_LAYOUT.findings_file}",
             }
             if finding["_date_approved"]:
                 decision["date_approved"] = finding["_date_approved"]

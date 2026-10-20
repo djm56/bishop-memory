@@ -2,9 +2,10 @@
 //
 // mcpd is a stdio Model Context Protocol server that proxies the
 // bishop-memory HTTP API. It is a pure HTTP *client* of the
-// bishop-memory service: it does not import any bishop-memory internal
-// package and never touches the SQLite database directly. All state
-// mutations flow through the HTTP API exposed by cmd/memoryd.
+// bishop-memory service: it imports no service package and never touches
+// the SQLite database directly. Its one internal import is internal/profile,
+// for the default harness identity. All state mutations flow through the
+// HTTP API exposed by cmd/memoryd.
 //
 // Agent identity is conveyed two ways:
 //
@@ -55,18 +56,14 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	"bishop-memory/internal/profile"
 )
 
 // Default configuration values used when the corresponding env vars
 // are unset or empty.
 const (
-	defaultMemoryURL = "http://127.0.0.1:8787"
-	// defaultHarness is "claude-code" by deliberate design: this is the
-	// bishop-harness project, and claude-code is the intended default harness.
-	// The BISHOP_HARNESS env var is set by the harness's project-scope MCP
-	// registration in .mcp.json, so the default is only reached by a bare
-	// invocation. For this project, the claude-code default is correct.
-	defaultHarness     = "claude-code"
+	defaultMemoryURL   = "http://127.0.0.1:8787"
 	defaultHTTPTimeout = 30 * time.Second
 
 	// defaultSyncHTTPTimeout is the timeout used ONLY for documents_sync
@@ -98,7 +95,7 @@ type client struct {
 func main() {
 	loadClientEnv()
 	baseURL := envOrDefault("BISHOP_MEMORY_URL", defaultMemoryURL)
-	harness := envOrDefault("BISHOP_HARNESS", defaultHarness)
+	harness := envOrDefault("BISHOP_HARNESS", profile.Bishop.DefaultHarness)
 
 	// Validate the base URL is an absolute URI (not a relative path or
 	// fragment) before we try to use it. url.ParseRequestURI rejects
@@ -118,17 +115,17 @@ func main() {
 
 	s := server.NewMCPServer("mcpd", "0.1.0")
 
-	profile := envOrDefault("MCPD_PROFILE", profileHarness)
-	switch profile {
+	mcpdProfile := envOrDefault("MCPD_PROFILE", profileHarness)
+	switch mcpdProfile {
 	case profileHarness:
 		registerTools(s, c)
 	case profileTriage:
 		registerTriageTools(s, c)
 	default:
-		log.Fatalf("mcpd: invalid MCPD_PROFILE %q: must be %q or %q", profile, profileHarness, profileTriage)
+		log.Fatalf("mcpd: invalid MCPD_PROFILE %q: must be %q or %q", mcpdProfile, profileHarness, profileTriage)
 	}
 
-	log.Printf("mcpd serving stdio (base_url=%s harness=%s profile=%s)", c.baseURL, c.harness, profile)
+	log.Printf("mcpd serving stdio (base_url=%s harness=%s profile=%s)", c.baseURL, c.harness, mcpdProfile)
 
 	if err := server.ServeStdio(s); err != nil {
 		log.Fatalf("mcpd: stdio serve failed: %v", err)
@@ -537,8 +534,9 @@ func registerTools(s *server.MCPServer, c *client) {
 // These redeclare the minimum JSON shapes mcpd needs to build
 // well-formed request bodies for the bishop-memory HTTP API. They are
 // intentionally NOT imports of bishop-memory/internal/model: mcpd
-// stays decoupled from the server's internal packages, and the JSON
-// wire shapes are the documented contract.
+// stays decoupled from the server's internal packages (its only internal
+// import is internal/profile), and the JSON wire shapes are the documented
+// contract.
 
 // createMissionBody is the JSON body for POST /v1/missions.
 // allocateMissionBody is the POST /v1/missions/allocate payload. It has
@@ -592,7 +590,8 @@ type appendFlightRecorderBody struct {
 
 // missionStepBody is the JSON body for POST /v1/missions/<id>/steps. It
 // mirrors the internal/api/missionStepRequest wire shape so mcpd can
-// build the request without importing the server's internal package.
+// build the request without importing the server's internal model package
+// (mcpd's only internal import is internal/profile).
 type missionStepBody struct {
 	Step      string  `json:"step,omitempty"`
 	Phase     string  `json:"phase,omitempty"`
@@ -1450,7 +1449,7 @@ func doWithClient(ctx context.Context, httpClient *http.Client, method, urlStr s
 //
 // The empty-harness branch below is defensive, not reachable via any
 // env var an operator can currently set: envOrDefault("BISHOP_HARNESS",
-// defaultHarness) already treats an unset OR explicitly-empty
+// profile.Bishop.DefaultHarness) already treats an unset OR explicitly-empty
 // BISHOP_HARNESS as unset and substitutes "claude-code", so c.harness is
 // never "" in main()'s current wiring (Step 4 review, Review C
 // SUGGESTION 11 — this docblock previously described a scenario the

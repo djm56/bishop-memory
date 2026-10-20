@@ -8,12 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"bishop-memory/internal/profile"
 )
 
 // AgentsDirFor returns the agent definition directory that sits beside a
 // harness memory root: <checkout>/.claude/memory -> <checkout>/.claude/agents.
+// The folder name comes from profile.Bishop.Layout.
 func AgentsDirFor(memoryRoot string) string {
-	return filepath.Join(filepath.Dir(filepath.Clean(memoryRoot)), "agents")
+	return filepath.Join(filepath.Dir(filepath.Clean(memoryRoot)), profile.Bishop.Layout.AgentsDir)
 }
 
 // SyncAgents upserts one crew row per agent definition (*.md) in dir. The

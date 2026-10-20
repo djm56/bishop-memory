@@ -247,6 +247,73 @@ func TestKindFromPath(t *testing.T) {
 	}
 }
 
+// TestKindFromPathMissionsGuard pins the missions folder guard in
+// kindFromPath one edge per subtest. The declared folder name is read as
+// mission metadata; a name the layout does not declare is not. Each edge
+// has its own message, so a failure names the edge it broke.
+func TestKindFromPathMissionsGuard(t *testing.T) {
+	// Literal names on purpose: the declared folder is "missions", and "notes"
+	// is not declared under any value this test suite pins.
+	t.Run("declared missions folder is read as mission metadata", func(t *testing.T) {
+		const path = "missions/mission-20260904-01/BRIEF.md"
+		if got := kindFromPath(path); got != "brief" {
+			t.Errorf("declared missions folder not read as mission metadata: kindFromPath(%q) = %q, want %q", path, got, "brief")
+		}
+	})
+
+	t.Run("undeclared folder name is not read as mission metadata", func(t *testing.T) {
+		const path = "notes/mission-20260904-01/BRIEF.md"
+		if got := kindFromPath(path); got != "notes" {
+			t.Errorf("undeclared folder name read as mission metadata: kindFromPath(%q) = %q, want %q", path, got, "notes")
+		}
+	})
+}
+
+// TestSyncMissionFolderLookup pins the missions folder lookup in
+// SyncMissionStats one edge per subtest: the folder the layout declares is
+// imported, and a folder name it does not declare is not. Each edge has its
+// own message, so a failure names the edge it broke.
+func TestSyncMissionFolderLookup(t *testing.T) {
+	const missionID = "mission-20260904-01"
+
+	// countImported writes BRIEF.md under <folder>/<missionID>/ in a fresh root,
+	// runs SyncMission for that mission, and returns how many documents rows
+	// name that file.
+	countImported := func(t *testing.T, folder string) int {
+		t.Helper()
+		db := openTestDB(t)
+		root := t.TempDir()
+		dir := filepath.Join(root, folder, missionID)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "BRIEF.md"), []byte("# Brief\n\n## Goal\n\nFixture goal.\n"), 0644); err != nil {
+			t.Fatalf("write BRIEF.md under %s: %v", folder, err)
+		}
+		if err := SyncMission(db, root, "fixture", missionID); err != nil {
+			t.Fatalf("SyncMission(%q): %v", missionID, err)
+		}
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM documents WHERE source_path LIKE ?`,
+			"%"+folder+"/"+missionID+"/BRIEF.md").Scan(&n); err != nil {
+			t.Fatalf("count documents for %s: %v", folder, err)
+		}
+		return n
+	}
+
+	t.Run("declared missions folder is imported", func(t *testing.T) {
+		if n := countImported(t, "missions"); n != 1 {
+			t.Errorf("declared missions folder not imported: %d documents for missions/%s/BRIEF.md, want 1", n, missionID)
+		}
+	})
+
+	t.Run("undeclared folder name is not imported", func(t *testing.T) {
+		if n := countImported(t, "notes"); n != 0 {
+			t.Errorf("undeclared folder name imported: %d documents for notes/%s/BRIEF.md, want 0", n, missionID)
+		}
+	})
+}
+
 // TestPrependCurrentMissionFields verifies that the six recognised structured
 // fields are extracted and prepended, unrecognised keys are ignored, and
 // duplicate keys are handled by taking the first occurrence.
