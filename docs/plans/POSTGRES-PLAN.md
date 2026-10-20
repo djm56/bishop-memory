@@ -1,5 +1,9 @@
 # PostgreSQL Backend — Plan
 
+**Status as of 2026-10-20:** not started. There is no `internal/store/dialect.go`,
+no `Rebind`, no `pgx` in `go.mod`, no PostgreSQL schema file, no CI service and
+no `migrate-db` command. Phases 1 to 5 (§5) are all **not started**.
+
 Status: planned, not started.
 Date: 2026-10-08.
 
@@ -124,6 +128,8 @@ re-runnable into an empty database only.
 - CI adds a `postgres:16` service container and runs both.
 
 ## 5. Phases
+
+*Status: not started (phases 1 to 5).*
 
 1. The dialect wrapper and rebinding on SQLite alone, with no behaviour
    change. All tests stay green.

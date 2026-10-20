@@ -2,14 +2,18 @@
 
 The single list of outstanding work. Each item says where it stands and links
 its plan where one exists. How the shipped system works is in the wiki
-(`docs/wiki/`), not here. Remove an item when it ships; git history keeps it.
+(`docs/wiki/`), not here. When an item ships, move it to [Shipped](#shipped)
+with its commit or PR; git history keeps the detail. Item-by-item progress,
+with evidence, is in [PROGRESS.md](PROGRESS.md).
 
 Status words: **in progress**, **planned** (a plan exists, not started),
 **open** (agreed, no plan yet), **deferred** (decided not now),
 **decision** (waiting on the operator), **check** (may already be done;
-confirm before working on it).
+confirm before working on it), **unverified** (the repository cannot confirm
+it; a run or a harness-side check is needed).
 
-Last checked against the code: 2026-10-14 (plans updated after mission_criteria shipped).
+Last checked against the code: 2026-10-20 (status audit of `main` at
+`f9d8f1f` and the live database).
 
 ## Planned work
 
@@ -17,32 +21,55 @@ Last checked against the code: 2026-10-14 (plans updated after mission_criteria 
 network from harness machines, the triage agents and the operator's browser:
 named API keys, transport (Tailscale, built-in TLS or a reverse proxy),
 clients pushing memory files instead of the server reading paths, and a
-one-step installer. Status: in progress (phase 1). Plan:
+one-step installer. Status: in progress. Phase 1 is built and on `main`; the
+server installer has not been run for real on Linux or macOS, and TLS has not
+been run with a real certificate. Phases 2 and 3 not started. Plan:
 [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md).
 
 **Optional PostgreSQL backend.** Let the operator choose SQLite (the default)
-or PostgreSQL with the same API, pages, tools and behaviour. Status: planned.
-Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
+or PostgreSQL with the same API, pages, tools and behaviour. Status: planned,
+not started. Plan: [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md).
 
 **Memory insight.** Take the HUD from one mission at a time to questions
-across missions: data health (phase 0), structured debriefs and review
-verdicts, crew, library and activity pages with operator grade review, cost
-and usage from transcripts, and a retrieval log with a brief-prep tool that
-feeds past lessons into new briefs. Status: phase 0 merged to main and live; phase 1 slice 1 (`mission_criteria`, c325080, live); phase 1 slice 2 (`agent_mistakes`, 2347527, live); phase 1 slice 3 (`mission_deliverables`, a53c1ac, live); phase 1 slice 4 (`mission_lessons`, 1e78378, live); review verdicts (stage 1b, 06e4f8a, live); Crew page and GET /v1/crew (stage 2, f0da6af, live); brief prep GET /v1/brief-prep and brief_prep MCP tool (stage 3, 3112a24, endpoint and MCP tool live); remaining stages (4–8 of the build order) planned; phase 2's other pages, phases 3 and 4 not started; decisions P2, P3 and P5 settled (2026-10-16), P4 built. Plan:
+across missions: data health, structured debriefs and review verdicts, crew,
+library and activity pages with operator grade review, cost and usage from
+transcripts, and a retrieval log with a brief-prep tool that feeds past
+lessons into new briefs. Status: phase 0, stages 1b, 2 and 3 shipped (see
+[Shipped](#shipped)). Open: stage 1a (the fixed verdict line in the agent and
+skill definitions, waiting on ratification of decision P3); phase 2's
+Library, Activity, global search, operator grade override, operator notes,
+park or close from the HUD, and the rest of the Trends work; phase 3 (cost
+and usage) and phase 4 (retrieval log, directive citations, git deliverables,
+operator interventions) not started. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
 
-**Mission HUD phase 2: structured debriefs.** Parse each `DEBRIEF.md` into
-`mission_deliverables` and `mission_lessons`, so the HUD can filter on wrong
-assumptions and files that change often. Tracked under the memory insight plan:
-`mission_criteria` shipped (c325080); `agent_mistakes` shipped (2347527); `mission_deliverables` shipped (a53c1ac); `mission_lessons` shipped (1e78378); review verdicts parsed on read (06e4f8a), no step_reviews table.
-Status: criteria shipped; agent_mistakes shipped; deliverables shipped; lessons shipped; review verdicts shipped. Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) §3.
+**Mission HUD: outstanding items.** The HUD's own phases 1 and 3 and its
+structured-debrief phase have shipped (see [Shipped](#shipped)). Still open
+from [plan §8](plans/MISSION-HUD-PLAN.md#8-outstanding):
+
+- **Browser check of the triage close controls** (look, focus-visible, pill
+  fills). Verified by code reading only. Status: unverified.
+- **The triage category rail is mouse-only.** No keyboard access. Status: open.
+- **Pager focus edge cases** on the HUD pages. Status: open.
+- **Stray `bin/memoryd.new`** (about 36 MB, gitignored) left in the checkout.
+  Status: open; remove it.
+- **`mission-20261009-02`** is still `not-started` in the live database and
+  stale under the 48-hour rule. Abandon it or keep it. Status: decision.
 
 ## Findings triage
 
 The rest of phase 4 of the shipped design, plus what the earlier, unbuilt
-design covered and the shipped one does not. Already done and not listed:
-`--reclassify`, calibration on the last 20 decisions, per-run accepted and
-declined counts.
+design covered and the shipped one does not. Shipped items from this area are
+listed under [Shipped](#shipped). Calibration on the last 20 decisions and
+per-run accepted and declined counts are recorded as done in earlier notes,
+but were not found in the code on 2026-10-20. Status: check, before relying
+on either.
+
+**Triage run 99 is still `running`.** Started 2026-10-19 19:20:18 UTC on
+`opencode-go/glm-5.2` (process) with an expired model key, so it is far past
+the 30-minute stale rule. Status: decision. Confirm the key has been replaced,
+then close the run as failed with the operator-close route
+(`POST /v1/triage/runs/:id/operator-close`). Only the operator closes it.
 
 **Pending recommendations never expire by age.** A recommendation is expired
 only when a re-run replaces it. A sweep that expires pending ones older than N
@@ -52,14 +79,18 @@ long gap. Status: open.
 **No acceptance rate per category over time.** The Runs tab shows accepted and
 declined counts per run. Nothing yet shows the rate per category across runs,
 which is the signal for a category description that needs tightening or a
-model that is not good enough. Status: open.
+model that is not good enough. The data is present: on 2026-10-20 the
+recommendations were 252 accepted, 76 declined, 24 expired and 86 pending.
+Status: open.
 
 **Directive drafts are compared with ratified directives only loosely.** The
-processor now reads the harness's `DIRECTIVES.md` and drafts nothing when a
-ratified directive already states the rule. It cannot propose an amendment
-or a supersession, and it does not read the `directives` table. The earlier
-design proposed four outcomes per draft: new, amend, supersede, duplicate.
-Status: open, partly done. This matters more as directives accumulate.
+processor reads the harness's `DIRECTIVES.md` and drafts nothing when a
+ratified directive already states the rule. It cannot propose an amendment,
+a supersession or a duplicate for a draft, and it does not read the
+`directives` table. The earlier design proposed four outcomes per draft: new,
+amend, supersede, duplicate. The operator-side path (reopen a decided proposal
+and ratify it as an amendment, or retire the directive) has shipped. Status:
+open, partly done. This matters more as directives accumulate.
 
 **`CONVENTIONS.md` is outside the pipeline.** The 28 `CONV-` entries in the
 Bishop harness's `reference/CONVENTIONS.md` are human-ratified rules, but they
@@ -77,9 +108,11 @@ applies an accepted change and shows the diff was deliberately left out.
 Status: deferred (decision 6 of the triage plan: no auto-apply).
 
 **Taxonomy tuning.** After the first full run `class-closure` received no
-findings and `brief-writing` received 70. Tighten the descriptions in
-`db/finding-categories.json`, or merge categories, then re-classify. Status:
-check against the current distribution on the Runs tab.
+findings and `brief-writing` received 70. On 2026-10-20 `brief-writing` holds
+116 of 524 triaged findings (22%) and `class-closure` holds 1, so the skew
+persists. Tighten the descriptions in `db/finding-categories.json`, or merge
+categories, then re-classify. Status: decision, then re-classify. Check
+against the current distribution on the Runs tab first.
 
 **The exporter does not check for a mission in progress.** Running
 `make triage-export` while a mission in that harness is mid-sync is safe from
@@ -98,7 +131,7 @@ open, idea only.
 
 **A read-only `/findings-digest` command in the harness.** Lets Bishop see
 ratified findings for the area it is about to brief. Status: open, harness
-side.
+side; not checkable from this repository.
 
 ## Reconciler
 
@@ -107,15 +140,17 @@ side.
 `in-progress`, `done`, `failed` into an empty string and removes it from the
 payload, so the run reports `unchanged` while the database keeps a stale
 value. Seen when a harness wrote the mission status `blocked` into a step row.
-It should warn and count the row instead. Status: open.
+It should warn and count the row instead. Status: open (confirmed on the
+2026-10-20 read).
 
 **The `[flight-recorder]` summary does not add up to `parsed`.** Events for
 missions outside the parsed set are skipped with no counter. Behind the
-opt-in `--include-journal`. Status: open.
+opt-in `--include-journal`. Status: open; code reading only, not run.
 
 **The journal's `warned` counter is never incremented.** So the "at cap"
 summary branch cannot run, and a mission skipped at the 100-row cap is
-reported as a generic fetch failure. Behind `--include-journal`. Status: open.
+reported as a generic fetch failure. Behind `--include-journal`. Status: open
+(confirmed on the 2026-10-20 read).
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
 which needs it for Markdown tables; a value from the JSON API does not. It is
@@ -126,7 +161,7 @@ reason. Status: open, low.
 **A malformed non-string `next_action` from the API triggers a corrective
 PATCH.** Self-healing in the normal case; it becomes a repeat-write loop only
 if the service keeps returning a malformed value, which would be a service
-defect. Status: open, watch only.
+defect. Status: open, watch only; unverified.
 
 **Replaying FINDINGS.md into an empty database fails some status changes.**
 Against a fresh database the reconciler's status mirroring sends decisions the
@@ -134,35 +169,38 @@ decision route refuses (HTTP 400): 38 of 263 kirsch findings on 2026-10-08,
 for example a finding already `applied` in Markdown that the service has never
 seen `approved`. A live database is unaffected because it saw each step. It
 matters when moving to a new server: copy the database (Server-Install wiki
-page), do not rebuild it by reconciling. Status: open; fix by replaying the
-transition path, or by an import route that sets status directly.
+page), do not rebuild it by reconciling. Status: open, not reproduced on
+2026-10-20; fix by replaying the transition path, or by an import route that
+sets status directly.
 
 ## Harness side (bishop-harness repository)
 
 Recorded here because they affect this service; the fixes belong in the
-harness's `state-continuity.sh` hook and `connect-bishop-memory.sh`.
+harness's `state-continuity.sh` hook and `connect-bishop-memory.sh`. None of
+these can be checked from this repository.
 
 **`stat -f '%m'` is BSD and macOS syntax.** On Linux the lock's mtime comes
 back empty and stale-lock reclamation never fires. This matters directly to
-running harnesses on Linux (see the network deployment plan). Status: open.
+running harnesses on Linux (see the network deployment plan). Status: open;
+unverified here.
 
 **The hook runs the reconciler from the working tree.** An edit to
 `reconcile-memory.py` is live on the next memory-tree write, before the review
 that would catch a defect in it, and a step briefed as dry-run-only cannot be
-held to that while the hook is armed. Status: open.
+held to that while the hook is armed. Status: open; unverified here.
 
 **The hook leaks its `mktemp` file when the subshell is signalled.** The TERM
 trap releases only the lock; the older mirror section already uses trap-based
-cleanup. Status: open.
+cleanup. Status: open; unverified here.
 
 **One hook comment claims more than the code guarantees.** It says the
 winning fire's post-reconcile check will pick up a marker touched after that
 check ran. The invariant holds (that fire or the next answers it); the
-sentence does not. Status: open.
+sentence does not. Status: open; unverified here.
 
 **The hook's function variables are globals.** POSIX `sh` has no locals. No
 collision exists today, and no naming convention prevents one. Status: open,
-low.
+low; unverified here.
 
 **`SIGKILL` mid-reconcile leaves the lock directory** until the next
 staleness check reclaims it. A delay, not a loss; step H is the backstop.
@@ -170,7 +208,7 @@ Status: accepted.
 
 **Stderr is still suppressed during capability probing** in
 `connect-bishop-memory.sh`. A missing interpreter is now diagnosed, but a
-present-but-broken one could be masked. Status: open.
+present-but-broken one could be masked. Status: open; unverified here.
 
 ## Service
 
@@ -188,6 +226,10 @@ inline in the handlers, and the service does not write views back to the
 harness tree. Either needs its own design first (see `CONTRIBUTING.md`).
 Status: deferred.
 
+## Harness portability
+
+Plan in progress — see docs/plans/HARNESS-PORTABILITY-PLAN.md (to be written).
+
 ## Before starting work
 
 1. Read the harness's `.claude/bishop-memory.conf` for mode, URL and
@@ -197,3 +239,61 @@ Status: deferred.
    `main`.
 4. See whether the derived copy is in step:
    `$BISHOP_MEMORY_HOME/scripts/reconcile-memory.py --root .claude/memory --harness <name> --dry-run`.
+
+## Shipped
+
+Listed by area, newest work first within each. Commits are on `main`.
+
+**Mission HUD and structured debriefs**
+
+- Mission HUD phase 2, structured debriefs: `mission_criteria` (c325080),
+  `agent_mistakes` (2347527), `mission_deliverables` (a53c1ac),
+  `mission_lessons` (1e78378). Review verdicts parsed on read (06e4f8a).
+- Mission HUD phases 1 and 3: documents carry `mission_id` and `harness`,
+  sync covers every harness, the `/missions` page and the `/v1/hud` endpoints
+  (af53c3d), crew rows from agent definitions, `make scratch-clean`.
+- Mission HUD merged to `main` through PR #5 (6772e85): the page redesign with
+  the shared shell, and the triage close-run controls.
+- MU/TH/UR green-terminal design across the four pages (942b52d, 1d9b01a).
+
+**Memory insight**
+
+- Phase 0, data health (ef23e11, 8426304): missions record their harness, the
+  stale board (48 hours), workspace scratch ranked lower in search,
+  field-level `mission.updated` notes, `occurred_at` on the journal.
+- Stage 1b, review verdicts parsed on read (06e4f8a).
+- Stage 2, Crew page and `GET /v1/crew` (f0da6af).
+- Stage 3, brief prep: `GET /v1/brief-prep` and the `brief_prep` MCP tool
+  (3112a24).
+
+**Mission grading and performance**
+
+- Mission grading: `mission_grades`, the `mission-grader` agent, the
+  `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
+  Grader packets as readable text (5538d6d).
+
+**Findings triage**
+
+- Stale triage-run detection and operator close, and directive proposal reopen
+  with amendment (9756373).
+- `export-decisions.py` amends and retires directives in place
+  (`scripts/export-decisions.py`).
+- OpenCode triage engine, `TRIAGE_ENGINE=opencode` (PR #4, 7943ac8; 54058ff).
+- Classifier batch size 20 (PR #6, f9d8f1f; 2df2f46).
+- `--reclassify` in `scripts/triage-run.sh`.
+- 17-category taxonomy in `db/finding-categories.json`.
+
+**Harness registry and tooling**
+
+- Harness registry: `GET /v1/harnesses`, `PUT /v1/harnesses/:name`
+  (`internal/api/harness_roots.go`).
+- `scripts/rename-harness.py`, renaming a harness across every table (0967cbc).
+- `MCPD_PROFILE=triage`, a separate MCP tool set (`cmd/mcpd/triage.go`).
+- Documentation tooling: `make screenshots`, `make wiki-publish`,
+  `scripts/gen-mcp-reference.py`.
+
+**Service**
+
+- Document push body limit of 8 MiB (`internal/api/documents_push.go`).
+- Mission-scoped findings: a finding takes its harness's open mission
+  (`internal/api/findings.go`).
