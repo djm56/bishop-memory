@@ -17,9 +17,9 @@ Last updated: 2026-10-20, against `main` at `f9d8f1f`
 | Triage & grading | 10 | 14 | 42% |
 | Reconciler | 0 | 13 | 0% |
 | Service hardening | 2 | 4 | 33% |
-| Docs/README | 1 | 9 | 10% |
+| Docs/README | 0 | 10 | 0% |
 | Harness portability | 0 | 1 | 0% |
-| **Total** | **46** | **79** | **37%** |
+| **Total** | **45** | **80** | **36%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -60,7 +60,7 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md)
 - [ ] Browser prompts for a key on 401 and offers Sign out (unverified: the HTML has not been inspected) ([§3.1](plans/NETWORK-DEPLOYMENT-PLAN.md#31-api-keys))
 - [x] Push, hashes and delete routes: `POST /v1/documents/push`, `GET /v1/documents/hashes`, `POST /v1/documents/delete` — `internal/api/router.go:146-148`, `internal/api/documents_push.go` ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
 - [x] `scripts/push-memory.py` pushes changed files — `scripts/push-memory.py` ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
-- [ ] Reconciler pushes instead of reading paths (partial: the push path exists; its fallback to path sync has not been traced) ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
+- [ ] Reconciler pushes instead of reading paths (partial: with `--harness` the push is the default, `scripts/reconcile-memory.py`; the fallback to server-side path sync, `POST /v1/documents/sync`, remains for runs without `--harness` and against an older memoryd) ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
 - [x] Embedded schema, so the binary runs from any directory — `db/embed.go` ([§5.1](plans/NETWORK-DEPLOYMENT-PLAN.md#51-one-binary-no-checkout-needed))
 - [x] `make dist` for linux and darwin, amd64 and arm64 — `Makefile:49` ([§5.1](plans/NETWORK-DEPLOYMENT-PLAN.md#51-one-binary-no-checkout-needed))
 - [x] `install.sh client` writes `client.env` at mode 600 — `scripts/install.sh:30, 265` ([§5.3](plans/NETWORK-DEPLOYMENT-PLAN.md#53-each-client-machine))
@@ -131,7 +131,7 @@ Plan: [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md)
 - [x] Phase 3: crew rows from agent definitions — `internal/importer/agents.go` ([§4.3](plans/MISSION-HUD-PLAN.md#43-crew))
 - [x] Phase 3: `make scratch-clean` through `scripts/clean-scratch.py` — `Makefile:120` ([§4.4](plans/MISSION-HUD-PLAN.md#44-scratch-cleanup))
 - [x] HUD redesign and triage close-run controls merged to `main` through PR #5 — merge `6772e85`, branches `feat/hud-redesign` and `fix/triage-run-actions` ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [x] MU/TH/UR design and shared shell across the four pages — `942b52d`, `1d9b01a` ([ROADMAP, Shipped](ROADMAP.md#shipped))
+- [x] MU/TH/UR design and shared shell across the four pages (Triage, Missions, Performance, Crew) — `942b52d`, `1d9b01a` ([ROADMAP, Shipped](ROADMAP.md#shipped))
 - [ ] Browser check of the triage close controls (unverified: code reading only) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Triage category rail is mouse-only, with no keyboard access ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Pager focus edge cases on the HUD pages ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
@@ -202,15 +202,15 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 
 ## Docs/README
 
-- [x] `docs/` holds only the roadmap and plans; user docs are in the wiki — `docs/README.md`, CHANGELOG `[Unreleased]` ([docs index](README.md))
+- [ ] `docs/` holds only the roadmap and plans; user docs are in the wiki — `docs/README.md`, CHANGELOG `[Unreleased]` (partial: PROGRESS.md now sits in `docs/` too, and `docs/README.md` changed on `docs/roadmap-progress`, not on `main`; ticks when merged) ([docs index](README.md))
 - [ ] HUD plan §8: the merge and push are marked done (PR #5) — `docs/plans/MISSION-HUD-PLAN.md` (unverified: the §8 edit is on `docs/roadmap-progress`, not yet on `main`) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Status blocks as of 2026-10-20 on the four plans (memory insight, HUD, network, PostgreSQL) (unverified: on `docs/roadmap-progress`, not yet on `main`) ([plans](plans/))
 - [ ] `docs/README.md` says phase 2 of the HUD is deferred; it has shipped (fixed on `docs/roadmap-progress`; ticks when on `main`) ([docs index](README.md))
-- [ ] README table list is stale: it says ten harness tables and seven triage tables; the schema has 21 tables and the triage group is six ([README](../README.md))
-- [ ] README describes the HUD switch as three pages; Crew is the fourth ([README](../README.md))
-- [ ] README repository map omits `/crew` and `/performance` ([README](../README.md))
-- [ ] README configuration table omits `BISHOP_MEMORY_CA_FILE` ([README](../README.md))
-- [ ] README network section omits the push routes and `scripts/push-memory.py` ([README](../README.md))
+- [ ] README table list is stale: it says ten harness tables and seven triage tables; as of 2026-10-20 the schema has 21 tables (`grep -c 'CREATE TABLE' db/schema.sql`) and the triage group is six (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
+- [ ] README describes the HUD switch as three pages; Crew is the fourth (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
+- [ ] README repository map omits `/crew` and `/performance` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
+- [ ] README configuration table omits `BISHOP_MEMORY_CA_FILE` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
+- [ ] README network section omits the push routes and `scripts/push-memory.py` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
 - [ ] CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`, `agent_mistakes`, review verdicts or brief prep, and no entry of its own for the Crew page (it is named only inside the HUD redesign entry) ([CHANGELOG](../CHANGELOG.md))
 
 ## Harness portability

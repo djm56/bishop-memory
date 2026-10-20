@@ -6,29 +6,26 @@
   `harness`; sync covers every harness and `PATCH` re-imports; findings take
   the open mission; step timing is stamped; the backfill script exists.
   Partial: the `step-sync` note copied into the step summary (§2.3) is not
-  traced, so it is unverified.
+  traced, so it is unverified. The §2.4 backfill on the live database is
+  unverified.
 - **Phase 2, structured debrief (§3): done,** shipped under the memory insight
-  plan: `mission_criteria`, `agent_mistakes`, `mission_deliverables` and
-  `mission_lessons`, plus review verdicts.
+  plan: `mission_criteria` (c325080), `agent_mistakes` (2347527),
+  `mission_deliverables` (a53c1ac) and `mission_lessons` (1e78378), plus review
+  verdicts (stage 1b, 06e4f8a).
 - **Phase 3, the mission HUD (§4): done.** Endpoints, the `/missions` page,
-  crew rows, scratch cleanup.
+  crew rows, scratch cleanup. The redesign and triage close controls were
+  merged to `main` through PR #5 (`6772e85`, 2026-10-19) from branches
+  `feat/hud-redesign` and `fix/triage-run-actions`.
 - **Rollout (§5): done** through step 3.
-- **Outstanding (§8):** the merge and push is done (PR #5). Still open: the
-  browser check, the mouse-only category rail, pager focus edge cases, the stray
-  `bin/memoryd.new`, and triage run 99. Run 89 is closed. Memory insight stages
-  4 to 8 are not started.
-
-Status: phases 1 and 3 shipped and merged to `main`; phase 2 tables live —
-`mission_criteria` (c325080), `agent_mistakes` (2347527),
-`mission_deliverables` (a53c1ac), `mission_lessons` (1e78378); review verdicts
-parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page and GET /v1/crew
-(stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP tool (stage 3,
-3112a24). The redesign and triage close controls were merged to `main` through
-PR #5 (`6772e85`, 2026-10-19) from branches `feat/hud-redesign` and
-`fix/triage-run-actions`. Memoryd sha1 b15baa93 matches the binary in `bin/`;
-the running process has not been inspected. The §2.4 backfill on the live
-database is unverified. How the shipped pages work is in the wiki:
-`../wiki/Mission-HUD-Guide.md`. Outstanding items in §8.
+- **Memory insight stages shipped alongside:** the Crew page and `GET /v1/crew`
+  (stage 2, f0da6af); `GET /v1/brief-prep` and the `brief_prep` MCP tool
+  (stage 3, 3112a24). Stages 4 to 8 are not started.
+- **Binary:** memoryd sha1 b15baa93 matches the binary in `bin/`; the running
+  process has not been inspected.
+- **Outstanding (§8):** the browser check, the mouse-only category rail, pager
+  focus edge cases, the stray `bin/memoryd.new`, triage run 89's closure on the
+  live database (unverified), triage run 99, and memory insight stages 4 to 8.
+  How the shipped pages work is in the wiki: `../wiki/Mission-HUD-Guide.md`.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each
@@ -277,8 +274,8 @@ only when the operator runs it.
 - **Pager focus edge cases** on the HUD pages. *Status: open.*
 - **Stray `bin/memoryd.new`** left in checkout; to be removed. *Status: open;
   still present on 2026-10-20.*
-- **Stale triage run 89** closed as Failed. *Status: done; `triage_runs` row 89
-  is `failed`.*
+- **Stale triage run 89** closed as Failed. *Status: unverified; no commit, PR
+  or path confirms the closure on the live database.*
 - **Scheduled triage agents** (classify/triage/grade via opencode) were
   failing on an expired model API key as of 2026-10-19; operator is replacing
   the key. *Status: open.* Run 99 (`running` since 2026-10-19 19:20:18 UTC) is

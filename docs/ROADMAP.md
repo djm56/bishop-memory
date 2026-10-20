@@ -32,8 +32,9 @@ been run with a real certificate. Phases 2 and 3 not started. Plan:
 
 - Browser prompt on 401 and its Sign out control. Status: unverified; the HTML
   has not been inspected.
-- The reconciler pushes files; its fallback to path sync has not been traced.
-  Status: partial.
+- The reconciler pushes files: with `--harness` the push is the default. Its
+  fallback to server-side path sync (`POST /v1/documents/sync`) remains for
+  runs without `--harness` and against an older memoryd. Status: partial.
 - `--data-dir` is named in the plan but is not among the installer flags.
   Status: decision; change the plan or the scripts.
 - Harness-side edits in each harness repository (plan §5.4). Status:
@@ -55,8 +56,9 @@ transcripts, and a retrieval log with a brief-prep tool that feeds past
 lessons into new briefs. Status: phase 0, stages 1b, 2 and 3 shipped (see
 [Shipped](#shipped)). Open: stage 1a (the fixed verdict line in the agent and
 skill definitions, waiting on ratification of decision P3); phase 2's
-Library, Activity, global search, operator grade override, operator notes,
-park or close from the HUD, and the rest of the Trends work; phase 3 (cost
+Library, Activity, global search, filters in the URL, operator grade override,
+operator notes, park or close from the HUD, and the rest of the Trends work;
+phase 3 (cost
 and usage) and phase 4 (retrieval log, directive citations, git deliverables,
 operator interventions) not started. Plan:
 [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md).
@@ -260,15 +262,18 @@ Plan in progress — see docs/plans/HARNESS-PORTABILITY-PLAN.md (to be written).
 ## Docs and README
 
 Drift in the README and the docs index, found on 2026-10-20. Each is also a
-line in [PROGRESS.md](PROGRESS.md#docsreadme). Status: open.
+line in [PROGRESS.md](PROGRESS.md#docsreadme). The items below are fixed on
+`docs/roadmap-progress` and close when that branch merges to `main`.
 
-- `docs/README.md` says phase 2 of the HUD is deferred; it has shipped. Status:
-  fixed on `docs/roadmap-progress`, not yet on `main`.
+- `docs/README.md` says phase 2 of the HUD is deferred; it has shipped.
 - The README table list is stale against `db/schema.sql`.
 - The README describes the HUD switch as three pages; Crew is the fourth.
 - The README repository map omits `/crew` and `/performance`.
 - The README configuration table omits `BISHOP_MEMORY_CA_FILE`.
 - The README network section omits the push routes and `scripts/push-memory.py`.
+- The HUD plan's §8 and the status blocks on the four plans (memory insight,
+  HUD, network, PostgreSQL), dated 2026-10-20, are on `docs/roadmap-progress`
+  only, not yet on `main`.
 - The CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`,
   `agent_mistakes`, review verdicts or brief prep, and no entry of its own for
   the Crew page.
@@ -297,7 +302,8 @@ Listed by area, newest work first within each. Commits are on `main`.
   (af53c3d), crew rows from agent definitions, `make scratch-clean`.
 - Mission HUD merged to `main` through PR #5 (6772e85): the page redesign with
   the shared shell, and the triage close-run controls.
-- MU/TH/UR green-terminal design across the four pages (942b52d, 1d9b01a).
+- MU/TH/UR green-terminal design across the four pages: Triage, Missions,
+  Performance and Crew (942b52d, 1d9b01a).
 
 **Memory insight**
 
