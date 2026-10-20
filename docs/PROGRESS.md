@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase 1 is on `feat/portability-phase1` at `718cb7a`, not yet on `main`.
+Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase 1 is on `feat/portability-phase1` at `718cb7a`, not yet on `main`. The reconciler items marked done on `fix/reconciler-integrity` are on that branch, not on `main`.
 
 ## Summary
 
@@ -175,9 +175,9 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 Plan: none. The items are in [ROADMAP](ROADMAP.md#reconciler) and
 [ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository).
 
-- [ ] An unrecognised step status is dropped silently by `parse_steps` in `scripts/reconcile-memory.py` (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler))
+- [ ] An unrecognised step status is dropped silently by `parse_steps` in `scripts/reconcile-memory.py` (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler)) (done on fix/reconciler-integrity; ticks when on main)
 - [ ] The `[flight-recorder]` summary does not add up to `parsed` (open; code reading only) ([ROADMAP](ROADMAP.md#reconciler))
-- [ ] The journal's `warned` counter is never incremented (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler))
+- [ ] The journal's `warned` counter is never incremented (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler)) (done on fix/reconciler-integrity; ticks when on main)
 - [ ] `normalize_empty` unescapes `\|` without a reason (open, low) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] A malformed non-string `next_action` triggers a corrective PATCH (unverified; watch only) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] Replaying FINDINGS.md into an empty database fails some status changes (open; not reproduced on 2026-10-20) ([ROADMAP](ROADMAP.md#reconciler))
@@ -216,10 +216,10 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 ## Harness portability
 
 Plan: [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md).
-Research and the coupling inventory are done. Phase 1 is built on `feat/portability-phase1` and is not on `main`; no later phase is started.
+Research and the coupling inventory are done. Phase 1 is built on `feat/portability-phase1` and is not on `main`. The reconciler-bug part of phase 2 is built on `fix/reconciler-integrity`; no other later phase is started.
 
 - [ ] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values (done on feat/portability-phase1, 260bb7c^..718cb7a; ticks when on main) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
-- [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
+- [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (layout profile: not started; reconciler-bug part: done on fix/reconciler-integrity; ticks when on main) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
 - [ ] Phase 3: neutral integration contract, generic names and the conformance fixture (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-3--the-integration-contract-and-generic-names))
 - [ ] Phase 4: plain Claude Code adapter (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-4--plain-claude-code-adapter))
 - [ ] Phase 5: OpenCode adapter, including the `AGENTS.md` loading test (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-5--opencode-adapter))
