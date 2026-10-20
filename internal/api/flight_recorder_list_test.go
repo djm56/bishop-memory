@@ -213,14 +213,42 @@ func TestListFlightRecorderPaging(t *testing.T) {
 			all = append(all, journalIDs(t, resp)...)
 		}
 		if want := rangeIDs(5, 1); !equalIDs(all, want) {
-			t.Errorf("tie order: paged ids %v, want id-descending %v", all, want)
+			t.Errorf("tie order paged by two: ids %v, want id-descending %v", all, want)
 		}
+	})
+
+	t.Run("rows sharing created_at come back in id order without offset", func(t *testing.T) {
+		// The same five rows read in one unpaged request: the id tie-break orders the
+		// default page as well.
+		router, db := newTriageTestRouter(t)
+		seedJournal(t, db, 5, sameSecond)
 		code, resp := do(t, router, http.MethodGet, "/v1/flight-recorder?mission_id=m-1", nil)
 		if code != http.StatusOK {
 			t.Fatalf("tie unpaged: status %d, want 200: %v", code, resp)
 		}
 		if got, want := journalIDs(t, resp), rangeIDs(5, 1); !equalIDs(got, want) {
-			t.Errorf("tie unpaged: ids %v, want id-descending %v", got, want)
+			t.Errorf("tie order without offset: ids %v, want id-descending %v", got, want)
 		}
 	})
+
+	t.Run("created_at outranks id in the order", func(t *testing.T) {
+		// The opposite edge of the tie: here created_at differs and falls as the id
+		// rises, so row 1 is the newest. The id tie-break must not override created_at,
+		// so the order is 1,2,3,4,5 and not id-descending. Read paged and unpaged.
+		router, db := newTriageTestRouter(t)
+		seedJournal(t, db, 5, reverseSecond)
+		code, resp := do(t, router, http.MethodGet, "/v1/flight-recorder?mission_id=m-1&limit=5&offset=0", nil)
+		if code != http.StatusOK {
+			t.Fatalf("created_at precedence: status %d, want 200: %v", code, resp)
+		}
+		if got, want := journalIDs(t, resp), []int{1, 2, 3, 4, 5}; !equalIDs(got, want) {
+			t.Errorf("created_at precedence: ids %v, want newest-created_at first %v", got, want)
+		}
+	})
+}
+
+// reverseSecond gives row i (1-based) a created_at that falls as i rises, so row 1
+// is the newest and the newest-first order is ascending in id.
+func reverseSecond(i int) string {
+	return fmt.Sprintf("2026-10-20 10:00:%02d", 59-i)
 }
