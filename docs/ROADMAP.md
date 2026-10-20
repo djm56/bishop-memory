@@ -10,7 +10,8 @@ Status words: **in progress**, **planned** (a plan exists, not started),
 **open** (agreed, no plan yet), **deferred** (decided not now),
 **decision** (waiting on the operator), **check** (may already be done;
 confirm before working on it), **unverified** (the repository cannot confirm
-it; a run or a harness-side check is needed).
+it; a run or a harness-side check is needed), **accepted** (decided as it
+stands, with no fix planned).
 
 Last checked against the code: 2026-10-20 (status audit of `main` at
 `f9d8f1f` and the live database).
@@ -25,6 +26,23 @@ one-step installer. Status: in progress. Phase 1 is built and on `main`; the
 server installer has not been run for real on Linux or macOS, and TLS has not
 been run with a real certificate. Phases 2 and 3 not started. Plan:
 [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md).
+
+**Network deployment: the rest of the open items.** Each is also a line in
+[PROGRESS.md](PROGRESS.md#network-deployment).
+
+- Browser prompt on 401 and its Sign out control. Status: unverified; the HTML
+  has not been inspected.
+- The reconciler pushes files; its fallback to path sync has not been traced.
+  Status: partial.
+- `--data-dir` is named in the plan but is not among the installer flags.
+  Status: decision; change the plan or the scripts.
+- Harness-side edits in each harness repository (plan §5.4). Status:
+  unverified; outside this repository.
+- Phase 2: backup timer set up by the installer, LaunchDaemon option on macOS,
+  Homebrew formula and `.deb`, CI building release archives on tags. Status:
+  planned.
+- Phase 3: read-only keys, and an audit of key use in the flight recorder.
+  Status: planned.
 
 **Optional PostgreSQL backend.** Let the operator choose SQLite (the default)
 or PostgreSQL with the same API, pages, tools and behaviour. Status: planned,
@@ -55,6 +73,12 @@ from [plan §8](plans/MISSION-HUD-PLAN.md#8-outstanding):
   Status: open; remove it.
 - **`mission-20261009-02`** is still `not-started` in the live database and
   stale under the 48-hour rule. Abandon it or keep it. Status: decision.
+- **The `step-sync` note is not copied into the step summary** (plan §2.3).
+  Status: unverified; not traced.
+- **Live-system checks the repository cannot confirm.** The §2.4 backfill on
+  the live database; the running memoryd process (the binary's sha1 matches
+  `b15baa93`; the process has not been inspected); and the closure of triage
+  run 89 on the live database. Status: unverified.
 
 ## Findings triage
 
@@ -92,7 +116,7 @@ amend, supersede, duplicate. The operator-side path (reopen a decided proposal
 and ratify it as an amendment, or retire the directive) has shipped. Status:
 open, partly done. This matters more as directives accumulate.
 
-**`CONVENTIONS.md` is outside the pipeline.** The 28 `CONV-` entries in the
+**`CONVENTIONS.md` is outside the pipeline.** The `CONV-` entries in the
 Bishop harness's `reference/CONVENTIONS.md` are human-ratified rules, but they
 are not in the `directives` table and the processor does not read them.
 Whether to import them as directives is undecided. Status: decision.
@@ -226,9 +250,28 @@ inline in the handlers, and the service does not write views back to the
 harness tree. Either needs its own design first (see `CONTRIBUTING.md`).
 Status: deferred.
 
+**Global request body cap.** The 8 MiB cap covers the push route only; other
+routes have no cap yet. Plan §3.4, phase 3. Status: planned.
+
 ## Harness portability
 
 Plan in progress — see docs/plans/HARNESS-PORTABILITY-PLAN.md (to be written).
+
+## Docs and README
+
+Drift in the README and the docs index, found on 2026-10-20. Each is also a
+line in [PROGRESS.md](PROGRESS.md#docsreadme). Status: open.
+
+- `docs/README.md` says phase 2 of the HUD is deferred; it has shipped. Status:
+  fixed on `docs/roadmap-progress`, not yet on `main`.
+- The README table list is stale against `db/schema.sql`.
+- The README describes the HUD switch as three pages; Crew is the fourth.
+- The README repository map omits `/crew` and `/performance`.
+- The README configuration table omits `BISHOP_MEMORY_CA_FILE`.
+- The README network section omits the push routes and `scripts/push-memory.py`.
+- The CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`,
+  `agent_mistakes`, review verdicts or brief prep, and no entry of its own for
+  the Crew page.
 
 ## Before starting work
 
@@ -281,7 +324,7 @@ Listed by area, newest work first within each. Commits are on `main`.
 - OpenCode triage engine, `TRIAGE_ENGINE=opencode` (PR #4, 7943ac8; 54058ff).
 - Classifier batch size 20 (PR #6, f9d8f1f; 2df2f46).
 - `--reclassify` in `scripts/triage-run.sh`.
-- 17-category taxonomy in `db/finding-categories.json`.
+- Category taxonomy in `db/finding-categories.json`.
 
 **Harness registry and tooling**
 

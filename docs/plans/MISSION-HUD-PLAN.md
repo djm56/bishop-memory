@@ -18,17 +18,17 @@
   `bin/memoryd.new`, and triage run 99. Run 89 is closed. Memory insight stages
   4 to 8 are not started.
 
-Status: phases 1 and 3 shipped and merged to `main` (main head 6c653ac);
-phase 2 tables live — `mission_criteria` (c325080), `agent_mistakes`
-(2347527), `mission_deliverables` (a53c1ac), `mission_lessons` (1e78378);
-review verdicts parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page
-and GET /v1/crew (stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP
-tool (stage 3, 3112a24). Built and deployed live (memoryd sha1 b15baa93) but
-merged to main through PR #5 (`6772e85`, 2026-10-19), after branch
-`feat/hud-redesign` and `fix/triage-run-actions`. §2.4 sync and backfill run on the
-live database. How the shipped pages work is in the wiki:
+Status: phases 1 and 3 shipped and merged to `main`; phase 2 tables live —
+`mission_criteria` (c325080), `agent_mistakes` (2347527),
+`mission_deliverables` (a53c1ac), `mission_lessons` (1e78378); review verdicts
+parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page and GET /v1/crew
+(stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP tool (stage 3,
+3112a24). The redesign and triage close controls were merged to `main` through
+PR #5 (`6772e85`, 2026-10-19) from branches `feat/hud-redesign` and
+`fix/triage-run-actions`. Memoryd sha1 b15baa93 matches the binary in `bin/`;
+the running process has not been inspected. The §2.4 backfill on the live
+database is unverified. How the shipped pages work is in the wiki:
 `../wiki/Mission-HUD-Guide.md`. Outstanding items in §8.
-Date: 2026-10-19.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each

@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-20
+Last updated: 2026-10-20, against `main` at `f9d8f1f`
 
 ## Summary
 
@@ -14,12 +14,12 @@ Last updated: 2026-10-20
 | PostgreSQL | 0 | 5 | 0% |
 | Memory insight | 7 | 14 | 33% |
 | Mission HUD | 15 | 8 | 65% |
-| Triage & grading | 11 | 13 | 46% |
-| Reconciler | 1 | 12 | 8% |
+| Triage & grading | 10 | 14 | 42% |
+| Reconciler | 0 | 13 | 0% |
 | Service hardening | 2 | 4 | 33% |
-| Docs/README | 3 | 7 | 30% |
+| Docs/README | 1 | 9 | 10% |
 | Harness portability | 0 | 1 | 0% |
-| **Total** | **50** | **75** | **40%** |
+| **Total** | **46** | **79** | **37%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -30,31 +30,45 @@ Percentage is done ÷ (done + outstanding), to the nearest whole number.
 - Partly done stays unticked, with `(partial: …)` saying what is missing.
   Work that the repository cannot confirm stays unticked, with
   `(unverified: …)` saying what would confirm it.
-- An item accepted as it stands is ticked and says so: `(accepted: …)`.
+- An item accepted as it stands is not ticked. It says so: `(accepted: …)`,
+  and it is not counted as done.
 - When an item ships, move it to **Shipped** in ROADMAP.md as well.
-- Change the Last updated line and recount the summary table whenever a box changes.
+- Change the Last updated line whenever a box changes. Run the count command
+  below; the summary table must match it.
+
+Count command, one line per workstream section, then a total. It is anchored
+to line start, so the `- [x]` in the bullet above is not counted:
+
+```sh
+awk '
+/^## / { if (s != "" && d + o > 0) print s "|" d + 0 "|" o + 0; s = substr($0, 4); d = 0; o = 0; next }
+/^- \[x\] / { d++; td++ }
+/^- \[ \] / { o++; to++ }
+END { if (d + o > 0) print s "|" d + 0 "|" o + 0; print "Total|" td + 0 "|" to + 0 }
+' docs/PROGRESS.md
+```
 
 ## Network deployment
 
 Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md)
 
 - [x] Named API keys, hashed at rest, with `memoryd keys add|list|revoke` — `internal/auth/keys.go`, `cmd/memoryd/commands.go` ([§3.1](plans/NETWORK-DEPLOYMENT-PLAN.md#31-api-keys))
-- [x] Fail-closed start-up guard: no keys off loopback means refusal to start — `cmd/memoryd/main.go:53-64` ([§3.2](plans/NETWORK-DEPLOYMENT-PLAN.md#32-when-keys-are-required))
-- [x] Built-in TLS via `TLS_CERT_FILE` and `TLS_KEY_FILE` — `cmd/memoryd/main.go:51` ([§3.3](plans/NETWORK-DEPLOYMENT-PLAN.md#33-transport))
+- [x] Fail-closed start-up guard: no keys off loopback means refusal to start — `cmd/memoryd/main.go:53-66` ([§3.2](plans/NETWORK-DEPLOYMENT-PLAN.md#32-when-keys-are-required))
+- [x] Built-in TLS via `TLS_CERT_FILE` and `TLS_KEY_FILE` — `cmd/memoryd/main.go:49-52, 146` ([§3.3](plans/NETWORK-DEPLOYMENT-PLAN.md#33-transport))
 - [x] Warning on plain HTTP bound to a network address — `cmd/memoryd/main.go:62-64` ([§3.3](plans/NETWORK-DEPLOYMENT-PLAN.md#33-transport))
 - [x] Clients send the key: mcpd, the reconciler, the triage scripts — `cmd/mcpd/clientenv.go` ([§3.1](plans/NETWORK-DEPLOYMENT-PLAN.md#31-api-keys))
-- [ ] (unverified: the browser's prompt on 401 and its Sign out control; the HTML has not been inspected) ([§3.1](plans/NETWORK-DEPLOYMENT-PLAN.md#31-api-keys))
+- [ ] Browser prompts for a key on 401 and offers Sign out (unverified: the HTML has not been inspected) ([§3.1](plans/NETWORK-DEPLOYMENT-PLAN.md#31-api-keys))
 - [x] Push, hashes and delete routes: `POST /v1/documents/push`, `GET /v1/documents/hashes`, `POST /v1/documents/delete` — `internal/api/router.go:146-148`, `internal/api/documents_push.go` ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
 - [x] `scripts/push-memory.py` pushes changed files — `scripts/push-memory.py` ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
-- [ ] (partial: the reconciler pushes, but its fallback to path sync has not been traced) ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
+- [ ] Reconciler pushes instead of reading paths (partial: the push path exists; its fallback to path sync has not been traced) ([§4](plans/NETWORK-DEPLOYMENT-PLAN.md#4-files-over-the-network-push-instead-of-pull))
 - [x] Embedded schema, so the binary runs from any directory — `db/embed.go` ([§5.1](plans/NETWORK-DEPLOYMENT-PLAN.md#51-one-binary-no-checkout-needed))
 - [x] `make dist` for linux and darwin, amd64 and arm64 — `Makefile:49` ([§5.1](plans/NETWORK-DEPLOYMENT-PLAN.md#51-one-binary-no-checkout-needed))
 - [x] `install.sh client` writes `client.env` at mode 600 — `scripts/install.sh:30, 265` ([§5.3](plans/NETWORK-DEPLOYMENT-PLAN.md#53-each-client-machine))
 - [x] `memoryd backup` writes a consistent copy — `cmd/memoryd/commands.go` ([§5.7](plans/NETWORK-DEPLOYMENT-PLAN.md#57-backups))
-- [ ] (partial: `scripts/install.sh server` has not been run for real on Linux or macOS) ([§5.2](plans/NETWORK-DEPLOYMENT-PLAN.md#52-the-server))
-- [ ] (unverified: TLS with a real certificate has not been run) ([§6](plans/NETWORK-DEPLOYMENT-PLAN.md#6-phases))
-- [ ] (partial: `--data-dir` is named in the plan but is not among the installer flags; the plan or the scripts should change) ([§5.2](plans/NETWORK-DEPLOYMENT-PLAN.md#52-the-server))
-- [ ] (unverified: the harness-side edits in each harness repository) ([§5.4](plans/NETWORK-DEPLOYMENT-PLAN.md#54-changes-in-each-harness-outside-this-repository))
+- [ ] Server installer run for real on Linux and macOS (partial: `scripts/install.sh server` has not been run) ([§5.2](plans/NETWORK-DEPLOYMENT-PLAN.md#52-the-server))
+- [ ] TLS run with a real certificate (unverified) ([§6](plans/NETWORK-DEPLOYMENT-PLAN.md#6-phases))
+- [ ] `--data-dir` installer flag (partial: named in the plan, absent from the installers; change the plan or the scripts) ([§5.2](plans/NETWORK-DEPLOYMENT-PLAN.md#52-the-server))
+- [ ] Harness-side edits in each harness repository (unverified: outside this repository) ([§5.4](plans/NETWORK-DEPLOYMENT-PLAN.md#54-changes-in-each-harness-outside-this-repository))
 - [ ] Phase 2: backup timer set up by the installer ([§5.7](plans/NETWORK-DEPLOYMENT-PLAN.md#57-backups))
 - [ ] Phase 2: LaunchDaemon option on macOS ([§6](plans/NETWORK-DEPLOYMENT-PLAN.md#6-phases))
 - [ ] Phase 2: Homebrew formula and `.deb` ([§6](plans/NETWORK-DEPLOYMENT-PLAN.md#6-phases))
@@ -80,7 +94,7 @@ Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md)
 - [x] Phase 0: workspace scratch ranked at half weight in search — `internal/api/search.go:212-223`, `ef23e11` ([§2](plans/MEMORY-INSIGHT-PLAN.md#2-phase-0--data-health-built))
 - [x] Phase 0: `mission.updated` notes name each changed field; journal shows `occurred_at` — `internal/api/missions.go`, CHANGELOG ([§2](plans/MEMORY-INSIGHT-PLAN.md#2-phase-0--data-health-built))
 - [x] Stage 1b: review verdicts parsed on read — `internal/review/verdict.go`, `06e4f8a` ([§9](plans/MEMORY-INSIGHT-PLAN.md#9-build-order-agreed-2026-10-16))
-- [ ] (partial: stage 1a, the fixed `Verdict:` line, is accepted by the parser; no agent or skill definition carries it yet, pending ratification of P3) ([§9](plans/MEMORY-INSIGHT-PLAN.md#9-build-order-agreed-2026-10-16))
+- [ ] Stage 1a, the fixed `Verdict:` line in the agent and skill definitions (partial: the parser accepts the line; no definition carries it yet, pending ratification of P3) ([§9](plans/MEMORY-INSIGHT-PLAN.md#9-build-order-agreed-2026-10-16))
 - [x] Stage 2: Crew page at `/crew` and `GET /v1/crew` — `internal/ui/crew.html`, `f0da6af` ([§9](plans/MEMORY-INSIGHT-PLAN.md#9-build-order-agreed-2026-10-16))
 - [x] Stage 3: brief prep, `GET /v1/brief-prep` and the `brief_prep` MCP tool — `internal/api/brief_prep.go`, `3112a24` ([§6](plans/MEMORY-INSIGHT-PLAN.md#6-phase-4--feed-the-memory-forward))
 - [ ] Phase 2: Library at `/library` ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
@@ -141,7 +155,7 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [x] OpenCode triage engine, `TRIAGE_ENGINE=opencode` — PR #4 (`7943ac8`), `54058ff`, `scripts/triage-run.sh` ([wiki](wiki/Developer-Triage-Agents.md))
 - [x] Classifier batch size 20 — PR #6 (`f9d8f1f`), `2df2f46` ([ROADMAP](ROADMAP.md#shipped))
 - [x] `--reclassify` option — `scripts/triage-run.sh:161` ([ROADMAP](ROADMAP.md#findings-triage))
-- [x] Triage run 89 closed as `failed` — live database, `triage_runs` row 89 ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Triage run 89 closed as `failed` (unverified: closed on the live database; no commit, PR or path confirms it) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Triage run 99 is still `running` since 2026-10-19 19:20 UTC; close it as failed once the model key is confirmed (decision) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Pending recommendations never expire by age; a sweep is needed ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] No acceptance rate per category over time; the data is present (252 accepted, 76 declined on 2026-10-20) ([ROADMAP](ROADMAP.md#findings-triage))
@@ -149,7 +163,7 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [ ] `CONVENTIONS.md` import as directives (decision) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Patterns are not linked to the findings they answer ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] One-step apply, `scripts/triage-apply.py` (deferred: decision 6, no auto-apply) ([ROADMAP](ROADMAP.md#findings-triage))
-- [ ] Taxonomy tuning: `brief-writing` holds 22% of findings and `class-closure` holds 1 (decision, then re-classify) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Taxonomy tuning: `brief-writing` held 22% of findings and `class-closure` 1 on 2026-10-20 (decision, then re-classify) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] The exporter does not check for a mission in progress (open, low) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Export conflicts are reported only by the exporter, not on the review page (open, low) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Sub-themes across runs and recurrence detection (idea only) ([ROADMAP](ROADMAP.md#findings-triage))
@@ -172,7 +186,7 @@ Plan: none. The items are in [ROADMAP](ROADMAP.md#reconciler) and
 - [ ] Harness side: the hook leaks its `mktemp` file when signalled (unverified here) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
 - [ ] Harness side: one hook comment claims more than the code guarantees (unverified here) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
 - [ ] Harness side: the hook's function variables are globals (open, low; unverified here) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
-- [x] Harness side: `SIGKILL` mid-reconcile leaves the lock directory (accepted: no fix planned; step H is the backstop) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
+- [ ] Harness side: `SIGKILL` mid-reconcile leaves the lock directory (accepted: no fix planned; step H is the backstop; unticked, so not counted as done) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
 - [ ] Harness side: stderr suppressed while probing in `connect-bishop-memory.sh` (unverified here) ([ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository))
 
 ## Service hardening
@@ -189,15 +203,15 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 ## Docs/README
 
 - [x] `docs/` holds only the roadmap and plans; user docs are in the wiki — `docs/README.md`, CHANGELOG `[Unreleased]` ([docs index](README.md))
-- [x] HUD plan §8: the merge and push are marked done (PR #5) — `docs/plans/MISSION-HUD-PLAN.md` ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [x] Status blocks as of 2026-10-20 on the four plans (memory insight, HUD, network, PostgreSQL) ([plans](plans/))
-- [ ] `docs/README.md` says phase 2 of the HUD is deferred; it has shipped ([docs index](README.md))
+- [ ] HUD plan §8: the merge and push are marked done (PR #5) — `docs/plans/MISSION-HUD-PLAN.md` (unverified: the §8 edit is on `docs/roadmap-progress`, not yet on `main`) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
+- [ ] Status blocks as of 2026-10-20 on the four plans (memory insight, HUD, network, PostgreSQL) (unverified: on `docs/roadmap-progress`, not yet on `main`) ([plans](plans/))
+- [ ] `docs/README.md` says phase 2 of the HUD is deferred; it has shipped (fixed on `docs/roadmap-progress`; ticks when on `main`) ([docs index](README.md))
 - [ ] README table list is stale: it says ten harness tables and seven triage tables; the schema has 21 tables and the triage group is six ([README](../README.md))
 - [ ] README describes the HUD switch as three pages; Crew is the fourth ([README](../README.md))
 - [ ] README repository map omits `/crew` and `/performance` ([README](../README.md))
 - [ ] README configuration table omits `BISHOP_MEMORY_CA_FILE` ([README](../README.md))
 - [ ] README network section omits the push routes and `scripts/push-memory.py` ([README](../README.md))
-- [ ] CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`, `agent_mistakes`, review verdicts, the Crew page or brief prep ([CHANGELOG](../CHANGELOG.md))
+- [ ] CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`, `agent_mistakes`, review verdicts or brief prep, and no entry of its own for the Crew page (it is named only inside the HUD redesign entry) ([CHANGELOG](../CHANGELOG.md))
 
 ## Harness portability
 

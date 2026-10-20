@@ -12,7 +12,7 @@ A memory service for the Bishop agent harness. One Go binary, one SQLite databas
 |---|---|
 | **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [Home Server Setup](docs/wiki/Home-Server-Setup.md) · [Server Install](docs/wiki/Server-Install.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
 | **Developers** — change the service | [Overview](docs/wiki/Developer-Overview.md) · [HTTP API](docs/wiki/Developer-HTTP-API.md) · [Database](docs/wiki/Developer-Database.md) · [MCP Adapter](docs/wiki/Developer-MCP-Adapter.md) · [Scripts and Reconciler](docs/wiki/Developer-Scripts-and-Reconciler.md) · [Triage Agents](docs/wiki/Developer-Triage-Agents.md) · [Testing and CI](docs/wiki/Developer-Testing-and-CI.md) · [Harness Integration](docs/wiki/Developer-Harness-Integration.md) |
-| **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
+| **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Progress](docs/PROGRESS.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
 
 The pages under `docs/wiki/` are the documentation, published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth. The rest of `docs/` holds only the roadmap and active design plans.
 
