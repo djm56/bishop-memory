@@ -17,9 +17,9 @@ Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase
 | Triage & grading | 10 | 14 | 42% |
 | Reconciler | 0 | 13 | 0% |
 | Service hardening | 2 | 4 | 33% |
-| Docs/README | 0 | 10 | 0% |
+| Docs/README | 8 | 2 | 80% |
 | Harness portability | 0 | 8 | 0% |
-| **Total** | **47** | **85** | **36%** |
+| **Total** | **55** | **77** | **42%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -135,7 +135,7 @@ Plan: [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md)
 - [ ] Browser check of the triage close controls (unverified: code reading only) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Triage category rail is mouse-only, with no keyboard access ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Pager focus edge cases on the HUD pages ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [x] Stray `bin/memoryd.new` (about 36 MB, gitignored) removed. Evidence: removed 2026-10-20, mission-20261020-02 step 1; identical rollback kept at `~/.local/libexec/bishop-memory/memoryd.pre-mission-20261018-03` (the identity of the rollback to the removed file is operator-reported; the removed file cannot be compared from the repository). Operational action on the live system, not code, so there is no commit. ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
+- [x] Stray `bin/memoryd.new` (about 36 MB, gitignored) removed. Evidence: removed 2026-10-20, mission-20261020-02 step 1; identical rollback kept at `~/.local/libexec/bishop-memory/memoryd.pre-mission-20261018-03`. Rollback identity verified: the removed file's sha1 was recorded at step 1 as `1f9e921b143981614691705920ce60e44d2490c5`, and the rollback's `shasum` is the same. Operational action on the live system, not code, so there is no commit. ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Live memoryd matches the plan's `b15baa93` (partial: the binary's hash matches; the running process has not been inspected) ([header](plans/MISSION-HUD-PLAN.md))
 - [x] `mission-20261009-02` closed complete/failed (abandoned by operator) 2026-10-20 via PATCH. Evidence: a live read of `GET /v1/missions/mission-20261009-02` on 2026-10-20 returns `status` complete, `outcome` failed, `closed_at` 2026-10-20 08:18:34 and `next_action` "Abandoned by operator 2026-10-20 (mission-20261020-02); not run." The read shows the state only; the PATCH method is operator-reported. Operational action on the live system, not code, so there is no commit. ([ROADMAP](ROADMAP.md#planned-work))
 
@@ -202,15 +202,15 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 
 ## Docs/README
 
-- [ ] `docs/` holds only the roadmap and plans; user docs are in the wiki — `docs/README.md`, CHANGELOG `[Unreleased]` (partial: PROGRESS.md now sits in `docs/` too, and `docs/README.md` changed on `docs/roadmap-progress`, not on `main`; ticks when merged) ([docs index](README.md))
-- [ ] HUD plan §8: the merge and push are marked done (PR #5) — `docs/plans/MISSION-HUD-PLAN.md` (unverified: the §8 edit is on `docs/roadmap-progress`, not yet on `main`) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [ ] Status blocks as of 2026-10-20 on the four plans (memory insight, HUD, network, PostgreSQL) (unverified: on `docs/roadmap-progress`, not yet on `main`) ([plans](plans/))
-- [ ] `docs/README.md` says phase 2 of the HUD is deferred; it has shipped (fixed on `docs/roadmap-progress`; ticks when on `main`) ([docs index](README.md))
-- [ ] README table list is stale: it says ten harness tables and seven triage tables; as of 2026-10-20 the schema has 21 tables (`grep -c 'CREATE TABLE' db/schema.sql`) and the triage group is six (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
-- [ ] README describes the HUD switch as three pages; Crew is the fourth (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
-- [ ] README repository map omits `/crew` and `/performance` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
-- [ ] README configuration table omits `BISHOP_MEMORY_CA_FILE` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
-- [ ] README network section omits the push routes and `scripts/push-memory.py` (fixed on `docs/roadmap-progress`; ticks when on `main`) ([README](../README.md))
+- [ ] `docs/` holds only the roadmap and plans; user docs are in the wiki — `docs/README.md`, CHANGELOG `[Unreleased]` (partial: PROGRESS.md sits in `docs/` and `docs/README.md` describes it as build material; both are on `main` via PR #7 (250202c). The item still names only the roadmap and plans, so it stays unticked until its wording is settled) ([docs index](README.md))
+- [x] HUD plan §8: the merge and push are marked done (PR #5) — `docs/plans/MISSION-HUD-PLAN.md`, on main via PR #7 (250202c) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
+- [x] Status blocks as of 2026-10-20 on the four plans (memory insight, HUD, network, PostgreSQL), on main via PR #7 (250202c) ([plans](plans/))
+- [x] `docs/README.md` says phase 2 of the HUD is deferred; it has shipped. On main via PR #7 (250202c) ([docs index](README.md))
+- [x] README table list is stale: it did not match the schema, which as of 2026-10-20 has 21 tables (`grep -c 'CREATE TABLE' db/schema.sql`). On main via PR #7 (250202c) ([README](../README.md))
+- [x] README describes the HUD switch as three pages; Crew is the fourth. On main via PR #7 (250202c) ([README](../README.md))
+- [x] README repository map omits `/crew` and `/performance`. On main via PR #7 (250202c) ([README](../README.md))
+- [x] README configuration table omits `BISHOP_MEMORY_CA_FILE`. On main via PR #7 (250202c) ([README](../README.md))
+- [x] README network section omits the push routes and `scripts/push-memory.py`. On main via PR #7 (250202c) ([README](../README.md))
 - [ ] CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`, `agent_mistakes`, review verdicts or brief prep, and no entry of its own for the Crew page (it is named only inside the HUD redesign entry) ([CHANGELOG](../CHANGELOG.md))
 
 ## Harness portability

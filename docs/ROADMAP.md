@@ -14,7 +14,7 @@ it; a run or a harness-side check is needed), **accepted** (decided as it
 stands, with no fix planned).
 
 Last checked against the code: 2026-10-20 (status audit of `main` at
-`f9d8f1f` and the live database).
+`250202c` and the live database).
 
 ## Planned work
 
@@ -280,18 +280,13 @@ The decisions in plan §9 are open for the operator.
 ## Docs and README
 
 Drift in the README and the docs index, found on 2026-10-20. Each is also a
-line in [PROGRESS.md](PROGRESS.md#docsreadme). The items below are fixed on
-`docs/roadmap-progress` and close when that branch merges to `main`.
+line in [PROGRESS.md](PROGRESS.md#docsreadme). The fixes to the README, the
+docs index, the HUD plan's §8 and the plans' status blocks are on `main`
+through PR #7 (merge `250202c`) and are listed under
+[Shipped](#shipped).
 
-- `docs/README.md` says phase 2 of the HUD is deferred; it has shipped.
-- The README table list is stale against `db/schema.sql`.
-- The README describes the HUD switch as three pages; Crew is the fourth.
-- The README repository map omits `/crew` and `/performance`.
-- The README configuration table omits `BISHOP_MEMORY_CA_FILE`.
-- The README network section omits the push routes and `scripts/push-memory.py`.
-- The HUD plan's §8 and the status blocks on the four plans (memory insight,
-  HUD, network, PostgreSQL), dated 2026-10-20, are on `docs/roadmap-progress`
-  only, not yet on `main`.
+What is still open:
+
 - The CHANGELOG has no entries for `mission_lessons`, `mission_deliverables`,
   `agent_mistakes`, review verdicts or brief prep, and no entry of its own for
   the Crew page.
@@ -311,13 +306,19 @@ line in [PROGRESS.md](PROGRESS.md#docsreadme). The items below are fixed on
 Listed by area, newest work first within each. Entries are commits on `main`,
 except the operational ones, which name their evidence instead.
 
+**Docs and README**
+
+- Docs drift on the README, the docs index, the HUD plan's §8 and the plan
+  status blocks corrected, on `main` through PR #7 (merge `250202c`). The
+  item-by-item evidence is in [PROGRESS.md](PROGRESS.md#docsreadme).
+
 **Mission HUD and structured debriefs**
 
 - Operational, no commit (live system, 2026-10-20): the stray `bin/memoryd.new`
   is removed, with an identical rollback kept at
   `~/.local/libexec/bishop-memory/memoryd.pre-mission-20261018-03` (removed in
-  mission-20261020-02 step 1; the rollback's identity to the removed file is
-  operator-reported). `mission-20261009-02` is closed complete/failed
+  mission-20261020-02 step 1; the rollback is verified identical to the removed
+  file, both sha1 `1f9e921b143981614691705920ce60e44d2490c5`). `mission-20261009-02` is closed complete/failed
   (abandoned by operator) via PATCH on 2026-10-20; a live read confirms the
   state, and the PATCH method is operator-reported.
 - Mission HUD phase 2, structured debriefs: `mission_criteria` (c325080),
