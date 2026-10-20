@@ -11,6 +11,7 @@ here ahead of an actual release.
 
 ### Added
 
+- **Harness portability plan (documentation only)** — `docs/plans/HARNESS-PORTABILITY-PLAN.md` records the coupling inventory from the code, the research on Claude Code, OpenCode, pi and Kirsch, the target architecture (generic core, harness adapters, integration contract) and eight phases with exit criteria. Nothing is built; `docs/ROADMAP.md` and `docs/PROGRESS.md` track the phases.
 - **Stale missions on the HUD** — `GET /v1/hud/missions` returns `last_activity` (the later of the mission's `updated_at` and its newest journal event) and `stale` (not complete, idle 48 hours), and takes a `stale` filter. The mission list shows a `stale` pill, the header counts stale missions, and the status menu has a **stale** option.
 - **Missions record their harness on create** — `POST /v1/missions` takes `harness`; `PATCH` fills it only while it is empty, never moving a mission between harnesses; `GET /v1/missions` returns it. `mission_create` sends the mcpd's `BISHOP_HARNESS`, and the reconciler sends `--harness` on create and claims harness-less missions it owns. `scripts/backfill-mission-links.py` gains a `mission-harness` part (from the mission's own documents) and `--only` (`make mission-links ONLY=…`).
 - **Plan:** `docs/plans/MEMORY-INSIGHT-PLAN.md`.

@@ -14,6 +14,7 @@ it.
 | [PROGRESS.md](PROGRESS.md) | Item-by-item progress against the roadmap, with evidence |
 | [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) | Install on any Unix server, network access, API keys |
 | [plans/POSTGRES-PLAN.md](plans/POSTGRES-PLAN.md) | An optional PostgreSQL backend beside SQLite |
+| [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md) | Installing bishop-memory into harnesses other than Bishop: Claude Code, OpenCode, pi and Kirsch, with the coupling inventory and the phases |
 | [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md) | The mission HUD; phases 1, 2 (structured debriefs) and 3 shipped |
 | [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md) | Cross-mission insight: data health, structured debriefs and reviews, crew and library pages, cost, and feeding memory forward |
 | [wiki/](wiki/) | Source of the GitHub wiki |

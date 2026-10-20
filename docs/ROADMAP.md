@@ -257,7 +257,28 @@ routes have no cap yet. Plan §3.4, phase 3. Status: planned.
 
 ## Harness portability
 
-Plan in progress — see docs/plans/HARNESS-PORTABILITY-PLAN.md (to be written).
+**Make bishop-memory installable into harnesses other than Bishop.** Plain
+Claude Code, OpenCode, pi and the operator's Kirsch harness, through a generic
+core, a neutral integration contract and one adapter per harness. Bishop stays
+the reference harness and must not break. Status: planned. The research and
+the coupling inventory are done and nothing is built. Plan:
+[plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md). Items
+per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
+
+- Phase 1, compatibility guard: golden tests on the shipped fixture, and a seam
+  for the Bishop values. Status: planned.
+- Phase 2, layout profile: the memory layout moves into a profile, and the
+  mission-ID mismatch is fixed. Status: planned.
+- Phase 3, integration contract and generic names. Status: planned.
+- Phase 4, plain Claude Code adapter. Status: planned.
+- Phase 5, OpenCode adapter. Status: planned.
+- Phase 6, pi adapter (pi is now maintained by Earendil and its MCP stance has
+  reversed; see the plan's §3.3). Status: planned.
+- Phase 7, Kirsch adapter, which waits on the operator's answers (plan §11,
+  K1 to K6). Status: planned.
+- Phase 8, packaging and distribution. Status: planned.
+
+Decisions H1 to H9 are open for the operator (plan §9).
 
 ## Docs and README
 

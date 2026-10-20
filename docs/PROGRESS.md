@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-20, against `main` at `f9d8f1f`
+Last updated: 2026-10-20, against `main` at `f9d8f1f` (harness portability items added on `docs/roadmap-progress`)
 
 ## Summary
 
@@ -18,8 +18,8 @@ Last updated: 2026-10-20, against `main` at `f9d8f1f`
 | Reconciler | 0 | 13 | 0% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 0 | 10 | 0% |
-| Harness portability | 0 | 1 | 0% |
-| **Total** | **45** | **80** | **36%** |
+| Harness portability | 0 | 8 | 0% |
+| **Total** | **45** | **87** | **34%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -215,4 +215,14 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 
 ## Harness portability
 
-- [ ] Plan in progress: `docs/plans/HARNESS-PORTABILITY-PLAN.md` (to be written; placeholder)
+Plan: [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md).
+Research and the coupling inventory are done; nothing is built.
+
+- [ ] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
+- [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
+- [ ] Phase 3: neutral integration contract, generic names and the conformance fixture (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-3--the-integration-contract-and-generic-names))
+- [ ] Phase 4: plain Claude Code adapter (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-4--plain-claude-code-adapter))
+- [ ] Phase 5: OpenCode adapter, including the `AGENTS.md` loading test (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-5--opencode-adapter))
+- [ ] Phase 6: pi adapter, with `exposure: "direct"` for the memory tools (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-6--pi-adapter))
+- [ ] Phase 7: Kirsch adapter, which waits on the operator's answers K1 to K6 (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-7--kirsch-adapter), [§11](plans/HARNESS-PORTABILITY-PLAN.md#11-open-questions-for-the-operator))
+- [ ] Phase 8: packaging, a Claude Code plugin and marketplace, a pi package, and `install.sh --harness` (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-8--packaging), [§6](plans/HARNESS-PORTABILITY-PLAN.md#6-packaging-and-distribution))
