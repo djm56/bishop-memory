@@ -1,7 +1,24 @@
 # Network Deployment — Plan
 
-Status: phase 1 built on branch `feat/network-deploy` (§6 lists what is in
-it and what was tested). Phases 2 and 3 are not started.
+**Status as of 2026-10-20:**
+
+- **Phase 1 (§6): built and on `main`** (commits 4ad2268, 9ec43a5, d70fd8b,
+  4cb5b6d, 8d2b294). Done: named API keys, the start-up guard, built-in TLS,
+  push routes, installers, `make dist`, `memoryd backup`. Not yet run: the
+  server installer for real on Linux or macOS, and TLS with a real certificate.
+- **Security (§3):** keys, the guard, TLS and the push body limit are done.
+  Lockout and the global body cap are not started (phase 3). The TLS run with a
+  real certificate is open.
+- **Files (§4):** push routes, hashes, delete and `push-memory.py` are done. The
+  reconciler's push path is partial; its fallback has not been traced.
+- **Installing (§5):** the binary and client install are done. The server
+  installer is not yet run for real. The `--data-dir` flag named in §5.2 is not
+  in the installers. The harness-side edits (§5.4) are unverified here. The
+  backup timer is not started (phase 2).
+- **Phases 2 and 3 (§6):** not started.
+
+Status: phase 1 built and on `main` (§6 lists what is in it and what was
+tested). Phases 2 and 3 are not started.
 Date: 2026-10-08.
 
 The goal: run memoryd on any Unix machine — an Ubuntu server, another Linux
@@ -48,6 +65,8 @@ pages in the browser.
 
 ### 3.1 API keys
 
+*Status: done.*
+
 - **Named keys, stored hashed.** A keys file (`BISHOP_API_KEYS_FILE`,
   default `<data dir>/api-keys`) holds one line per key:
   `<name> <sha256 of key>`. memoryd never stores a key in clear.
@@ -75,6 +94,8 @@ One scope (full access) per key. Read-only keys are phase 3.
 
 ### 3.2 When keys are required
 
+*Status: done.*
+
 | Bind | Keys configured | Result |
 |---|---|---|
 | loopback | none | Open, as today. |
@@ -83,6 +104,8 @@ One scope (full access) per key. Read-only keys are phase 3.
 | non-loopback | none | **memoryd refuses to start**, unless `BISHOP_ALLOW_NO_AUTH=1` (logged loudly at every start). |
 
 ### 3.3 Transport
+
+*Status: built. TLS with a real certificate not yet run (§6).*
 
 An API key over plain HTTP can be read by anyone on the path.
 
@@ -115,6 +138,8 @@ since it cannot tell whether the network itself is encrypted.
 
 ### 3.4 Other hardening
 
+*Status: partial. Push body limit and systemd unit done; global body cap and lockout not started (phase 3).*
+
 - The document push route limits its body (8 MiB per request, 1 MiB per
   file, 500 items). Other routes take small JSON bodies and have no explicit
   limit yet; a global body cap is phase 3.
@@ -125,6 +150,8 @@ since it cannot tell whether the network itself is encrypted.
   (`ufw allow from 100.64.0.0/10 to any port 8787` for Tailscale).
 
 ## 4. Files over the network: push instead of pull
+
+*Status: done, except the reconciler's push path, which is partial (its fallback is not traced).*
 
 - **`POST /v1/documents/push`** takes `{"harness", "files": [{"path",
   "rel_path", "content"}], "agents": [{"path", "content"}]}`. `path` is the
@@ -151,6 +178,8 @@ since it cannot tell whether the network itself is encrypted.
 
 ### 5.1 One binary, no checkout needed
 
+*Status: done.*
+
 - `db/schema.sql` is embedded in memoryd (`go:embed`), so the binary runs
   from anywhere.
 - `make dist` builds `memoryd` and `mcpd` for linux/amd64, linux/arm64,
@@ -158,6 +187,8 @@ since it cannot tell whether the network itself is encrypted.
   the installer into `dist/bishop-memory-<version>-<os>-<arch>.tar.gz`.
 
 ### 5.2 The server
+
+*Status: partial. Not yet run for real on Linux or macOS. The `--data-dir` flag named here is not in the installers (open question).*
 
 `scripts/install.sh server` detects the OS and runs the matching installer
 with:
@@ -175,6 +206,8 @@ server must stay logged in, or the agent becomes a LaunchDaemon in phase 2.
 
 ### 5.3 Each client machine
 
+*Status: done.*
+
 `scripts/install.sh client --url https://server:8787 --key <key>`:
 
 - installs `mcpd` and the scripts (or uses a checkout),
@@ -183,6 +216,8 @@ server must stay logged in, or the agent becomes a LaunchDaemon in phase 2.
 - checks the connection with an authenticated call.
 
 ### 5.4 Changes in each harness (outside this repository)
+
+*Status: unverified here. The edits live in the harness repositories.*
 
 The harness owns its configuration (`.claude/bishop-memory.conf`,
 `.opencode/bishop-memory.conf`, `.mcp.json`, `opencode.json`). Each needs:
@@ -198,6 +233,8 @@ repositories.
 
 ### 5.5 Triage
 
+*Status: done (design). Not fully traced.*
+
 The triage agents run **on the workstation that holds the harness
 checkouts** (today, the Mac), against the remote memoryd with a `triage`
 key. That keeps their read access to the harness files and the
@@ -207,6 +244,8 @@ as a decision, not built.
 
 ### 5.6 Moving the existing database
 
+*Status: unverified here.*
+
 Stop memoryd on the Mac, copy `data/memory.db` to the server's data
 directory (`sqlite3 data/memory.db ".backup /tmp/memory.db"` first, for a
 consistent copy), start the server, register the harnesses again with
@@ -214,11 +253,15 @@ their client-side paths, and point the clients at the server.
 
 ### 5.7 Backups
 
+*Status: done. The backup timer is not started (phase 2).*
+
 `memoryd backup <file>` writes a consistent copy (`VACUUM INTO`), safe while
 memoryd serves. The wiki's Server Install page gives a systemd timer and a
 cron line keeping 14 copies; the installer does not set one up (phase 2).
 
 ## 6. Phases
+
+*Status: phase 1 built; phases 2 and 3 not started.*
 
 1. **Built (2026-10-08):** embedded schema; API keys (file, CLI, middleware,
    start-up guard, fail-closed off loopback); built-in TLS; key support in

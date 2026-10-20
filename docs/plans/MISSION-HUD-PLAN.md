@@ -1,16 +1,31 @@
 # Mission HUD — Plan
 
-Status: phases 1 and 3 shipped and merged to `main` (main head 6c653ac);
-phase 2 tables live — `mission_criteria` (c325080), `agent_mistakes`
-(2347527), `mission_deliverables` (a53c1ac), `mission_lessons` (1e78378);
-review verdicts parsed and shown on the HUD (stage 1b, 06e4f8a); Crew page
-and GET /v1/crew (stage 2, f0da6af); GET /v1/brief-prep and brief_prep MCP
-tool (stage 3, 3112a24). Built and deployed live (memoryd sha1 b15baa93) but
-not yet merged to main: branch `feat/hud-redesign` (10 commits ahead of main)
-and `fix/triage-run-actions` on top of it. §2.4 sync and backfill run on the
-live database. How the shipped pages work is in the wiki:
-`../wiki/Mission-HUD-Guide.md`. Outstanding items in §8.
-Date: 2026-10-19.
+**Status as of 2026-10-20:**
+
+- **Phase 1, link what exists (§2): done.** Documents carry `mission_id` and
+  `harness`; sync covers every harness and `PATCH` re-imports; findings take
+  the open mission; step timing is stamped; the backfill script exists.
+  Partial: the `step-sync` note copied into the step summary (§2.3) is not
+  traced, so it is unverified. The §2.4 backfill on the live database is
+  unverified.
+- **Phase 2, structured debrief (§3): done,** shipped under the memory insight
+  plan: `mission_criteria` (c325080), `agent_mistakes` (2347527),
+  `mission_deliverables` (a53c1ac) and `mission_lessons` (1e78378), plus review
+  verdicts (stage 1b, 06e4f8a).
+- **Phase 3, the mission HUD (§4): done.** Endpoints, the `/missions` page,
+  crew rows, scratch cleanup. The redesign and triage close controls were
+  merged to `main` through PR #5 (`6772e85`, 2026-10-19) from branches
+  `feat/hud-redesign` and `fix/triage-run-actions`.
+- **Rollout (§5): done** through step 3.
+- **Memory insight stages shipped alongside:** the Crew page and `GET /v1/crew`
+  (stage 2, f0da6af); `GET /v1/brief-prep` and the `brief_prep` MCP tool
+  (stage 3, 3112a24). Stages 4 to 8 are not started.
+- **Binary:** memoryd sha1 b15baa93 matches the binary in `bin/`; the running
+  process has not been inspected.
+- **Outstanding (§8):** the browser check, the mouse-only category rail, pager
+  focus edge cases, the stray `bin/memoryd.new`, triage run 89's closure on the
+  live database (unverified), triage run 99, and memory insight stages 4 to 8.
+  How the shipped pages work is in the wiki: `../wiki/Mission-HUD-Guide.md`.
 
 The goal is a mission head-up display next to the triage review page. It shows
 the full history of any mission in one place: what it set out to do, how each
@@ -56,6 +71,8 @@ five `documents_fts_*` tables are SQLite's internal storage for that index and
 are never touched directly.
 
 ## 2. Phase 1 — link what is already there
+
+*Status: done (§2.1 to §2.4). §2.3 step-sync summary copy: unverified.*
 
 All schema changes are additive nullable columns, applied by
 `internal/store/migrate.go`.
@@ -121,6 +138,8 @@ fills `documents.mission_id`), then the backfill.
 
 ## 3. Phase 2 — structure the debrief (optional)
 
+*Status: done. Shipped under MEMORY-INSIGHT-PLAN §3 (c325080, 2347527, a53c1ac, 1e78378).*
+
 `mission_criteria` shipped under the memory insight plan; the remaining
 tables (deliverables, lessons, agent_mistakes, step_reviews) are defined in
 `../plans/MEMORY-INSIGHT-PLAN.md` §3, which supersedes this section's earlier
@@ -132,6 +151,8 @@ What this buys: questions the page can filter on, not only text to read —
 provider package", "which files change most often".
 
 ## 4. Phase 3 — the mission HUD
+
+*Status: done (§4.1 to §4.4).*
 
 Built on branch `feat/mission-hud`, without phase 2 (decision D3).
 
@@ -206,6 +227,8 @@ only when the operator runs it.
 
 ## 5. Rollout
 
+*Status: done (steps 1 to 3).*
+
 1. Phase 1 code, tests, deploy, sync, backfill. Check: every kirsch mission
    has three `documents` rows with `mission_id` set; most findings have a
    mission; most finished steps have `ended_at`.
@@ -241,17 +264,24 @@ only when the operator runs it.
 
 ## 8. Outstanding
 
-- **Operator to merge and push** `feat/hud-redesign`, then `fix/triage-run-actions`.
+- **Merge and push** of `feat/hud-redesign`, then `fix/triage-run-actions`:
+  *done.* Both are in `main` through PR #5 (merge commit `6772e85`). Neither
+  branch exists now, and `origin/main` matches `main`.
 - **Browser check** of the triage close controls (look, focus-visible, pill
-  fills) — verified by code reading only so far.
-- **Triage category rail** is mouse-only; no keyboard access.
-- **Pager focus edge cases** on the HUD pages.
-- **Stray `bin/memoryd.new`** left in checkout; to be removed.
-- **Stale triage run 89** to be closed as Failed via Triage → Runs.
+  fills) — verified by code reading only so far. *Status: unverified; no
+  browser run yet.*
+- **Triage category rail** is mouse-only; no keyboard access. *Status: open.*
+- **Pager focus edge cases** on the HUD pages. *Status: open.*
+- **Stray `bin/memoryd.new`** left in checkout; to be removed. *Status: open;
+  still present on 2026-10-20.*
+- **Stale triage run 89** closed as Failed. *Status: unverified; no commit, PR
+  or path confirms the closure on the live database.*
 - **Scheduled triage agents** (classify/triage/grade via opencode) were
   failing on an expired model API key as of 2026-10-19; operator is replacing
-  the key. Any runs left `running` by that failure need closing as Failed.
+  the key. *Status: open.* Run 99 (`running` since 2026-10-19 19:20:18 UTC) is
+  still open on 2026-10-20. Replacement of the key is unverified. Close it as
+  Failed once the key is confirmed.
 - **Remaining memory insight stages** per `MEMORY-INSIGHT-PLAN.md` §9: stages
   4 (Retrieval log and directive citations), 5 (Operator actions on the HUD),
   6 (Cross-harness views), 7 (Cost and usage), and 8 (Git deliverables and
-  operator interventions).
+  operator interventions). *Status: not started.*

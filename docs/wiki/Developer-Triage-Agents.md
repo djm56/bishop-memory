@@ -12,8 +12,8 @@ Three headless agents (on Claude Code by default, or on OpenCode), two skills, o
 | Grader | `.claude/agents/mission-grader.md`, `.opencode/agents/mission-grader.md` | Sonnet, or `opencode-go/glm-5.2`. Grades up to 10 finished missions A–F per run from the database only; see [Mission Grading](Mission-Grading) |
 | Doctrine | `.claude/skills/findings-triage/SKILL.md`, `.claude/skills/mission-grading/SKILL.md` | The rules each agent reads first with the Read tool, on either engine |
 | Runner | `scripts/triage-run.sh` | Credentials, health check, work check, category rotation, the `claude -p` or `opencode run` call, logging |
-| Tools | `cmd/mcpd/triage.go` (`MCPD_PROFILE=triage`) | 15 tools, two of them the grader's (`grade_claim`, `grade_write`); see [MCP Tool Reference](MCP-Tool-Reference) |
-| Taxonomy | `db/finding-categories.json` | 17 categories; descriptions are written for the classifier |
+| Tools | `cmd/mcpd/triage.go` (`MCPD_PROFILE=triage`) | The triage tools; two of them are the grader's (`grade_claim`, `grade_write`). See [MCP Tool Reference](MCP-Tool-Reference) |
+| Taxonomy | `db/finding-categories.json` | The categories; descriptions are written for the classifier |
 | Schedule | `scripts/com.bishop-memory.triage.plist`, `install-triage-schedule.sh` | 21:00 classify, 21:20 process, 21:40 grade |
 
 Agents are **project-scope**: Claude Code discovers `.claude/agents/*.md` in the working directory, so the runner always `cd`s to the bishop-memory checkout. `--strict-mcp-config` with an inline `--mcp-config` means the agents see only the `bishop-triage` server; `--allowedTools` plus the agent's `tools:` frontmatter bound what they may call; `--permission-mode dontAsk` makes anything else a denial rather than a prompt.

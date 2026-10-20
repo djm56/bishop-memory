@@ -8,7 +8,7 @@
 |---|---|---|
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | Validated at start with `url.ParseRequestURI`; must be absolute |
 | `BISHOP_HARNESS` | `claude-code` | Composed into actor identity and stored on findings; set per harness by its `.mcp.json` |
-| `MCPD_PROFILE` | `harness` | `harness` registers the 16 crew tools (`main.go`); `triage` registers the 13 triage tools (`triage.go`); anything else is fatal |
+| `MCPD_PROFILE` | `harness` | `harness` registers the crew tools (`main.go`); `triage` registers the triage tools (`triage.go`); anything else is fatal |
 
 The harness's `connect-bishop-memory.sh` writes `.mcp.json` at project scope so each harness carries its own `BISHOP_HARNESS`; a user-scope registration would give every project the same name and collide on mission ids.
 

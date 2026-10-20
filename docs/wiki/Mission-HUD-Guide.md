@@ -114,7 +114,7 @@ The findings linked to this mission, each with its id, date, status, triage cate
 
 ### Debrief tab
 
-This tab contains four sections from the debrief:
+This tab contains these sections from the debrief:
 
 **Deliverables** — the debrief's **Deliverables Changed** bullets, one row each in order: the path (or `—` when the bullet names none) and the note. With no rows the section says why: no deliverables listed in the debrief, no debrief imported for a closed mission, or the debrief is written when the mission closes.
 

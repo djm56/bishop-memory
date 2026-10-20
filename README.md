@@ -2,6 +2,8 @@
 
 A memory service for the Bishop agent harness. One Go binary, one SQLite database with full-text search, an MCP adapter the crew talks to, a nightly findings-triage loop with a review page for the operator, a mission HUD that shows each mission's history on one page, and a nightly A–F grade on every finished mission rolled up into harness performance.
 
+**Status.** What is built, with the evidence for each item, is in [docs/PROGRESS.md](docs/PROGRESS.md); what is still to do is in [docs/ROADMAP.md](docs/ROADMAP.md). Both are dated, so check the date before relying on a figure in them.
+
 - **Go + Gin + SQLite (FTS5)**, `modernc.org/sqlite`, so there is no C toolchain and the binary cross-compiles statically.
 - **Local by default, networked when you need it.** On loopback with no keys it needs no configuration; on a server it requires an API key from every client. See [Server Install](docs/wiki/Server-Install.md).
 - **Markdown is the source of truth.** The service is a derived copy that several harnesses can share; the reconciler keeps it in step.
@@ -12,9 +14,9 @@ A memory service for the Bishop agent harness. One Go binary, one SQLite databas
 |---|---|
 | **End users** — run a harness against it, review findings, follow missions | [User Guide](docs/wiki/User-Guide.md) · [Home Server Setup](docs/wiki/Home-Server-Setup.md) · [Server Install](docs/wiki/Server-Install.md) · [MCP Tool Reference](docs/wiki/MCP-Tool-Reference.md) · [Review Page Guide](docs/wiki/Review-Page-Guide.md) · [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md) · [Commands and Scripts](docs/wiki/Commands-and-Scripts.md) · [Troubleshooting](docs/wiki/Troubleshooting.md) |
 | **Developers** — change the service | [Overview](docs/wiki/Developer-Overview.md) · [HTTP API](docs/wiki/Developer-HTTP-API.md) · [Database](docs/wiki/Developer-Database.md) · [MCP Adapter](docs/wiki/Developer-MCP-Adapter.md) · [Scripts and Reconciler](docs/wiki/Developer-Scripts-and-Reconciler.md) · [Triage Agents](docs/wiki/Developer-Triage-Agents.md) · [Testing and CI](docs/wiki/Developer-Testing-and-CI.md) · [Harness Integration](docs/wiki/Developer-Harness-Integration.md) |
-| **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
+| **Plans and history** | [Roadmap](docs/ROADMAP.md) · [Progress](docs/PROGRESS.md) · [Design plans](docs/README.md) · [Changelog](CHANGELOG.md) |
 
-The pages under `docs/wiki/` are the documentation, published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth. The rest of `docs/` holds only the roadmap and active design plans.
+The pages under `docs/wiki/` are the documentation, published to the [GitHub wiki](https://github.com/djm56/bishop-memory/wiki) with `make wiki-publish`; `docs/wiki/` is the source of truth. The rest of `docs/` holds the roadmap, the progress tracker (`docs/PROGRESS.md`) and the active design plans.
 
 ## Quick start
 
@@ -70,7 +72,7 @@ Without the conf file a harness runs standalone and never calls the service. Det
 
 ## What it stores
 
-Ten harness-vocabulary tables — `missions`, `mission_steps`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `documents_fts` — plus seven findings-triage tables and `mission_grades`. Schema: [db/schema.sql](db/schema.sql); every table explained: [Developer: Database](docs/wiki/Developer-Database.md).
+The schema has 21 tables and one full-text index, `documents_fts` (counts as of 2026-10-20; `grep -c 'CREATE TABLE' db/schema.sql` returns 21). Harness vocabulary: `missions`, `mission_steps`, `mission_criteria`, `mission_deliverables`, `mission_lessons`, `agent_mistakes`, `flight_recorder` (the audit journal), `crew`, `findings`, `patterns`, `service_records`, `directives`, `documents`, `harnesses`. Findings triage: `finding_categories`, `finding_triage`, `finding_groups`, `finding_recommendations`, `directive_proposals`, `triage_runs`. Mission grading: `mission_grades`. Schema: [db/schema.sql](db/schema.sql); every table explained: [Developer: Database](docs/wiki/Developer-Database.md).
 
 Two rules are enforced by what is registered where, not by the API key (every key has full access):
 
@@ -100,7 +102,7 @@ Every tool, with arguments, examples and errors: [MCP Tool Reference](docs/wiki/
   <img alt="The findings triage review page: a category rail on the left, and on the right a group of findings that share a rule, each with the processor's recommendation and Approve, Reject and Defer buttons." src="docs/wiki/images/pending-light.png">
 </picture>
 
-Findings accumulate faster than anyone reads them. bishop-memory classifies the ledger into a 17-category taxonomy nightly (Haiku), groups one category's findings by the rule they share and recommends a decision on each (Sonnet), on Claude Code or, with `TRIAGE_ENGINE=opencode`, on any model your OpenCode config reaches, and drafts `DIRECTIVES.md` entries — all for you to decide on a review page at `http://127.0.0.1:8787/triage`. Decisions are written back into the owning harness's Markdown. No agent ever changes a finding's status.
+Findings accumulate faster than anyone reads them. bishop-memory classifies the ledger into a fixed category taxonomy (`db/finding-categories.json`) nightly (Haiku), groups one category's findings by the rule they share and recommends a decision on each (Sonnet), on Claude Code or, with `TRIAGE_ENGINE=opencode`, on any model your OpenCode config reaches, and drafts `DIRECTIVES.md` entries — all for you to decide on a review page at `http://127.0.0.1:8787/triage`. Decisions are written back into the owning harness's Markdown. No agent ever changes a finding's status.
 
 ```bash
 printf 'ANTHROPIC_API_KEY=sk-ant-...\n' >> .env && chmod 600 .env   # scheduled jobs have no Claude login
@@ -126,7 +128,7 @@ Guides: [Review Page Guide](docs/wiki/Review-Page-Guide.md) and [Developer: Tria
   <img alt="The harness performance page: tiles for the average grade, graded, waiting and set-aside missions, then one card per harness with its average letter, an A to F distribution bar and its latest grades." src="docs/wiki/images/performance-light.png">
 </picture>
 
-Every finished mission gets a grade from A to F, a short summary of why and suggestions for the next mission, from a third nightly agent (21:40) that works from the database alone. The service hands it a compact packet per mission — the brief's criteria, the debrief's judgement sections, the steps, findings and agent notes, and counts it makes itself — and the agent makes one pass over at most ten missions. A verdict is final; a mission is never graded in a loop. Grades show on the mission HUD and roll up per harness at `http://127.0.0.1:8787/performance`. Guide: [Mission Grading](docs/wiki/Mission-Grading.md).
+Every finished mission gets a grade from A to F, a short summary of why and suggestions for the next mission, from a third nightly agent (21:40, the `mission-grader` agent in `.claude/agents/`) that works from the database alone. The service hands it a compact packet per mission — the brief's criteria, the debrief's judgement sections, the steps, findings and agent notes, and counts it makes itself — and the agent makes one pass over at most ten missions. A verdict is final; a mission is never graded in a loop. Grades show on the mission HUD and roll up per harness at `http://127.0.0.1:8787/performance`. Guide: [Mission Grading](docs/wiki/Mission-Grading.md).
 
 ## Mission HUD
 
@@ -135,7 +137,7 @@ Every finished mission gets a grade from A to F, a short summary of why and sugg
   <img alt="The mission HUD: the mission list with search and filters on the left, and on the right a completed mission with its status, tiles for steps, duration, findings and criteria, and its brief." src="docs/wiki/images/missions-light.png">
 </picture>
 
-`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A Triage / Missions / Performance switch links the pages, and each finding links across to the other.
+`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A switch in each page's header links the four pages (Triage, Missions, Performance and Crew), and each finding links across to the other. `/crew` shows per-agent metrics across all missions; see [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md#the-crew-page).
 
 ```bash
 curl -X POST http://127.0.0.1:8787/v1/documents/sync   # import every registered harness's memory tree and agents
@@ -164,6 +166,7 @@ Environment variables, with optional `.env` in the working directory (gitignored
 | `MEMORY_ROOT` | `testdata/memory` | memoryd | Root for `documents_sync` when the caller omits one and no harness is registered |
 | `BISHOP_MEMORY_URL` | `http://127.0.0.1:8787` | mcpd, scripts | Service URL |
 | `BISHOP_MEMORY_API_KEY` | — | mcpd, scripts | API key sent as `Authorization: Bearer`. Both this and the URL are also read from `~/.config/bishop-memory/client.env` (written by `scripts/install.sh client`) when the environment does not set them |
+| `BISHOP_MEMORY_CA_FILE` | — | mcpd, reconciler, triage scripts | PEM certificate of the CA that signed a home-made server certificate, trusted for an `https://` URL in addition to the system CAs. `~/` is expanded. `mcpd` refuses to start if the file cannot be read or holds no certificate. Written by `install.sh client --ca`; read from `client.env` like the URL and key |
 | `BISHOP_HARNESS` | `claude-code` | mcpd | Harness identity composed into actors and stored on findings |
 | `MCPD_PROFILE` | `harness` | mcpd | `harness` or `triage` tool set |
 | `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` | — | triage runner | Required for scheduled agent runs on the claude engine; keep it in `.env`, mode 0600 |
@@ -176,6 +179,7 @@ Environment variables, with optional `.env` in the working directory (gitignored
 - **Required off loopback.** On any other address memoryd refuses to start without a key (unless `BISHOP_ALLOW_NO_AUTH=1`), and revoking the last key refuses every request rather than opening the service.
 - **Transport.** A key over plain HTTP can be read on the wire. On your own network, use built-in TLS with a certificate from your own mkcert CA, which clients trust through `BISHOP_MEMORY_CA_FILE` in `client.env` ([Home Server Setup](docs/wiki/Home-Server-Setup.md)). Alternatives: Tailscale or WireGuard, built-in TLS (`TLS_CERT_FILE`, `TLS_KEY_FILE`), a reverse proxy such as Caddy in front of a loopback-bound memoryd (create a key first: on loopback with none it is open), or an SSH tunnel. memoryd warns at start when it serves plain HTTP on a network address.
 - **Every key has full access.** There are no roles and no rate limiting. What agents can do is still limited by the `mcpd` tool lists (see [MCP tools](#mcp-tools)). `POST /v1/documents/sync` reads any server path a caller names (except `/`), so a key can also pull Markdown and JSONL from any directory the service user can read into search.
+- **Files travel by push.** A harness's Markdown reaches the service by content, so the service does not need to read the harness's disk. The reconciler does this on every run given `--harness` (not with `--dry-run` or `--no-sync-documents`): `GET /v1/documents/hashes` returns the server's SHA-256 for each file, and `POST /v1/documents/push` sends only the files that differ (at most 200 files and 8 MiB per request, 1 MiB per file). The reconciler never deletes. `POST /v1/documents/delete` is used by `scripts/push-memory.py --prune` and `scripts/clean-scratch.py`. `scripts/push-memory.py` runs the same push on its own, for a first upload or a push without reconciling. Without `--harness`, or against a memoryd too old to have the push routes, the reconciler asks the service to read the tree with `POST /v1/documents/sync`, which works only when the service runs on the same machine.
 
 Step by step for one server on your own network: [Home Server Setup](docs/wiki/Home-Server-Setup.md). Every option: [Server Install](docs/wiki/Server-Install.md).
 
@@ -196,10 +200,10 @@ CI (`.github/workflows/ci.yml`) runs build, vet, gofmt, test and test -race on L
 cmd/memoryd         HTTP daemon          internal/api        handlers and router
 cmd/mcpd            MCP adapter          internal/store      SQLite, schema, migrations
 db/schema.sql       schema               internal/importer   Markdown → FTS5
-db/finding-categories.json  taxonomy     internal/ui         /triage and /missions pages
+db/finding-categories.json  taxonomy     internal/ui         the four pages: /triage, /missions, /performance, /crew
 scripts/            installers, reconciler, triage, wiki     .claude/agents, .claude/skills   the triage agents
                                                              .opencode/agents                 their OpenCode twins
-docs/               roadmap and plans    docs/wiki/          user and developer pages (published to the wiki)
+docs/               roadmap, progress, plans   docs/wiki/    user and developer pages (published to the wiki)
 ```
 
 ## License
