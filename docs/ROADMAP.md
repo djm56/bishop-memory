@@ -14,7 +14,7 @@ it; a run or a harness-side check is needed), **accepted** (decided as it
 stands, with no fix planned).
 
 Last checked against the code: 2026-10-20 (status audit of `main` at
-`250202c` and the live database).
+`1c4def9` and the live database).
 
 ## Planned work
 
@@ -157,30 +157,16 @@ side; not checkable from this repository.
 
 ## Reconciler
 
-**An unrecognised step status is dropped silently.** `parse_steps` in
-`scripts/reconcile-memory.py` turns a status outside `pending`,
-`in-progress`, `done`, `failed` into an empty string and removes it from the
-payload, so the run reports `unchanged` while the database keeps a stale
-value. Seen when a harness wrote the mission status `blocked` into a step row.
-It should warn and count the row instead. Status: done on
-`fix/reconciler-integrity`; moves to Shipped when on `main`. On that branch the
-row is sent without a status, its raw value is kept for the WARN line and not
-sent, and the `[steps]` summary counts it as `warned`.
+**Flight-recorder paging is not on the live service.** The reconciler follows
+`has_more` only against a memoryd built from PR #9 (`1c4def9`), which added
+`offset` and `has_more` to `GET /v1/flight-recorder`. The running service has
+not been redeployed, so it answers one page per mission and the reconciler's
+journal cap applies to it. Status: open; needs memoryd redeploy (operator
+action).
 
 **The `[flight-recorder]` summary does not add up to `parsed`.** Events for
 missions outside the parsed set are skipped with no counter. Behind the
 opt-in `--include-journal`. Status: open; code reading only, not run.
-
-**The journal's `warned` counter is never incremented.** So the "at cap"
-summary branch cannot run, and a mission skipped at the cap is reported as a
-generic fetch failure. Behind `--include-journal`. Status: done on
-`fix/reconciler-integrity`; moves to Shipped when on `main`. On that branch the
-counter goes up once per capped mission, and the cap has its own summary
-category, `skipped (journal cap)`, apart from fetch failures. The run exits 1
-only when events were skipped at the cap. A memoryd that pages is read to the
-end, with `JOURNAL_MAX_PAGES` as the ceiling, and a read still reporting
-`has_more` at the ceiling is a fetch failure. A memoryd that does not page still
-answers one page per mission; the run names that limit rather than hiding it.
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
 which needs it for Markdown tables; a value from the JSON API does not. It is
@@ -264,21 +250,19 @@ routes have no cap yet. Plan §3.4, phase 3. Status: planned.
 **Make bishop-memory installable into harnesses other than Bishop.** Plain
 Claude Code, OpenCode, pi and the operator's Kirsch harness, through a generic
 core, a neutral integration contract and one adapter per harness. Bishop stays
-the reference harness and must not break. Status: planned, with phase 1 built on
-branch feat/portability-phase1 and not on `main`. The research and the coupling
-inventory are done. The reconciler-bug part of phase 2 is built on
-`fix/reconciler-integrity` and is not on `main`; no other later phase is
-started. Plan:
+the reference harness and must not break. Status: in progress. Phase 1 is on
+`main` through PR #8 (`8437f32`), and the reconciler-bug part of phase 2 is on
+`main` through PR #9 (`1c4def9`). The research and the coupling inventory are
+done. The layout profile and phases 3 to 8 are not started. Plan:
 [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md). Items
 per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
 
 - Phase 1, compatibility guard: golden tests on the shipped fixture, and a seam
-  for the Bishop values. Status: built on branch feat/portability-phase1, unmerged.
+  for the Bishop values. Status: shipped, PR #8 (`8437f32`); listed under Shipped.
 - Phase 2, layout profile: the memory layout moves into a profile, and the
   mission-ID mismatch is fixed. Status: the layout profile is not started. The
   reconciler-bug part (exact-match mission-ID links and the unknown-status
-  warning) is done on `fix/reconciler-integrity`; it moves to Shipped when on
-  `main`.
+  warning) shipped in PR #9 (`1c4def9`); listed under Shipped.
 - Phase 3, integration contract and generic names. Status: planned.
 - Phase 4, plain Claude Code adapter. Status: planned.
 - Phase 5, OpenCode adapter. Status: planned.
@@ -318,6 +302,28 @@ What is still open:
 
 Listed by area, newest work first within each. Entries are commits on `main`,
 except the operational ones, which name their evidence instead.
+
+**Harness portability**
+
+- Phase 2, reconciler-bug part: a mission-ID candidate links only on an exact
+  match with a known mission id, and an unknown step status is warned and
+  counted rather than dropped (PR #9, `1c4def9`).
+- Phase 1, compatibility guard: golden tests for the importer's database state
+  and the reconciler's dry-run output, the `internal/profile` seam, the
+  `BISHOP_LAYOUT` and `APPROVER_DEFAULT` seam in the reconciler, and a CI step
+  for the Python script tests (PR #8, `8437f32`).
+
+**Reconciler**
+
+- The journal's `warned` counter goes up once per capped mission, and the cap
+  has its own summary category, `skipped (journal cap)`, apart from fetch
+  failures. The run exits 1 only when events were skipped at the cap (PR #9,
+  `1c4def9`).
+- The journal is read to the end when the server pages: the reconciler follows
+  `has_more` up to `JOURNAL_MAX_PAGES`, and a read still reporting `has_more`
+  at the ceiling is a fetch failure. `GET /v1/flight-recorder` takes `offset`
+  and returns `has_more` (PR #9, `1c4def9`). The live service needs a
+  redeploy before this applies; see Reconciler, open.
 
 **Docs and README**
 

@@ -36,9 +36,9 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 ## Reconciler
 
-**`[steps] … unchanged` but PROGRESS.md and the database disagree.** A step status outside `pending|in-progress|done|failed` in `PROGRESS.md` is dropped silently on `main` (recorded in `docs/ROADMAP.md`). On `fix/reconciler-integrity` the step is sent without a status, a `[WARN]` line names the value, and the `[steps]` line counts it as `warned`. Fix the status in the file.
+**`[steps] … unchanged` but PROGRESS.md and the database disagree.** A step status outside `pending|in-progress|done|failed` in `PROGRESS.md` is sent without a status (PR #9, `1c4def9`). A `[WARN]` line names the value, and the `[steps]` line counts it as `warned`. Fix the status in the file.
 
-**Journal reconcile skips a mission at the cap.** Against a memoryd that does not page the flight recorder, a mission whose single page is full cannot be told from a truncated list. `--include-journal` skips its writes, prints a `[WARN]` line, and counts its events as `skipped (journal cap)`; the run exits 1 when any event was skipped. A memoryd that pages is read to the end, on `fix/reconciler-integrity` and not yet on `main`. The hook mirrors rows live; the skip is only a backstop gap.
+**Journal reconcile skips a mission at the cap.** Against a memoryd that does not page the flight recorder, a mission whose single page is full cannot be told from a truncated list. `--include-journal` skips its writes, prints a `[WARN]` line, and counts its events as `skipped (journal cap)`; the run exits 1 when any event was skipped. A memoryd that pages is read to the end. Paging shipped in PR #9 (`1c4def9`); a memoryd built before that does not page, so the live service needs a redeploy before this applies. The hook mirrors rows live; the skip is only a backstop gap.
 
 **Status mirrored every run.** The file's `Status` disagrees with the service and the decision route keeps being called. That is correct behaviour while they differ; export the service's decision or fix the file.
 
