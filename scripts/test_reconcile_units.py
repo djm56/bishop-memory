@@ -522,6 +522,11 @@ def _run_main(capped):
         server.server_close()
 
 
+def _summary_line(proc):
+    """The last line of the reconciler's stdout: its [reconcile] summary line."""
+    return proc.stdout.decode("utf-8").rstrip("\n").splitlines()[-1]
+
+
 class JournalCapExitTests(unittest.TestCase):
     """main() exit status and summary for the journal cap, run as a subprocess against a fake service."""
 
@@ -530,33 +535,31 @@ class JournalCapExitTests(unittest.TestCase):
         # all three, and nothing else in the run is a problem: the run exits 1 and the
         # summary names the cap.
         proc = _run_main({FIXTURE_MISSION: 100})
-        out = proc.stdout.decode("utf-8")
+        summary = _summary_line(proc)
         err = proc.stderr.decode("utf-8", "replace")
         self.assertEqual(proc.returncode, 1,
                          msg=f"journal cap only: exit code is {proc.returncode}, expected 1; stderr: {err}")
-        self.assertIn("3 skipped (journal cap)", out,
+        self.assertIn("3 skipped (journal cap)", summary,
                       msg="journal cap only: the summary does not name 3 skipped (journal cap)")
-        self.assertNotIn("fetch failed", out,
+        self.assertNotIn("fetch failed", summary,
                          msg="journal cap only: the cap is reported as a fetch failure")
 
     def test_no_cap_skips_exits_0(self):
         # Positive control: no mission at the cap, so no skip and no problem; the run exits 0.
         proc = _run_main({})
-        out = proc.stdout.decode("utf-8")
         self.assertEqual(proc.returncode, 0,
                          msg=f"no cap skips: exit code is {proc.returncode}, expected 0; stderr: {proc.stderr.decode('utf-8', 'replace')}")
-        self.assertNotIn("journal cap", out, msg="no cap skips: the summary names the journal cap")
+        self.assertNotIn("journal cap", _summary_line(proc), msg="no cap skips: the summary names the journal cap")
 
     def test_capped_mission_without_local_events_exits_0(self):
         # mission-20261009-02 has no local events, so the cap skips none and the run exits 0.
         proc = _run_main({"mission-20261009-02": 100})
-        out = proc.stdout.decode("utf-8")
         err = proc.stderr.decode("utf-8", "replace")
         self.assertEqual(proc.returncode, 0,
                          msg=f"capped without local events: exit code is {proc.returncode}, expected 0; stderr: {err}")
         self.assertIn("[WARN] mission-20261009-02: journal at 100-row cap", err,
                       msg="capped without local events: no WARN line names the mission")
-        self.assertNotIn("skipped (journal cap)", out,
+        self.assertNotIn("skipped (journal cap)", _summary_line(proc),
                          msg="capped without local events: the summary names a journal cap skip")
 
 
