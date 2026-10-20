@@ -27,7 +27,9 @@
 //
 // An update run writes the golden and then fails the test on purpose, so an
 // update run is never green. Run again without UPDATE_GOLDEN to confirm. CI
-// refuses to start when UPDATE_GOLDEN is set (.github/workflows/ci.yml).
+// sets UPDATE_GOLDEN to the empty string (.github/workflows/ci.yml), so update
+// mode never runs in CI. The test itself fails whenever the variable is
+// non-empty, so a stray value cannot turn the gate into a pass.
 //
 // The golden is the gate in docs/plans/HARNESS-PORTABILITY-PLAN.md §8: an
 // importer change merges only when this output is identical, or the difference

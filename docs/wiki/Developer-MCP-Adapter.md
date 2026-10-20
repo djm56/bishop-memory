@@ -1,6 +1,6 @@
 # Developer: MCP Adapter
 
-`cmd/mcpd` is a stdio Model Context Protocol server built on `github.com/mark3labs/mcp-go`. It is a pure HTTP client of `memoryd`: it imports none of the service's internal packages and never opens the database. Every tool builds a request against `BISHOP_MEMORY_URL`, forwards the JSON body as text on success, and turns every failure into an MCP error result that names the tool.
+`cmd/mcpd` is a stdio Model Context Protocol server built on `github.com/mark3labs/mcp-go`. It is a pure HTTP client of `memoryd`: its only internal import is `internal/profile` (the default harness identity), it imports no other service internal package, and it never opens the database. Every tool builds a request against `BISHOP_MEMORY_URL`, forwards the JSON body as text on success, and turns every failure into an MCP error result that names the tool.
 
 ## Configuration
 

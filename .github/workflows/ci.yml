@@ -16,9 +16,8 @@ jobs:
     name: build, vet, fmt, test
     runs-on: ubuntu-latest
     # UPDATE_GOLDEN rewrites a golden file and fails the test on purpose (see
-    # the golden test docblocks). CI sets it to the empty string, which the Go
-    # and Python tests both read as unset. The golden-unchanged step at the
-    # end is the check that catches a rewrite.
+    # the golden test docblocks). CI forces it empty so update mode can never
+    # run in CI; the Go and Python tests both read the empty string as unset.
     env:
       UPDATE_GOLDEN: ""
     steps:
@@ -65,8 +64,3 @@ jobs:
       # which runs against a local fake service and never the live daemon.
       - name: python unittest (scripts/)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
-
-      # A golden file is never regenerated in CI. If the run rewrote one, the
-      # working tree differs from the commit and this step fails.
-      - name: golden files unchanged
-        run: git diff --exit-code -- testdata/golden

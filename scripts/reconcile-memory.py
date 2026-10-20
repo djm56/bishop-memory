@@ -96,6 +96,11 @@ class Layout:
 
 BISHOP_LAYOUT = Layout()
 
+# Approver recorded on a reconciled decision when the Markdown row names none.
+# It labels the source of the decision, not a path, so it is not read from the
+# layout: a layout change to findings_file leaves it unchanged.
+APPROVER_DEFAULT = "FINDINGS.md"
+
 
 # --------------------------------------------------------------------------
 # Client settings
@@ -1064,7 +1069,7 @@ def reconcile_findings(client, root, harness=""):
         if md_status != "proposed" and row.get("status") != md_status:
             decision = {
                 "status": md_status,
-                "approver": finding["_approver"] or BISHOP_LAYOUT.findings_file,
+                "approver": finding["_approver"] or APPROVER_DEFAULT,
                 "note": f"reconciled from {BISHOP_LAYOUT.findings_file}",
             }
             if finding["_date_approved"]:

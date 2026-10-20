@@ -115,17 +115,17 @@ func main() {
 
 	s := server.NewMCPServer("mcpd", "0.1.0")
 
-	profile := envOrDefault("MCPD_PROFILE", profileHarness)
-	switch profile {
+	mcpdProfile := envOrDefault("MCPD_PROFILE", profileHarness)
+	switch mcpdProfile {
 	case profileHarness:
 		registerTools(s, c)
 	case profileTriage:
 		registerTriageTools(s, c)
 	default:
-		log.Fatalf("mcpd: invalid MCPD_PROFILE %q: must be %q or %q", profile, profileHarness, profileTriage)
+		log.Fatalf("mcpd: invalid MCPD_PROFILE %q: must be %q or %q", mcpdProfile, profileHarness, profileTriage)
 	}
 
-	log.Printf("mcpd serving stdio (base_url=%s harness=%s profile=%s)", c.baseURL, c.harness, profile)
+	log.Printf("mcpd serving stdio (base_url=%s harness=%s profile=%s)", c.baseURL, c.harness, mcpdProfile)
 
 	if err := server.ServeStdio(s); err != nil {
 		log.Fatalf("mcpd: stdio serve failed: %v", err)
@@ -534,8 +534,9 @@ func registerTools(s *server.MCPServer, c *client) {
 // These redeclare the minimum JSON shapes mcpd needs to build
 // well-formed request bodies for the bishop-memory HTTP API. They are
 // intentionally NOT imports of bishop-memory/internal/model: mcpd
-// stays decoupled from the server's internal packages, and the JSON
-// wire shapes are the documented contract.
+// stays decoupled from the server's internal packages (its only internal
+// import is internal/profile), and the JSON wire shapes are the documented
+// contract.
 
 // createMissionBody is the JSON body for POST /v1/missions.
 // allocateMissionBody is the POST /v1/missions/allocate payload. It has
@@ -589,7 +590,8 @@ type appendFlightRecorderBody struct {
 
 // missionStepBody is the JSON body for POST /v1/missions/<id>/steps. It
 // mirrors the internal/api/missionStepRequest wire shape so mcpd can
-// build the request without importing the server's internal package.
+// build the request without importing the server's internal model package
+// (mcpd's only internal import is internal/profile).
 type missionStepBody struct {
 	Step      string  `json:"step,omitempty"`
 	Phase     string  `json:"phase,omitempty"`

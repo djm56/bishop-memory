@@ -33,8 +33,9 @@ Updating the golden after an intended change:
 
 An update run writes the golden and then fails test_dry_run_matches_golden on
 purpose, so an update run is never green. Run again without UPDATE_GOLDEN to
-confirm. CI refuses to start when UPDATE_GOLDEN is set (.github/workflows/ci.yml),
-so a stray variable cannot turn the gate into a pass or rewrite a golden.
+confirm. CI sets UPDATE_GOLDEN to the empty string (.github/workflows/ci.yml),
+so update mode never runs in CI. The test itself fails whenever the variable is
+non-empty, so a stray value cannot turn the gate into a pass.
 
 Known reconciler behaviour recorded here as-is, not fixed by this test:
   - MISSION_ID is unanchored (scripts/reconcile-memory.py, MISSION_ID regex).
