@@ -15,6 +15,8 @@ with a mock client, so nothing touches a real memory root or a running service.
     that case is cited in the comment above its assertion.
   - reconcile_findings() on the same fixture: a Mission candidate that names no
     known mission is counted as a warning and left out of the create payload.
+  - reconcile_journal(): a mission at the 100-row journal cap is counted as
+    skipped (journal cap), apart from a fetch failure, and below the cap is not.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
@@ -26,6 +28,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.parse
 from contextlib import redirect_stderr
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -334,6 +337,71 @@ class StepWarningTests(unittest.TestCase):
                          msg="unknown status: step 3 payload carries a status")
         self.assertEqual(payloads["mission-20260904-01 step 1"].get("status"), "done",
                          msg="unknown status: known status of step 1 not sent")
+
+
+class JournalClient(MockClient):
+    """Mock client whose flight-recorder GET returns a fixed number of rows for each mission."""
+
+    def __init__(self, rows_by_mission=None, fail=False):
+        super().__init__()
+        self.rows_by_mission = rows_by_mission or {}
+        self.fail = fail
+
+    def get(self, path):
+        if path.startswith("/v1/flight-recorder"):
+            if self.fail:
+                raise OSError("simulated network failure")
+            mission = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["mission_id"][0]
+            count = self.rows_by_mission.get(mission, 0)
+            rows = [{"mission_id": mission, "occurred_at": f"row {i}", "step": "", "event": "e", "note": "n"}
+                    for i in range(count)]
+            return 200, {"flight_recorder": rows}
+        return super().get(path)
+
+
+class JournalCapTests(unittest.TestCase):
+    """reconcile_journal() on the shipped fixture: a mission at the 100-row cap is skipped and counted apart."""
+
+    def _run(self, client):
+        """Run reconcile_journal() for the fixture's one mission; return (counts, stderr text)."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_journal(client, [{"id": FIXTURE_MISSION}], FIXTURE_ROOT)
+        return counts, stderr.getvalue()
+
+    def test_mission_at_cap_is_skipped_as_journal_cap(self):
+        # The fixture has three events for the mission. At 100 rows the mission is
+        # capped: its events are counted as skipped (journal cap), its mission is
+        # counted once as warned, and neither counts as a fetch failure or a failure.
+        counts, stderr = self._run(JournalClient({FIXTURE_MISSION: 100}))
+        self.assertEqual(counts["skipped_journal_cap"], 3,
+                         msg=f"journal cap: expected 3 events skipped at the cap, got counts {counts}")
+        self.assertEqual(counts["warned"], 1, msg=f"journal cap: expected 1 warned mission, got counts {counts}")
+        self.assertEqual(counts["fetch_failed"], 0, msg=f"journal cap: cap counted as a fetch failure: {counts}")
+        self.assertEqual(counts["failed"], 0, msg=f"journal cap: cap counted as a failed write: {counts}")
+        self.assertEqual(counts["created"], 0, msg=f"journal cap: an event was written past the cap: {counts}")
+        self.assertIn("[WARN] mission-20260904-01: journal at 100-row cap", stderr,
+                      msg="journal cap: no WARN line names the mission")
+
+    def test_mission_below_cap_is_reconciled(self):
+        # Positive control: at 99 rows the mission is not capped, so its three
+        # events are written and none is counted as skipped for the cap.
+        counts, stderr = self._run(JournalClient({FIXTURE_MISSION: 99}))
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"below cap: 99 rows counted as the journal cap: {counts}")
+        self.assertEqual(counts["created"], 3, msg=f"below cap: expected 3 events written, got counts {counts}")
+        self.assertEqual(counts["warned"], 0, msg=f"below cap: a warning was counted: {counts}")
+        self.assertNotIn("[WARN]", stderr, msg="below cap: a WARN line was printed")
+
+    def test_fetch_failure_is_not_journal_cap(self):
+        # A failed GET is a fetch failure: its events are skipped_fetch_failed, and
+        # skipped_journal_cap stays at zero.
+        counts, _ = self._run(JournalClient(fail=True))
+        self.assertEqual(counts["fetch_failed"], 1, msg=f"fetch failure: expected 1 fetch failure: {counts}")
+        self.assertEqual(counts["skipped_fetch_failed"], 3,
+                         msg=f"fetch failure: expected 3 events skipped for the fetch failure: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"fetch failure: the failed GET was counted as the journal cap: {counts}")
 
 
 if __name__ == "__main__":

@@ -993,24 +993,29 @@ def reconcile_journal(client, parsed_missions, root):
     # affected missions, "skipped_fetch_failed" counts the events those
     # missions' rows left untouched, so a reader can tell how many parsed
     # events were genuinely skipped rather than inferring it from stderr.
+    # A mission whose journal GET returns the 100-row cap is not a fetch
+    # failure: the GET succeeded, but completeness cannot be verified. It is
+    # counted as "warned" (one per mission) and its events as
+    # "skipped_journal_cap", never under "fetch_failed" or "failed".
     # Note: "parsed" here also excludes events for missions this run never
     # heard of at all (see the `not any(...)` filter below) — that's a
     # separate, deliberate scope filter, not a fetch failure, and is not
     # counted here.
     status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "warned": 0,
-                      "fetch_failed": 0, "skipped_fetch_failed": 0}
+                      "fetch_failed": 0, "skipped_fetch_failed": 0, "skipped_journal_cap": 0}
 
     # Fetch all existing journal rows (per-mission, with cap check)
     existing_journal = {}
     missions_journal_fetch_failed = set()
+    missions_journal_capped = set()
     for mission in parsed_missions:
         try:
             _, body = client.get(f"/v1/flight-recorder?mission_id={urllib.parse.quote_plus(mission['id'])}&limit=100")
             rows = body.get("flight_recorder", [])
             if len(rows) >= 100:
                 print(f"  [WARN] {mission['id']}: journal at 100-row cap; cannot verify completeness; skipping writes for this mission", file=sys.stderr)
-                missions_journal_fetch_failed.add(mission["id"])
-                status_counts["fetch_failed"] += 1
+                missions_journal_capped.add(mission["id"])
+                status_counts["warned"] += 1
                 continue
             for row in rows:
                 # Natural key: (mission_id, occurred_at, step, event, note)
@@ -1028,6 +1033,9 @@ def reconcile_journal(client, parsed_missions, root):
     for event in events:
         # Only process events for missions we know about and whose fetch succeeded
         if not any(m["id"] == event["mission_id"] for m in parsed_missions):
+            continue
+        if event["mission_id"] in missions_journal_capped:
+            status_counts["skipped_journal_cap"] += 1
             continue
         if event["mission_id"] in missions_journal_fetch_failed:
             status_counts["skipped_fetch_failed"] += 1
@@ -1320,6 +1328,7 @@ def main():
 
     total_failed_operations = 0  # Track actual count of failed operations
     total_fetch_failures = 0     # Track count of fetch failures
+    total_journal_cap_skips = 0  # Journal events not reconciled because their mission is at the cap
     total_entities = 0
 
     # --- Register this harness's memory root --------
@@ -1385,14 +1394,13 @@ def main():
     if args.include_journal:
         counts = reconcile_journal(client, missions, root)
         fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))
+        warned_note = f", {counts['warned']} warned" if counts['warned'] > 0 else ""
+        cap_note = f", {counts['skipped_journal_cap']} skipped (journal cap)" if counts['skipped_journal_cap'] > 0 else ""
         print(f"[flight-recorder] {counts['parsed']} parsed, {counts['created']} created, " +
-              f"{counts['skipped']} unchanged, {counts['failed']} failed{fetch_status}", end="")
-        if counts['warned'] > 0:
-            print(f", {counts['warned']} warned (at cap)")
-        else:
-            print()
+              f"{counts['skipped']} unchanged, {counts['failed']} failed{warned_note}{cap_note}{fetch_status}")
         total_failed_operations += counts['failed']
         total_fetch_failures += counts.get('fetch_failed', 0)
+        total_journal_cap_skips += counts['skipped_journal_cap']
         total_entities += counts['created']
     else:
         print("[flight-recorder] (skipped — use --include-journal to reconcile)")
@@ -1441,15 +1449,19 @@ def main():
     print()
     verb = "would send" if args.dry_run else "sent"
     error_detail = ""
-    if total_failed_operations > 0 or total_fetch_failures > 0:
+    # Journal events skipped at the cap were not reconciled, so they keep the run
+    # non-zero, as before, but are named as their own category, not as fetch failures.
+    if total_failed_operations > 0 or total_fetch_failures > 0 or total_journal_cap_skips > 0:
         error_parts = []
         if total_failed_operations > 0:
             error_parts.append(f"{total_failed_operations} operation failed")
         if total_fetch_failures > 0:
             error_parts.append(f"{total_fetch_failures} fetch failed")
+        if total_journal_cap_skips > 0:
+            error_parts.append(f"{total_journal_cap_skips} skipped (journal cap)")
         error_detail = f", {', '.join(error_parts)}"
     print(f"[reconcile] {verb} {client.sent} requests, {total_entities} entities created/updated{error_detail}")
-    if total_failed_operations > 0 or total_fetch_failures > 0:
+    if total_failed_operations > 0 or total_fetch_failures > 0 or total_journal_cap_skips > 0:
         sys.exit(1)
     sys.exit(0)
 
