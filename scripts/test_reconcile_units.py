@@ -306,10 +306,11 @@ class FindingWarningTests(unittest.TestCase):
         stderr = io.StringIO()
         with redirect_stderr(stderr):
             counts = reconcile.reconcile_findings(client, FIXTURE_ROOT, known_missions=_fixture_known_missions())
-        self.assertEqual(counts["warned"], 0,
-                         msg=f"existing unknown candidates: entries already at the service were counted as warned: {counts}")
+        # The WARN line is asserted first, so a failure quotes the entry it names.
         self.assertNotIn("names no known mission", stderr.getvalue(),
                          msg="existing unknown candidates: a WARN line was printed for an entry already at the service")
+        self.assertEqual(counts["warned"], 0,
+                         msg=f"existing unknown candidates: entries already at the service were counted as warned: {counts}")
 
 
 class StepStatusTests(unittest.TestCase):
