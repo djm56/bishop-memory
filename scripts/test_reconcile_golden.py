@@ -39,9 +39,13 @@ non-empty, so a stray value cannot turn the gate into a pass.
 
 Known reconciler behaviour recorded here as-is, not fixed by this test:
   - MISSION_ID is unanchored (scripts/reconcile-memory.py, MISSION_ID regex).
-  - parse_steps() drops an unknown step status silently.
-The fixture exercises neither. FINDINGS.md has no **Mission** field, and every
-PROGRESS.md status is a known value.
+  - parse_steps() replaces an unknown step status with an empty value silently.
+The fixture exercises each of them. FINDINGS.md has **Mission** fields that reach
+the MISSION_ID regex, and a PROGRESS.md row carries a status outside the step set.
+The dry-run cannot show these. A finding's label is its date and target,
+and a step's label carries no status. The links and the blank status are
+pinned by FindingMissionLinkTests and StepStatusTests in
+scripts/test_reconcile_units.py.
 """
 import difflib
 import http.server

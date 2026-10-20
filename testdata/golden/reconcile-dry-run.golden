@@ -16,30 +16,52 @@
 [documents] sync triggered
 
   [dry-run] PATCH /v1/missions/mission-20260904-01  mission-20260904-01 (status=complete, outcome=done, next_action=)
-[missions] 1 parsed, 0 created, 1 updated, 0 unchanged, 0 failed
+  [dry-run] POST /v1/missions  mission-20261009-02
+  [dry-run] PATCH /v1/missions/mission-20261009-02  mission-20261009-02 outcome=failed
+  [dry-run] POST /v1/missions  mission-20261009-10
+  [dry-run] PATCH /v1/missions/mission-20261009-10  mission-20261009-10 outcome=done
+  [dry-run] POST /v1/missions  mission-20261009-100
+  [dry-run] PATCH /v1/missions/mission-20261009-100  mission-20261009-100 outcome=failed
+  [dry-run] POST /v1/missions  mission-20260907-anom-01
+  [dry-run] PATCH /v1/missions/mission-20260907-anom-01  mission-20260907-anom-01 outcome=done
+[missions] 5 parsed, 4 created, 1 updated, 0 unchanged, 0 failed
   [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 1 (update)
   [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 2
-[steps] 2 parsed, 1 created, 1 updated, 0 unchanged, 0 failed
+  [dry-run] POST /v1/missions/mission-20260904-01/steps  mission-20260904-01 step 3
+[steps] 3 parsed, 2 created, 1 updated, 0 unchanged, 0 failed
   [dry-run] POST /v1/flight-recorder  2026-09-04 05:12 UTC step-sync
   [dry-run] POST /v1/flight-recorder  2026-09-04 05:45 UTC step-sync
   [dry-run] POST /v1/flight-recorder  2026-09-04 06:09 UTC complete
 [flight-recorder] 3 parsed, 3 created, 0 unchanged, 0 failed
 
   [dry-run] POST /v1/findings  2026-09-04 Fixture structure alignment
-[findings] 1 parsed, 1 created, 0 unchanged, 0 status mirrored, 0 failed
+  [dry-run] POST /v1/findings  2026-10-09 Plain mission id link
+  [dry-run] POST /v1/findings  2026-10-09 Three-digit counter link
+  [dry-run] POST /v1/findings  2026-10-09 Retry suffix link
+  [dry-run] POST /v1/findings  2026-10-09 Harness-qualified id link
+  [dry-run] POST /v1/findings  2026-10-09 Trailing text link
+[findings] 6 parsed, 6 created, 0 unchanged, 0 status mirrored, 0 failed
 [directives] 0 parsed, 0 created, 0 updated, 0 unchanged, 0 failed
   [dry-run] POST /v1/patterns  Testing with Fixture Data
 [patterns] 1 parsed, 1 created, 0 unchanged, 0 failed
   [dry-run] POST /v1/service-records  hicks 2026-09-04
 [service-records] 1 parsed, 1 created, 0 unchanged, 0 failed
 
-[reconcile] would send 11 requests, 9 entities created/updated
+[reconcile] would send 25 requests, 19 entities created/updated
 --- stderr ---
 (empty)
 --- requests received by fake ---
 GET /v1/missions
 GET /v1/missions/mission-20260904-01/steps
+GET /v1/missions/mission-20261009-02/steps
+GET /v1/missions/mission-20261009-10/steps
+GET /v1/missions/mission-20261009-100/steps
+GET /v1/missions/mission-20260907-anom-01/steps
 GET /v1/flight-recorder?mission_id=mission-20260904-01&limit=100
+GET /v1/flight-recorder?mission_id=mission-20261009-02&limit=100
+GET /v1/flight-recorder?mission_id=mission-20261009-10&limit=100
+GET /v1/flight-recorder?mission_id=mission-20261009-100&limit=100
+GET /v1/flight-recorder?mission_id=mission-20260907-anom-01&limit=100
 GET /v1/findings
 GET /v1/directives
 GET /v1/directive-proposals

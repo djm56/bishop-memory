@@ -9,6 +9,26 @@ the golden, or the difference is an intended fix that ships its own test.
 | `importer-state.golden` | `SyncHarnessStats` on `testdata/memory`, dumped table by table | `internal/importer/golden_test.go`, `TestGoldenImportState` |
 | `reconcile-dry-run.golden` | `scripts/reconcile-memory.py --dry-run` against a fake service | `scripts/test_reconcile_golden.py`, `ReconcileDryRunGolden` |
 
+## Fixture cases
+
+The shipped fixture carries the inputs for the reconciler's mission-ID and
+step-status paths. Each is written in the Markdown shape Bishop writes.
+
+- `findings/FINDINGS.md` has an entry for each case, each with a `**Mission**`
+  field: a plain id, `mission-20261009-10`; a three-digit counter,
+  `mission-20261009-100`; a retry suffix, `mission-20261009-02-retry`; a
+  harness-qualified id, `mission-20260907-anom-01`; and an id followed by
+  trailing text, `mission-20261009-02 (retry)`. The entries whose Rationale
+  names a control link correctly today.
+- `state/MISSION-ARCHIVE.md` archives the missions those ids name, so each
+  id is a known id. The archived missions have no folder under `missions/`,
+  so the importer's document set is unchanged by them.
+- `missions/mission-20260904-01/PROGRESS.md` has a step row whose status,
+  `blocked`, is outside the step set.
+
+Only existing files carry these cases. No file was added, because the
+importer test asserts the exact document count.
+
 ## Regenerating a golden
 
 An intended change is recorded with update mode:
@@ -39,6 +59,14 @@ against the committed golden.
   sites. `APPROVER_DEFAULT` is now pinned by `ApproverDefaultTests` in
   `scripts/test_reconcile_units.py` and is mutation-tested below. `AgentsDir`,
   `DefaultHarness` and `ReviewerRole` are not, and are still unpinned.
+- **Finding links and unknown step statuses.** The dry-run labels a finding
+  by its date and target, and a step by its number, so a wrong `**Mission**`
+  link and a blanked step status do not appear in the golden. A dropped step
+  row does appear, because its line is gone. The links and the blank status
+  are pinned by `FindingMissionLinkTests` and `StepStatusTests` in
+  `scripts/test_reconcile_units.py`, which read the shipped fixture. Cases
+  named `current_behaviour` pin what the reconciler does today; the step that
+  fixes a case flips its assertion.
 
 ## Mutant record (DIR-017)
 
@@ -72,6 +100,14 @@ partner's. The kill lines of each mutant and its mirror are disjoint.
 | SEAM-PY-MIRROR | `scripts/reconcile-memory.py:547` `parse_steps`: the path is found by a glob over `*/<id>/PROGRESS.md` before the declared path is used, so any folder name is read | An undeclared folder name is not read by the reconciler (the opposite edge) | SEAM-PY (the declared edge) | `MissionsFolderLookupTests.test_undeclared_folder_name_is_not_read`: `AssertionError: Lists differ: [{'step': '1', ...}, {'step': '2', ...}] != [] : undeclared folder notes is not read: parse_steps read notes/ as the mission folder`. `test_dry_run_matches_golden` passes (the golden fixture's folder is the declared one). | 5c |
 | APPROVER-MUT | `scripts/reconcile-memory.py:1072` `reconcile_findings`: `finding["_approver"] or APPROVER_DEFAULT` becomes `finding["_approver"] or ""` | An empty Approver in the Markdown falls back to `APPROVER_DEFAULT` | APPROVER-MIRROR | `ApproverDefaultTests.test_empty_approver_falls_back_to_default`: `AssertionError: '' != 'FINDINGS.md' : empty Approver: decision did not fall back to APPROVER_DEFAULT`. `test_explicit_approver_is_carried` stays green. | 5e |
 | APPROVER-MIRROR | `scripts/reconcile-memory.py:1072` `reconcile_findings`: `finding["_approver"] or APPROVER_DEFAULT` becomes `APPROVER_DEFAULT` | An explicit Approver in the Markdown is carried, not replaced (the opposite edge) | APPROVER-MUT (the default edge) | `ApproverDefaultTests.test_explicit_approver_is_carried`: `AssertionError: 'FINDINGS.md' != 'Donovan' : explicit Approver: decision did not carry the Markdown value`. `test_empty_approver_falls_back_to_default` stays green. | 5e |
+| MUT-ANCHOR | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?![A-Za-z0-9-])` | A counter followed by a hyphen or a letter is not linked to its prefix | MUT-SPACE | `FindingMissionLinkTests.test_retry_suffix_current_behaviour_links_to_original`: `'' != 'mission-20261009-02'`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'' != 'mission-20261009-10'`. `test_trailing_text_links_to_id_before_text` and the plain control pass. Golden green. | 1 |
+| MUT-SPACE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?!\s)` | A counter followed by a space is not linked (the opposite edge of MUT-ANCHOR) | MUT-ANCHOR | `FindingMissionLinkTests.test_trailing_text_links_to_id_before_text`: `'' != 'mission-20261009-02'`. The current-behaviour tests and the plain control pass. Golden green. | 1 |
+| MUT-LOOSE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-[A-Za-z0-9]+` | The candidate runs past the counter into letters (the over-long edge) | MUT-THREE | `FindingMissionLinkTests.test_harness_qualified_id_current_behaviour_is_unlinked`: `'mission-20260907-anom' != ''`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'mission-20261009-100' != 'mission-20261009-10'`. Golden green. | 1 |
+| MUT-THREE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{3}` | The candidate stops at a three-digit counter (the over-short edge, the mirror of MUT-LOOSE) | MUT-LOOSE | `FindingMissionLinkTests.test_plain_id_links_to_its_mission`: `'' != 'mission-20261009-10'`. `test_trailing_text_links_to_id_before_text`: `'' != 'mission-20261009-02'`. `test_retry_suffix_current_behaviour_links_to_original`: `'' != 'mission-20261009-02'`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'mission-20261009-100' != 'mission-20261009-10'`. Golden green. | 1 |
+| MUT-STATUS | `scripts/reconcile-memory.py` `parse_steps`: `"status": status if status in {...} else "",` becomes `"status": status,` | An unknown step status is kept, not blanked | MUT-KNOWN | `StepStatusTests.test_unknown_step_status_current_behaviour_is_blanked`: `'blocked' != ''`. Golden green. | 1 |
+| MUT-KNOWN | `scripts/reconcile-memory.py` `parse_steps`: the set `{"pending", "in-progress", "done", "failed"}` on the status line becomes `{"pending"}` | A known step status is blanked (the opposite edge of MUT-STATUS) | MUT-STATUS | `StepStatusTests.test_known_step_status_is_kept`: `'' != 'done'`. `StepTableTests.test_present_progress_yields_steps`: `Tuples differ: ('@hicks', '') != ('@hicks', 'done')`. Golden green. | 1 |
+| MUT-DROP | `scripts/reconcile-memory.py` `parse_steps`: a row whose status is not in the set is skipped before `steps.append` | An unknown-status row is dropped (the row property) | MUT-KNOWNDROP | `StepStatusTests.test_unknown_step_status_current_behaviour_is_blanked`: `'3' not found in {'1': ...`. Golden red: the `step 3` line is absent from the dry-run output. | 1 |
+| MUT-KNOWNDROP | `scripts/reconcile-memory.py` `parse_steps`: a row whose status is in the set is skipped before `steps.append` | A known-status row is dropped (the opposite edge of MUT-DROP) | MUT-DROP | `StepStatusTests.test_known_step_status_is_kept`: error, a `KeyError` on step `1` from `self._steps()["1"]`, because the row is absent. `MissionsFolderLookupTests.test_declared_missions_folder_is_read`: `0 != 2`. `StepTableTests.test_present_progress_yields_steps`: `Lists differ: [] != ['1', '2']`. Golden red. | 1 |
 
 Notes on the record.
 
@@ -90,6 +126,13 @@ Notes on the record.
 
 M1-mirror and SEAM-PY-MIRROR pass the golden. That is the gap named under "What
 the goldens cannot see". The unit tests carry those edges.
+
+The rows marked `1` were planted at step 1 of mission-20261020-03, on the
+branch `fix/reconciler-integrity`. The reconciler was unchanged from commit
+`2658de2` for those runs. Each row's mirror is the opposite edge of the same
+branch. A row whose observed failure says Golden green changes a link or a blanked
+status, which the dry-run does not print. A row that says Golden red drops a
+step row, and the dropped row's dry-run line is gone.
 
 ## Layout values at the seam
 

@@ -8,6 +8,12 @@ with a mock client, so nothing touches a real memory root or a running service.
   - The missions folder lookup through BISHOP_LAYOUT. The declared folder name
     is read; a name the layout does not declare is not read.
   - reconcile_findings(): an empty Approver falls back to APPROVER_DEFAULT.
+  - parse_findings() and parse_steps() on the shipped fixture (testdata/memory):
+    the **Mission** link each fixture finding receives, and the status of the
+    fixture's step row with a value outside the step set. These pin current
+    behaviour. Each case whose name ends in current_behaviour asserts what the
+    reconciler does today, not what it should do; the step that fixes the case
+    flips its assertion.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
@@ -160,6 +166,87 @@ class ApproverDefaultTests(_TempRoot):
     def test_default_constant_is_findings_file_name(self):
         self.assertEqual(reconcile.APPROVER_DEFAULT, "FINDINGS.md",
                          msg="APPROVER_DEFAULT value changed from FINDINGS.md")
+
+
+FIXTURE_ROOT = os.path.join(HERE, "..", "testdata", "memory")
+FIXTURE_MISSION = "mission-20260904-01"
+
+
+def _fixture_finding(target):
+    """Return the parse_findings() dict whose heading target equals target, from the shipped fixture."""
+    matches = [f for f in reconcile.parse_findings(FIXTURE_ROOT) if f["target"] == target]
+    if len(matches) != 1:
+        raise AssertionError(f"fixture finding {target!r}: expected one entry, found {len(matches)}")
+    return matches[0]
+
+
+class FindingMissionLinkTests(unittest.TestCase):
+    """
+    parse_findings() on the shipped fixture: the mission_id each **Mission** field yields.
+
+    Calls parse_findings() directly. It does not reach reconcile_findings(), so
+    the link is read from the parsed dict, the value the create payload carries.
+    The expected ids are the fixture's archived missions: mission-20261009-02,
+    mission-20261009-10, mission-20261009-100 and mission-20260907-anom-01.
+    """
+
+    def test_plain_id_links_to_its_mission(self):
+        # Control: a plain two-digit id resolves to itself. A failure here means
+        # parse_findings() no longer reads the Mission field.
+        self.assertEqual(_fixture_finding("Plain mission id link")["mission_id"], "mission-20261009-10",
+                         msg="plain id: Mission field mission-20261009-10 not linked to itself")
+
+    def test_three_digit_counter_current_behaviour_links_to_ten(self):
+        # Current behaviour: MISSION_ID is unanchored and stops at two digits, so
+        # mission-20261009-100 is linked to mission-20261009-10. The correct link is
+        # mission-20261009-100. The fix step flips this assertion.
+        self.assertEqual(_fixture_finding("Three-digit counter link")["mission_id"], "mission-20261009-10",
+                         msg="three-digit counter: current behaviour is a link to -10, not -100")
+
+    def test_retry_suffix_current_behaviour_links_to_original(self):
+        # Current behaviour: mission-20261009-02-retry is linked to mission-20261009-02.
+        # The fix step makes the candidate match no known id, so this entry is unlinked.
+        self.assertEqual(_fixture_finding("Retry suffix link")["mission_id"], "mission-20261009-02",
+                         msg="retry suffix: current behaviour is a link to the original -02")
+
+    def test_harness_qualified_id_current_behaviour_is_unlinked(self):
+        # Current behaviour: mission-20260907-anom-01 yields no link, because the
+        # pattern needs two digits after the date and "anom" is not digits. The fix
+        # step links it to mission-20260907-anom-01.
+        self.assertEqual(_fixture_finding("Harness-qualified id link")["mission_id"], "",
+                         msg="harness-qualified id: current behaviour is no link")
+
+    def test_trailing_text_links_to_id_before_text(self):
+        # Control: the id ends at the space, so the link is mission-20261009-02 under
+        # both the current pattern and the extraction rule.
+        self.assertEqual(_fixture_finding("Trailing text link")["mission_id"], "mission-20261009-02",
+                         msg="trailing text: id before the space not linked")
+
+
+class StepStatusTests(unittest.TestCase):
+    """
+    parse_steps() on the shipped fixture: the status each PROGRESS.md row keeps.
+
+    Calls parse_steps() directly on testdata/memory. The fixture's mission
+    folder is the declared one, so this reads the same file the golden reads.
+    """
+
+    def _steps(self):
+        return {s["step"]: s for s in reconcile.parse_steps(FIXTURE_ROOT, FIXTURE_MISSION)}
+
+    def test_known_step_status_is_kept(self):
+        # Control: a status inside the step set is carried through unchanged.
+        self.assertEqual(self._steps()["1"]["status"], "done",
+                         msg="known status: step 1 status 'done' not carried")
+
+    def test_unknown_step_status_current_behaviour_is_blanked(self):
+        # Current behaviour: step 3 carries "blocked", which is outside the step set,
+        # so the row is kept and its status is replaced with "". The payload then
+        # omits status. The fix step keeps the value and counts it as a warning.
+        steps = self._steps()
+        self.assertIn("3", steps, msg="unknown status: step 3 row was dropped, not kept with a blank status")
+        self.assertEqual(steps["3"]["status"], "",
+                         msg="unknown status: current behaviour is a blank status for step 3")
 
 
 if __name__ == "__main__":
