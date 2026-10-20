@@ -77,7 +77,7 @@ route, the harness registry) is generic. Coupling sits at these edges:
 | Area | Where | What it assumes | Class |
 |---|---|---|---|
 | Allocator pattern | `internal/api/allocate.go:56` — `^mission-(\d{8})-(\d+)$`, with the comment at `:48-55` | UTC date and a daily counter | Core-generic in the service (a configurable prefix is cheap) |
-| Reconciler pattern | `scripts/reconcile-memory.py:110` — `mission-\d{8}-\d{2}`, used at `:561` | Two digits, with **no end anchor**, so it matches the prefix of any longer ID. The allocator is anchored and takes three or more digits past 99 | Hard-coupled, and **already inconsistent** (see §2.7) |
+| Reconciler pattern | `scripts/reconcile-memory.py:110` — `mission-\d{8}-\d{2}`, used at `:561` | Two digits, with **no end anchor**, so it matches the prefix of any longer ID. The allocator is anchored and its `(\d+)` takes one or more digits (the comment at `allocate.go:49-50` says two or more, growing past 99) | Hard-coupled, and **already inconsistent** (see §2.7) |
 | Stale rule | `internal/api/hud.go:40` (`staleAfter = "-48 hours"`) | Bishop's 48-hour stale convention | Core-generic policy, configurable value |
 
 ### 2.4 Crew, agent names and identity
@@ -123,8 +123,10 @@ These are not portability work, but the inventory turned them up and they
 belong in phase 2.
 
 - **The mission-ID rules disagree.** The allocator is anchored at both ends
-  and takes a numeric counter of two or more digits (`allocate.go:56`); its
-  comment at `:48-55` says that a harness-qualified id, whose trailing number
+  and takes a numeric counter, matched by `(\d+)`, which is one or more digits
+  (`allocate.go:56`). The comment at `:49-50` describes the id as two digits or
+  more, which is the convention, not what the regex enforces. The comment at
+  `:48-55` says that a harness-qualified id, whose trailing number
   is not a global sequence number, must not fold into the sequence. The
   reconciler matches `mission-\d{8}-\d{2}` with no end anchor
   (`reconcile-memory.py:110`, used at `:561`). A finding that names
@@ -184,8 +186,8 @@ Sources: [MCP](https://code.claude.com/docs/en/mcp),
 - **Instruction files.** `CLAUDE.md` at the project root or `.claude/CLAUDE.md`,
   and `~/.claude/CLAUDE.md` for the user; `CLAUDE.local.md` for personal use;
   `@path/to/file` imports. Claude Code also reads a repository's `AGENTS.md` when
-  no `CLAUDE.md` is present (requires v2.1.277 or later, per the page). Two
-  caveats from the same page:
+  no `CLAUDE.md` is present (requires v2.1.277 or later, per the page). Caveats
+  from the same page:
   - A `CLAUDE.md`, `CLAUDE.local.md` or `.claude/CLAUDE.md` in the working
     directory or any directory above it stops `AGENTS.md` from loading by default.
   - Before v2.1.281, some sessions, such as those on Amazon Bedrock or with
@@ -453,9 +455,9 @@ harness config is the likely choice. Phase 2 settles it.
   (`flight_recorder_append`, `mission_step_record`). A hook may derive it from
   the payload (Claude Code `agent_type`), but the MCP call still names it.
 - **Default.** The silent `claude-code` default (`cmd/mcpd/main.go:69`) is
-  governed by H5. While no generic profile is configured it stays, with a warning
-  on stderr. Once the generic or adapter configuration is in use, an unset
-  `BISHOP_HARNESS` is a refusal that names the variable to set. Bishop sets
+  governed by H5. While the non-Bishop profile test (H5) is false it stays, with a
+  warning on stderr. While the test is true, an unset `BISHOP_HARNESS` is a refusal
+  that names the variable to set. Bishop sets
   `BISHOP_HARNESS` in its own registration, so it reaches neither branch.
 
 ## 5. Per-harness adapter notes
@@ -572,7 +574,11 @@ shortened to a prefix. Expected results:
   `mission-20261009-02`, because the candidate ends at the space or the full stop.
   Today it links correctly, and must still.
 - `mission-20261009-02-retry` links to no mission, because the hyphenated suffix is
-  part of the candidate and matches no known id.
+  part of the candidate and matches no known id. Today it links to
+  `mission-20261009-02`, because the unanchored two-digit pattern stops after the
+  counter. This is an intended behaviour change, and it differs from Bishop's
+  golden output wherever a finding carries such a suffix. It is the intended fix
+  that the §8 golden-test gate allows, and it ships with its own test.
 
 A lazy form such as `[A-Za-z0-9-]+?\b` is not used: it stops at the first hyphen
 and turns `mission-20260907-anom-01` into `mission-20260907-anom`. The anchored
@@ -592,14 +598,15 @@ trailing-text case.
 `task_*` aliases (if H2 says yes), and neutral environment names with the
 `BISHOP_*` names still accepted (H3). Remove `.claude/bishop-memory.conf` from
 tool descriptions and error text in favour of "the harness's registration".
-Make the `defaultHarness` silent fallback warn on stderr while no generic
-profile is configured, and refuse once the generic or adapter configuration is in
-use (§4.5, H5). Publish a conformance fixture that a harness author can run.
+Make the `defaultHarness` silent fallback warn on stderr while the
+non-Bishop profile test is false, and refuse while it is true (§4.5, H5). Publish a conformance fixture that a harness author can run.
 
 **Exit.** A fixture harness with no Bishop files can register, write a task, a
 step and an event, and read them back, using only the contract. The old tool
-names return the same results. The wiki page exists. With no profile, an unset
-identity warns and keeps `claude-code`; with the generic configuration, it refuses.
+names return the same results. The wiki page exists. Running `mcpd` with
+`BISHOP_HARNESS` unset tests the switch. With `BISHOP_MEMORY_PROFILE` unset, it
+warns on stderr and keeps `claude-code`. With `BISHOP_MEMORY_PROFILE` set to a
+profile path, it exits non-zero with a message naming `BISHOP_HARNESS`.
 
 ### Phase 4 — Plain Claude Code adapter
 
@@ -656,14 +663,14 @@ journal row. The release notes name each harness and the trust steps.
 
 The Bishop harness must not break. These rules hold for every phase:
 
-- **Defaults stay Bishop.** The default layout profile, the `apone` role, the
-  `claude-code` default identity keeps its value while no generic profile is
-  configured, and the `BISHOP_*` names keep their current behaviour. The only
-  change is a stderr warning (H5); the refusal begins once the generic or
-  adapter configuration is in use.
+- **Defaults stay Bishop.** The default layout profile, the `apone` role and the
+  `BISHOP_*` names keep their current behaviour. The `claude-code` default
+  identity keeps its value while the non-Bishop profile test (H5) is false. The
+  only change for Bishop is a stderr warning; the refusal applies only while the
+  test is true.
 - **Names are added, not renamed.** `BISHOP_*` variables keep working. The old
   MCP tool names keep working. New names are aliases.
-- **The database schema does not change in phases 1, 2, 3, 4 and 5.** Storage names
+- **The database schema does not change before phase 6.** Storage names
   (`missions`, `mission_steps`) stay. Any schema change needs its own plan.
 - **The golden tests are the gate.** A phase that changes the importer or the
   reconciler does not merge unless the golden output is identical, or the
@@ -693,11 +700,15 @@ ratified.
   settled in phase 2. *Recommended: TOML, to match the Go service.*
 - **H5. Identity is per project.** Harness is set by the project's registration,
   never a user-scope value shared across projects. The silent `claude-code`
-  default is the open point. *Recommended, operator to ratify:* while no generic
-  profile is configured, an unset `BISHOP_HARNESS` keeps the `claude-code` default
-  and writes a warning to stderr, so Bishop and existing installs see no change.
-  Once the generic or adapter configuration is in use, an unset `BISHOP_HARNESS`
-  is a refusal that names the variable to set.
+  default is the open point. *Recommended, operator to ratify:* the switch between
+  warning and refusal is one test, the **non-Bishop profile test**. A non-Bishop
+  profile is in use when `BISHOP_MEMORY_PROFILE` (neutral alias `MEMORY_PROFILE`,
+  H3) is set to a non-empty path in the `mcpd` environment, which a harness's
+  registration sets. While it is unset, an unset `BISHOP_HARNESS` keeps the
+  `claude-code` default and writes a warning to stderr, so Bishop and existing
+  installs see no change. While it is set, an unset `BISHOP_HARNESS` is a refusal
+  that names the variable to set. Every other section refers to this test and does
+  not restate it.
 - **H6. Mission-ID rules: allocation and extraction.** The allocator's anchored
   rule is the source for the ids the service allocates, and it is unchanged. The
   reconciler reads free-text `**Mission**` fields with the extraction rule in
@@ -716,8 +727,8 @@ ratified.
 
 - **Silent identity drift.** A harness that does not set its identity writes
   under `claude-code`. Mitigation: H5. The stderr warning in phase 3 is the only
-  change while no generic profile is configured; the refusal follows once the
-  generic configuration is in use.
+  change while the non-Bishop profile test (H5) is false; the refusal applies only
+  while it is true.
 - **Hidden tools.** A pi default exposure hides the memory tools from the model
   and nothing reports it. Mitigation: H9, and a phase 6 exit check that lists the
   tools to the model.
