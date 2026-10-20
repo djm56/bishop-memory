@@ -46,10 +46,10 @@ import threading
 import unittest
 import urllib.parse
 from contextlib import redirect_stderr
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RECONCILER = os.path.join(HERE, "reconcile-memory.py")
-LIVE_PORT = 8787  # the live memoryd; the fake service must never bind it
 sys.path.insert(0, HERE)
 _spec = importlib.util.spec_from_file_location("reconcile_memory", RECONCILER)
 reconcile = importlib.util.module_from_spec(_spec)
@@ -516,9 +516,6 @@ def _run_main(capped, paged=False):
     paged makes the fake page its journal GETs. Return the CompletedProcess.
     """
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ExitFakeHandler)
-    if server.server_address[1] == LIVE_PORT:
-        server.server_close()
-        raise RuntimeError("fake service bound the live memoryd port")
     server.capped = capped
     server.paged = paged
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -748,6 +745,67 @@ class PagedJournalTests(unittest.TestCase):
                          msg=f"old server at 250 rows: {len(client.requests)} GETs sent, expected 1: {client.requests}")
         self.assertIn("[WARN] mission-20260904-01: journal at 100-row cap", stderr,
                       msg="old server at 250 rows: no WARN line names the mission")
+
+    def test_row_repeated_across_a_page_boundary_is_not_created_again(self):
+        # The service holds event 0 at index 99, the last row of page one, and again at
+        # index 100, the first row of page two: a row that moved down one place between
+        # the two GETs. The repeat is the same natural key, so the event is found once
+        # and nothing is written for it.
+        events_at = {5: FIXTURE_EVENTS[1], 99: FIXTURE_EVENTS[0], 100: FIXTURE_EVENTS[0], 101: FIXTURE_EVENTS[2]}
+        rows = _journal_rows(102, events_at)
+        if not (99 < reconcile.JOURNAL_PAGE_SIZE <= 100 and rows[99] == rows[100]):
+            raise AssertionError("test precondition: the repeated row must straddle the page boundary")
+        client = PagedJournalClient(rows)
+        counts, _ = _journal_run(client)
+        self.assertEqual(counts["created"], 0,
+                         msg=f"repeat across pages: an event the service holds twice was written again: {counts}")
+        self.assertEqual(counts["skipped"], 3,
+                         msg=f"repeat across pages: expected 3 events found as unchanged: {counts}")
+        self.assertEqual([r.split("offset=")[1] for r in client.requests], ["0", "100"],
+                         msg=f"repeat across pages: pages requested were {client.requests}")
+
+    def test_row_differing_only_in_note_is_not_the_event(self):
+        # The opposite edge of the repeat: the service holds a row that matches event 2 in
+        # every natural-key field but its note. That is another event, so event 2 is
+        # written, and the two events with an exact row are not.
+        near = dict(_event_row(FIXTURE_EVENTS[2]), note=FIXTURE_EVENTS[2]["note"] + " (edited)")
+        rows = _journal_rows(10, {0: FIXTURE_EVENTS[0], 1: FIXTURE_EVENTS[1]})
+        rows[2] = near
+        counts, _ = _journal_run(PagedJournalClient(rows))
+        self.assertEqual(counts["created"], 1,
+                         msg=f"note differs: expected 1 event written for the row that differs in note: {counts}")
+        self.assertEqual(counts["skipped"], 2,
+                         msg=f"note differs: expected the 2 exact rows found as unchanged: {counts}")
+
+    def test_read_of_exactly_the_page_ceiling_is_complete(self):
+        # With the ceiling at three pages, 300 rows are exactly three pages and the
+        # third reports has_more false: the read completes and finds every event.
+        rows = _journal_rows(300, {0: FIXTURE_EVENTS[0], 150: FIXTURE_EVENTS[1], 299: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows)
+        with mock.patch.object(reconcile, "JOURNAL_MAX_PAGES", 3):
+            counts, _ = _journal_run(client)
+        self.assertEqual(counts["fetch_failed"], 0,
+                         msg=f"ceiling exactly met: a read that ends at the ceiling was a fetch failure: {counts}")
+        self.assertEqual(counts["skipped"], 3,
+                         msg=f"ceiling exactly met: expected 3 events found as unchanged: {counts}")
+        self.assertEqual([r.split("offset=")[1] for r in client.requests], ["0", "100", "200"],
+                         msg=f"ceiling exactly met: pages requested were {client.requests}")
+
+    def test_read_past_the_page_ceiling_is_fetch_failure(self):
+        # With the ceiling at three pages, 301 rows still report has_more after the third
+        # page. The read stops there with a fetch failure and sends no fourth GET.
+        rows = _journal_rows(301, {0: FIXTURE_EVENTS[0], 1: FIXTURE_EVENTS[1], 2: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows)
+        with mock.patch.object(reconcile, "JOURNAL_MAX_PAGES", 3):
+            counts, stderr = _journal_run(client)
+        self.assertEqual(counts["fetch_failed"], 1,
+                         msg=f"ceiling exceeded: expected 1 fetch failure for the mission: {counts}")
+        self.assertEqual(counts["skipped_fetch_failed"], 3,
+                         msg=f"ceiling exceeded: expected 3 events skipped for the fetch failure: {counts}")
+        self.assertEqual(len(client.requests), 3,
+                         msg=f"ceiling exceeded: {len(client.requests)} GETs sent, expected 3: {client.requests}")
+        self.assertIn("has_more is still set after 3 pages", stderr,
+                      msg="ceiling exceeded: the failure text does not name the ceiling")
 
 
 class PagedJournalExitTests(unittest.TestCase):
