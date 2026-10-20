@@ -253,7 +253,7 @@ core, a neutral integration contract and one adapter per harness. Bishop stays
 the reference harness and must not break. Status: in progress. Phase 1 is on
 `main` through PR #8 (`8437f32`), and the reconciler-bug part of phase 2 is on
 `main` through PR #9 (`1c4def9`). The research and the coupling inventory are
-done. The layout profile and phases 3 to 8 are not started. Plan:
+done. The layout profile and every later phase are not started. Plan:
 [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md). Items
 per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
 
