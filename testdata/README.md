@@ -12,22 +12,20 @@ the golden, or the difference is an intended fix that ships its own test.
 ## Fixture cases
 
 The shipped fixture carries the inputs for the reconciler's mission-ID and
-step-status paths. Each is written in the Markdown shape Bishop writes.
+step-status paths. Each is written in the Markdown shape Bishop writes. The
+files are the source; this section does not list them.
 
-- `findings/FINDINGS.md` has an entry for each case, each with a `**Mission**`
-  field: a plain id, `mission-20261009-10`; a three-digit counter,
-  `mission-20261009-100`; a retry suffix, `mission-20261009-02-retry`; a
-  harness-qualified id, `mission-20260907-anom-01`; and an id followed by
-  trailing text, `mission-20261009-02 (retry)`. The entries whose Rationale
-  names a control link correctly today.
-- `state/MISSION-ARCHIVE.md` archives the missions those ids name, so each
-  id is a known id. The archived missions have no folder under `missions/`,
-  so the importer's document set is unchanged by them.
-- `missions/mission-20260904-01/PROGRESS.md` has a step row whose status,
-  `blocked`, is outside the step set.
+- `findings/FINDINGS.md`: each fixture entry has a `**Mission**` field. Its
+  Rationale says what the entry exercises.
+- `state/MISSION-ARCHIVE.md`: the rows are the known mission ids the
+  `**Mission**` fields are checked against. An id with no row here, and no
+  folder under `missions/`, is not known.
+- `missions/mission-20260904-01/PROGRESS.md`: one step row carries a status
+  outside the step set.
 
 Only existing files carry these cases. No file was added, because the
-importer test asserts the exact document count.
+importer test asserts the exact document count. The importer golden embeds the
+body of `findings/FINDINGS.md`, so an edit to that file changes it.
 
 ## Regenerating a golden
 
@@ -70,21 +68,28 @@ against the committed golden.
 
 ## Mutant record (DIR-017)
 
-Planted against commit `7438933`. Production files are unchanged through
-`718cb7a`; the commits after `7438933` change only the tests and this record.
+Two missions have written rows here. The rows labelled `5c` and `5e` were
+planted by an earlier mission, against commit `7438933`; production files are
+unchanged through `718cb7a`, and the commits after `7438933` change only the
+tests and this record. The rows labelled `m3-step3` were planted by
+mission-20261020-03 at its step 3, on branch `fix/reconciler-integrity`, against
+commit `e75e97f`, where the reconciler is unchanged from `2658de2`.
+
 Each mutant was planted alone, its killers run, and the file reverted.
 Each reverted file was checked with `cmp` against a copy saved before planting.
 The failure text is the output observed on that run. Python edges are one test
 method each; Go edges are one subtest each.
 
-The **Last run** column gives the step at which each row was last run. `5e`
-means the row was re-run at step 5e. `5c` means the row was last run at step 5c
-and not re-run at 5e. M1-mirror's text was corrected at 5e; that correction is
-an edit, not a run, so its last run is still `5c`.
+The **Last run** column names the run. `5c` and `5e` are steps of the earlier
+mission. `m3-step3` is step 3 of mission-20261020-03.
+
+Quoted failure text is verbatim. unittest prints a message passed to
+`assertEqual` on the line after its diff, as `    : <msg>`; that line is quoted
+after the `AssertionError` line, with its leading spaces removed.
 
 Every mutant names the property it discriminates and its mirror, the opposite
 edge. A mirror is killed by a test whose failure text differs from its
-partner's. The kill lines of each mutant and its mirror are disjoint.
+partner's, except for the one shared kill named in the Notes.
 
 | Mutant | Edit (against current code) | Property discriminated | Mirror | Observed failure | Last run |
 |--------|-----------------------------|------------------------|--------|------------------|----------|
@@ -100,14 +105,14 @@ partner's. The kill lines of each mutant and its mirror are disjoint.
 | SEAM-PY-MIRROR | `scripts/reconcile-memory.py:547` `parse_steps`: the path is found by a glob over `*/<id>/PROGRESS.md` before the declared path is used, so any folder name is read | An undeclared folder name is not read by the reconciler (the opposite edge) | SEAM-PY (the declared edge) | `MissionsFolderLookupTests.test_undeclared_folder_name_is_not_read`: `AssertionError: Lists differ: [{'step': '1', ...}, {'step': '2', ...}] != [] : undeclared folder notes is not read: parse_steps read notes/ as the mission folder`. `test_dry_run_matches_golden` passes (the golden fixture's folder is the declared one). | 5c |
 | APPROVER-MUT | `scripts/reconcile-memory.py:1072` `reconcile_findings`: `finding["_approver"] or APPROVER_DEFAULT` becomes `finding["_approver"] or ""` | An empty Approver in the Markdown falls back to `APPROVER_DEFAULT` | APPROVER-MIRROR | `ApproverDefaultTests.test_empty_approver_falls_back_to_default`: `AssertionError: '' != 'FINDINGS.md' : empty Approver: decision did not fall back to APPROVER_DEFAULT`. `test_explicit_approver_is_carried` stays green. | 5e |
 | APPROVER-MIRROR | `scripts/reconcile-memory.py:1072` `reconcile_findings`: `finding["_approver"] or APPROVER_DEFAULT` becomes `APPROVER_DEFAULT` | An explicit Approver in the Markdown is carried, not replaced (the opposite edge) | APPROVER-MUT (the default edge) | `ApproverDefaultTests.test_explicit_approver_is_carried`: `AssertionError: 'FINDINGS.md' != 'Donovan' : explicit Approver: decision did not carry the Markdown value`. `test_empty_approver_falls_back_to_default` stays green. | 5e |
-| MUT-ANCHOR | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?![A-Za-z0-9-])` | A counter followed by a hyphen or a letter is not linked to its prefix | MUT-SPACE | `FindingMissionLinkTests.test_retry_suffix_current_behaviour_links_to_original`: `'' != 'mission-20261009-02'`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'' != 'mission-20261009-10'`. `test_trailing_text_links_to_id_before_text` and the plain control pass. Golden green. | 1 |
-| MUT-SPACE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?!\s)` | A counter followed by a space is not linked (the opposite edge of MUT-ANCHOR) | MUT-ANCHOR | `FindingMissionLinkTests.test_trailing_text_links_to_id_before_text`: `'' != 'mission-20261009-02'`. The current-behaviour tests and the plain control pass. Golden green. | 1 |
-| MUT-LOOSE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-[A-Za-z0-9]+` | The candidate runs past the counter into letters (the over-long edge) | MUT-THREE | `FindingMissionLinkTests.test_harness_qualified_id_current_behaviour_is_unlinked`: `'mission-20260907-anom' != ''`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'mission-20261009-100' != 'mission-20261009-10'`. Golden green. | 1 |
-| MUT-THREE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{3}` | The candidate stops at a three-digit counter (the over-short edge, the mirror of MUT-LOOSE) | MUT-LOOSE | `FindingMissionLinkTests.test_plain_id_links_to_its_mission`: `'' != 'mission-20261009-10'`. `test_trailing_text_links_to_id_before_text`: `'' != 'mission-20261009-02'`. `test_retry_suffix_current_behaviour_links_to_original`: `'' != 'mission-20261009-02'`. `test_three_digit_counter_current_behaviour_links_to_ten`: `'mission-20261009-100' != 'mission-20261009-10'`. Golden green. | 1 |
-| MUT-STATUS | `scripts/reconcile-memory.py` `parse_steps`: `"status": status if status in {...} else "",` becomes `"status": status,` | An unknown step status is kept, not blanked | MUT-KNOWN | `StepStatusTests.test_unknown_step_status_current_behaviour_is_blanked`: `'blocked' != ''`. Golden green. | 1 |
-| MUT-KNOWN | `scripts/reconcile-memory.py` `parse_steps`: the set `{"pending", "in-progress", "done", "failed"}` on the status line becomes `{"pending"}` | A known step status is blanked (the opposite edge of MUT-STATUS) | MUT-STATUS | `StepStatusTests.test_known_step_status_is_kept`: `'' != 'done'`. `StepTableTests.test_present_progress_yields_steps`: `Tuples differ: ('@hicks', '') != ('@hicks', 'done')`. Golden green. | 1 |
-| MUT-DROP | `scripts/reconcile-memory.py` `parse_steps`: a row whose status is not in the set is skipped before `steps.append` | An unknown-status row is dropped (the row property) | MUT-KNOWNDROP | `StepStatusTests.test_unknown_step_status_current_behaviour_is_blanked`: `'3' not found in {'1': ...`. Golden red: the `step 3` line is absent from the dry-run output. | 1 |
-| MUT-KNOWNDROP | `scripts/reconcile-memory.py` `parse_steps`: a row whose status is in the set is skipped before `steps.append` | A known-status row is dropped (the opposite edge of MUT-DROP) | MUT-DROP | `StepStatusTests.test_known_step_status_is_kept`: error, a `KeyError` on step `1` from `self._steps()["1"]`, because the row is absent. `MissionsFolderLookupTests.test_declared_missions_folder_is_read`: `0 != 2`. `StepTableTests.test_present_progress_yields_steps`: `Lists differ: [] != ['1', '2']`. Golden red. | 1 |
+| MUT-ANCHOR | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?![A-Za-z0-9-])` | A counter followed by a hyphen or a letter is not linked to its prefix | MUT-SPACE | `AssertionError: '' != 'mission-20261009-02'` / `: retry suffix: current behaviour is a link to the original -02`; `AssertionError: '' != 'mission-20261009-10'` / `: three-digit counter: current behaviour is a link to -10, not -100`. Golden green. | m3-step3 (e75e97f) |
+| MUT-SPACE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{2}(?!\s)` | A counter followed by a space is not linked (the opposite edge of MUT-ANCHOR) | MUT-ANCHOR | `AssertionError: '' != 'mission-20261009-02'` / `: trailing text: id before the space not linked`. Golden green. | m3-step3 (e75e97f) |
+| MUT-LOOSE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-[A-Za-z0-9]+` | The candidate runs past the counter into letters (the over-long edge) | MUT-THREE | `AssertionError: 'mission-20260907-anom' != ''` / `: harness-qualified id: current behaviour is no link`; `AssertionError: 'mission-20261009-100' != 'mission-20261009-10'` / `: three-digit counter: current behaviour is a link to -10, not -100`. Golden green. | m3-step3 (e75e97f) |
+| MUT-THREE | `scripts/reconcile-memory.py:148` `MISSION_ID`: `mission-\d{8}-\d{2}` becomes `mission-\d{8}-\d{3}` | The candidate stops at a three-digit counter (the over-short edge, the mirror of MUT-LOOSE) | MUT-LOOSE | `AssertionError: '' != 'mission-20261009-10'` / `: plain id: Mission field mission-20261009-10 not linked to itself`; `AssertionError: '' != 'mission-20261009-02'` / `: retry suffix: current behaviour is a link to the original -02`; `AssertionError: 'mission-20261009-100' != 'mission-20261009-10'` / `: three-digit counter: current behaviour is a link to -10, not -100`; `AssertionError: '' != 'mission-20261009-02'` / `: trailing text: id before the space not linked`. Golden green. | m3-step3 (e75e97f) |
+| MUT-STATUS | `scripts/reconcile-memory.py:560` `parse_steps`: `"status": status if status in {...} else "",` becomes `"status": status,` | An unknown step status is kept, not blanked | MUT-KNOWN | `AssertionError: 'blocked' != ''` / `: unknown status: current behaviour is a blank status for step 3`. Golden green. | m3-step3 (e75e97f) |
+| MUT-KNOWN | `scripts/reconcile-memory.py:560` `parse_steps`: the set `{"pending", "in-progress", "done", "failed"}` on the status line becomes `{"pending"}` | A known step status is blanked (the opposite edge of MUT-STATUS) | MUT-STATUS | `AssertionError: '' != 'done'` / `: known status: step 1 status 'done' not carried`; `AssertionError: Tuples differ: ('@hicks', '') != ('@hicks', 'done')` / `: file present yields steps: step 1 agent or status not parsed`. Golden green. | m3-step3 (e75e97f) |
+| MUT-DROP | `scripts/reconcile-memory.py:556` `parse_steps`: a row whose status is not in the set is skipped before `steps.append` | An unknown-status row is dropped (the row property) | MUT-KNOWNDROP | `AssertionError: '3' not found in {'1': {'step': '1', 'phase': '', 'agent': '@hicks', 'status': 'done', 'notes': 'Restructured fixture tree and updated importer code'}, '2': {'step': '2', 'phase': '', 'agent': '@apone', 'status': 'done', 'notes': 'Reviewed restructuring — APPROVED, no CRITICAL'}}` / `: unknown status: step 3 row was dropped, not kept with a blank status`. Golden red: the `step 3` line is absent. | m3-step3 (e75e97f) |
+| MUT-KNOWNDROP | `scripts/reconcile-memory.py:556` `parse_steps`: a row whose status is in the set is skipped before `steps.append` | A known-status row is dropped (the opposite edge of MUT-DROP) | MUT-DROP | `ERROR: test_known_step_status_is_kept` with `KeyError: '1'`; `AssertionError: 0 != 2` / `: declared missions folder is read: expected 2 steps under missions/`; `AssertionError: Lists differ: [] != ['1', '2']` / `: file present yields steps: expected steps 1 and 2 from PROGRESS.md`. Golden red. | m3-step3 (e75e97f) |
 
 Notes on the record.
 
@@ -116,23 +121,30 @@ Notes on the record.
   test could not tell the two apart. The mirror now sits on the file-absent
   branch instead. This was reasoned from `parse_steps` and not run as the
   inversion; the sentinel mutant is the one that was run.
-- **Shared kill lines.** Some mutants share a failing line, because they
-  break the same read. SEAM-GO and SEAM-GO-LOOKUP share
-  `importer_test.go:306`. M2 and SEAM-PY share the `MissionsFolderLookupTests`
-  declared-folder failure. Neither pair is a mutant and its own mirror. Each pair is told apart
-  by a sibling test that stays green: `importer_test.go:260` stays green under
-  SEAM-GO-LOOKUP and fails under SEAM-GO; `test_present_progress_yields_steps`
-  stays green under SEAM-PY and fails under M2.
+- **Shared kill lines.** Some mutants share a failing line, because they break
+  the same read. SEAM-GO and SEAM-GO-LOOKUP share `importer_test.go:306`. M2 and
+  SEAM-PY share the `MissionsFolderLookupTests` declared-folder failure. Neither
+  pair is a mutant and its own mirror, so each is told apart by a sibling test
+  that stays green: `importer_test.go:260` stays green under SEAM-GO-LOOKUP and
+  fails under SEAM-GO; `test_present_progress_yields_steps` stays green under
+  SEAM-PY and fails under M2.
+- **MUT-LOOSE and MUT-THREE share one kill.** They are a mutant and its mirror,
+  and both fail `FindingMissionLinkTests.test_three_digit_counter_current_behaviour_links_to_ten`
+  with the same line, `'mission-20261009-100' != 'mission-20261009-10'`. Each
+  also has a killer the other lacks: MUT-LOOSE fails the harness-qualified test,
+  and MUT-THREE fails the plain-id test. Their kill lines are therefore not
+  disjoint, and the shared line is the only one they have in common.
 
 M1-mirror and SEAM-PY-MIRROR pass the golden. That is the gap named under "What
 the goldens cannot see". The unit tests carry those edges.
 
-The rows marked `1` were planted at step 1 of mission-20261020-03, on the
-branch `fix/reconciler-integrity`. The reconciler was unchanged from commit
-`2658de2` for those runs. Each row's mirror is the opposite edge of the same
-branch. A row whose observed failure says Golden green changes a link or a blanked
-status, which the dry-run does not print. A row that says Golden red drops a
-step row, and the dropped row's dry-run line is gone.
+The rows marked `m3-step3` were run at step 3 of mission-20261020-03, against
+commit `e75e97f`, where the reconciler is unchanged from `2658de2`. Rows
+MUT-ANCHOR through MUT-KNOWNDROP were run against the golden test as well as the
+unit tests. Each row's mirror is the opposite edge of the same guard. A row
+whose observed failure says Golden green changes a link or a blanked status,
+which the dry-run does not print. A row that says Golden red drops a step row,
+and the dropped row's dry-run line is gone.
 
 ## Layout values at the seam
 

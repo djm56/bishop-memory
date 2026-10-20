@@ -9,11 +9,10 @@ with a mock client, so nothing touches a real memory root or a running service.
     is read; a name the layout does not declare is not read.
   - reconcile_findings(): an empty Approver falls back to APPROVER_DEFAULT.
   - parse_findings() and parse_steps() on the shipped fixture (testdata/memory):
-    the **Mission** link each fixture finding receives, and the status of the
-    fixture's step row with a value outside the step set. These pin current
-    behaviour. Each case whose name ends in current_behaviour asserts what the
-    reconciler does today, not what it should do; the step that fixes the case
-    flips its assertion.
+    the **Mission** link each fixture finding receives, and the status each
+    fixture step row keeps. Each case whose name ends in current_behaviour
+    asserts what the reconciler does today. The result the plan intends for
+    that case is cited in the comment above its assertion.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
@@ -186,8 +185,8 @@ class FindingMissionLinkTests(unittest.TestCase):
 
     Calls parse_findings() directly. It does not reach reconcile_findings(), so
     the link is read from the parsed dict, the value the create payload carries.
-    The expected ids are the fixture's archived missions: mission-20261009-02,
-    mission-20261009-10, mission-20261009-100 and mission-20260907-anom-01.
+    The fixture entries are in testdata/memory/findings/FINDINGS.md; the ids they
+    name are the archive rows in testdata/memory/state/MISSION-ARCHIVE.md.
     """
 
     def test_plain_id_links_to_its_mission(self):
@@ -197,28 +196,41 @@ class FindingMissionLinkTests(unittest.TestCase):
                          msg="plain id: Mission field mission-20261009-10 not linked to itself")
 
     def test_three_digit_counter_current_behaviour_links_to_ten(self):
-        # Current behaviour: MISSION_ID is unanchored and stops at two digits, so
-        # mission-20261009-100 is linked to mission-20261009-10. The correct link is
-        # mission-20261009-100. The fix step flips this assertion.
+        # Current behaviour: MISSION_ID is an unanchored two-digit pattern, so the
+        # three-digit value mission-20261009-100 yields mission-20261009-10.
+        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
+        # value yields mission-20261009-100 and never mission-20261009-10.
         self.assertEqual(_fixture_finding("Three-digit counter link")["mission_id"], "mission-20261009-10",
                          msg="three-digit counter: current behaviour is a link to -10, not -100")
 
     def test_retry_suffix_current_behaviour_links_to_original(self):
-        # Current behaviour: mission-20261009-02-retry is linked to mission-20261009-02.
-        # The fix step makes the candidate match no known id, so this entry is unlinked.
+        # Current behaviour: the two-digit pattern stops after the counter, so
+        # mission-20261009-02-retry yields mission-20261009-02.
+        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
+        # candidate includes "-retry", matches no known id, and yields no link.
         self.assertEqual(_fixture_finding("Retry suffix link")["mission_id"], "mission-20261009-02",
                          msg="retry suffix: current behaviour is a link to the original -02")
 
     def test_harness_qualified_id_current_behaviour_is_unlinked(self):
-        # Current behaviour: mission-20260907-anom-01 yields no link, because the
-        # pattern needs two digits after the date and "anom" is not digits. The fix
-        # step links it to mission-20260907-anom-01.
+        # Current behaviour: the two-digit pattern cannot match "anom", so
+        # mission-20260907-anom-01 yields no link.
+        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
+        # value yields mission-20260907-anom-01, an archived id.
         self.assertEqual(_fixture_finding("Harness-qualified id link")["mission_id"], "",
                          msg="harness-qualified id: current behaviour is no link")
 
+    def test_unarchived_plain_id_current_behaviour_links_to_itself(self):
+        # Current behaviour: the value is not checked against the known ids, so
+        # mission-20261009-77, which no archive row or folder names, yields itself.
+        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): an
+        # id matching no known mission yields no link.
+        self.assertEqual(_fixture_finding("Unarchived plain id link")["mission_id"], "mission-20261009-77",
+                         msg="unarchived plain id: current behaviour is a link to itself")
+
     def test_trailing_text_links_to_id_before_text(self):
-        # Control: the id ends at the space, so the link is mission-20261009-02 under
-        # both the current pattern and the extraction rule.
+        # Control: the id ends at the space, so the value yields mission-20261009-02,
+        # under the current pattern and under the plan's extraction rule
+        # (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
         self.assertEqual(_fixture_finding("Trailing text link")["mission_id"], "mission-20261009-02",
                          msg="trailing text: id before the space not linked")
 
@@ -240,9 +252,11 @@ class StepStatusTests(unittest.TestCase):
                          msg="known status: step 1 status 'done' not carried")
 
     def test_unknown_step_status_current_behaviour_is_blanked(self):
-        # Current behaviour: step 3 carries "blocked", which is outside the step set,
-        # so the row is kept and its status is replaced with "". The payload then
-        # omits status. The fix step keeps the value and counts it as a warning.
+        # Current behaviour: step 3 carries "blocked", which is outside the step set.
+        # The row is kept and its status is replaced with "", so the payload omits
+        # status and nothing records the rejected value.
+        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
+        # rejected value is preserved and the row is counted as a warning.
         steps = self._steps()
         self.assertIn("3", steps, msg="unknown status: step 3 row was dropped, not kept with a blank status")
         self.assertEqual(steps["3"]["status"], "",
