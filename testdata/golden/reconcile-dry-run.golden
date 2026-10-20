@@ -41,7 +41,7 @@
   [dry-run] POST /v1/findings  2026-10-09 Harness-qualified id link
   [dry-run] POST /v1/findings  2026-10-09 Trailing text link
   [dry-run] POST /v1/findings  2026-10-09 Unarchived plain id link
-[findings] 7 parsed, 7 created, 0 unchanged, 0 status mirrored, 0 failed
+[findings] 7 parsed, 7 created, 0 unchanged, 0 status mirrored, 0 failed, 2 warned
 [directives] 0 parsed, 0 created, 0 updated, 0 unchanged, 0 failed
   [dry-run] POST /v1/patterns  Testing with Fixture Data
 [patterns] 1 parsed, 1 created, 0 unchanged, 0 failed
@@ -50,7 +50,8 @@
 
 [reconcile] would send 26 requests, 20 entities created/updated
 --- stderr ---
-(empty)
+  [WARN] 2026-10-09 Retry suffix link: Mission mission-20261009-02-retry names no known mission; entry left unlinked
+  [WARN] 2026-10-09 Unarchived plain id link: Mission mission-20261009-77 names no known mission; entry left unlinked
 --- requests received by fake ---
 GET /v1/missions
 GET /v1/missions/mission-20260904-01/steps

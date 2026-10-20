@@ -145,7 +145,13 @@ load_client_env()
 # The harness writes an em dash as the "no value" placeholder in table cells
 # and entry headings. Treat it as empty rather than as literal content.
 EM_DASH = "—"
-MISSION_ID = re.compile(r"mission-\d{8}-\d{2}")
+# The mission-id candidate in a free-text Mission value, per the extraction rule in
+# docs/plans/HARNESS-PORTABILITY-PLAN.md (section 7, Phase 2). The candidate runs to
+# the end of the id across hyphens, so mission-20260907-anom-01 is read whole and
+# mission-20261009-02-retry is read as one candidate. The lookbehind keeps a match
+# from starting inside a longer token. A candidate is linked only when it equals a
+# known mission id exactly; parse_findings() makes that comparison.
+MISSION_CANDIDATE = re.compile(r"(?<![A-Za-z0-9-])mission-\d{8}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
 PLACEHOLDERS = {"", "-", EM_DASH, "none", "None", "n/a", "N/A"}
 
 
@@ -586,8 +592,21 @@ def parse_journal(root):
     return events
 
 
-def parse_findings(root):
-    """findings/FINDINGS.md -> finding dicts."""
+def mission_candidate(text):
+    """The mission-id candidate in a Mission value, or "" when the value has none."""
+    match = MISSION_CANDIDATE.search(text or "")
+    return match.group(0) if match else ""
+
+
+def parse_findings(root, known_missions=()):
+    """
+    findings/FINDINGS.md -> finding dicts.
+
+    known_missions is the set of mission ids the reconciler knows about. A
+    finding's **Mission** candidate is linked only when it equals one of them.
+    A candidate that equals none is left unlinked, and its "_mission_candidate"
+    carries it so reconcile_findings() can warn with the value.
+    """
     out = []
     for entry in entries(os.path.join(root, BISHOP_LAYOUT.findings_dir, BISHOP_LAYOUT.findings_file)):
         date, target = split_heading_date(entry_heading(entry))
@@ -596,13 +615,15 @@ def parse_findings(root):
             continue  # `suggestion` is the one required field.
         # `**Mission**: mission-20261009-03` links the finding to its mission
         # for the HUD. Older entries have no such field and stay unlinked.
-        mission = MISSION_ID.search(entry_field(entry, "Mission"))
+        candidate = mission_candidate(entry_field(entry, "Mission"))
         out.append({
             "finding_date": truncate(date, 64),
             "target": truncate(target, 256),
             "suggestion": truncate(suggestion, 2000),
             "rationale": truncate(entry_field(entry, "Rationale"), 2000),
-            "mission_id": mission.group(0) if mission else "",
+            "mission_id": candidate if candidate and candidate in known_missions else "",
+            # Set when the Mission field names a candidate; empty when it names none.
+            "_mission_candidate": candidate,
             # Human decision fields. Not part of the create payload (the API
             # refuses them); read by reconcile_findings to mirror a status the
             # operator set by hand in the file.
@@ -1000,7 +1021,7 @@ def reconcile_journal(client, parsed_missions, root):
     return status_counts
 
 
-def reconcile_findings(client, root, harness=""):
+def reconcile_findings(client, root, harness="", known_missions=()):
     """
     Create missing findings, and mirror a human decision recorded in the file.
 
@@ -1010,8 +1031,11 @@ def reconcile_findings(client, root, harness=""):
     carried across verbatim. Markdown -> service only; the service never
     writes status back here (scripts/export-decisions.py does that, from the
     operator's own decisions).
+
+    known_missions is passed to parse_findings(). A Mission value that names a
+    candidate matching none of them is left unlinked and counted as "warned".
     """
-    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0, "decided": 0}
+    status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "fetch_failed": 0, "decided": 0, "warned": 0}
 
     # Fetch existing findings (keyed by natural key)
     existing = {}
@@ -1032,9 +1056,13 @@ def reconcile_findings(client, root, harness=""):
         return status_counts
 
     # Parse and create missing findings
-    findings = parse_findings(root)
+    findings = parse_findings(root, known_missions)
     status_counts["parsed"] = len(findings)
     for finding in findings:
+        if finding["_mission_candidate"] and not finding["mission_id"]:
+            print(f"  [WARN] {finding['finding_date']} {finding['target']}: Mission "
+                  f"{finding['_mission_candidate']} names no known mission; entry left unlinked", file=sys.stderr)
+            status_counts["warned"] += 1
         key = (finding["finding_date"], finding["target"], finding["suggestion"])
         md_status = finding["_status"] if finding["_status"] in FINDING_STATUSES else "proposed"
         payload = {k: v for k, v in finding.items() if not k.startswith("_")}
@@ -1345,10 +1373,12 @@ def main():
 
     # --- Findings --------
     print()
-    counts = reconcile_findings(client, root, harness=args.harness)
+    counts = reconcile_findings(client, root, harness=args.harness,
+                                known_missions={m["id"] for m in missions})
     fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))
+    warned_note = f", {counts['warned']} warned" if counts['warned'] > 0 else ""
     print(f"[findings] {counts['parsed']} parsed, {counts['created']} created, " +
-          f"{counts['skipped']} unchanged, {counts['decided']} status mirrored, {counts['failed']} failed{fetch_status}")
+          f"{counts['skipped']} unchanged, {counts['decided']} status mirrored, {counts['failed']} failed{warned_note}{fetch_status}")
     total_failed_operations += counts['failed']
     total_fetch_failures += counts.get('fetch_failed', 0)
     total_entities += counts['created'] + counts['decided']

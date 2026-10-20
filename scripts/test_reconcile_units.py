@@ -13,6 +13,8 @@ with a mock client, so nothing touches a real memory root or a running service.
     fixture step row keeps. Each case whose name ends in current_behaviour
     asserts what the reconciler does today. The result the plan intends for
     that case is cited in the comment above its assertion.
+  - reconcile_findings() on the same fixture: a Mission candidate that names no
+    known mission is counted as a warning and left out of the create payload.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
@@ -171,9 +173,14 @@ FIXTURE_ROOT = os.path.join(HERE, "..", "testdata", "memory")
 FIXTURE_MISSION = "mission-20260904-01"
 
 
+def _fixture_known_missions():
+    """The mission ids the reconciler knows from the shipped fixture: archive rows and live mission."""
+    return {m["id"] for m in reconcile.parse_missions(FIXTURE_ROOT)}
+
+
 def _fixture_finding(target):
     """Return the parse_findings() dict whose heading target equals target, from the shipped fixture."""
-    matches = [f for f in reconcile.parse_findings(FIXTURE_ROOT) if f["target"] == target]
+    matches = [f for f in reconcile.parse_findings(FIXTURE_ROOT, _fixture_known_missions()) if f["target"] == target]
     if len(matches) != 1:
         raise AssertionError(f"fixture finding {target!r}: expected one entry, found {len(matches)}")
     return matches[0]
@@ -183,8 +190,9 @@ class FindingMissionLinkTests(unittest.TestCase):
     """
     parse_findings() on the shipped fixture: the mission_id each **Mission** field yields.
 
-    Calls parse_findings() directly. It does not reach reconcile_findings(), so
-    the link is read from the parsed dict, the value the create payload carries.
+    Calls parse_findings() directly, with the known ids the fixture's archive and
+    folders give. It does not reach reconcile_findings(), so the link is read
+    from the parsed dict, the value the create payload carries.
     The fixture entries are in testdata/memory/findings/FINDINGS.md; the ids they
     name are the archive rows in testdata/memory/state/MISSION-ARCHIVE.md.
     """
@@ -195,44 +203,79 @@ class FindingMissionLinkTests(unittest.TestCase):
         self.assertEqual(_fixture_finding("Plain mission id link")["mission_id"], "mission-20261009-10",
                          msg="plain id: Mission field mission-20261009-10 not linked to itself")
 
-    def test_three_digit_counter_current_behaviour_links_to_ten(self):
-        # Current behaviour: MISSION_ID is an unanchored two-digit pattern, so the
-        # three-digit value mission-20261009-100 yields mission-20261009-10.
-        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
-        # value yields mission-20261009-100 and never mission-20261009-10.
-        self.assertEqual(_fixture_finding("Three-digit counter link")["mission_id"], "mission-20261009-10",
-                         msg="three-digit counter: current behaviour is a link to -10, not -100")
+    def test_three_digit_counter_links_to_itself(self):
+        # The extraction rule reads the whole counter, so mission-20261009-100 yields
+        # mission-20261009-100 and never mission-20261009-10
+        # (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
+        self.assertEqual(_fixture_finding("Three-digit counter link")["mission_id"], "mission-20261009-100",
+                         msg="three-digit counter: -100 not linked to itself")
 
-    def test_retry_suffix_current_behaviour_links_to_original(self):
-        # Current behaviour: the two-digit pattern stops after the counter, so
-        # mission-20261009-02-retry yields mission-20261009-02.
-        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
-        # candidate includes "-retry", matches no known id, and yields no link.
-        self.assertEqual(_fixture_finding("Retry suffix link")["mission_id"], "mission-20261009-02",
-                         msg="retry suffix: current behaviour is a link to the original -02")
+    def test_retry_suffix_links_to_nothing(self):
+        # The candidate is mission-20261009-02-retry, which matches no known id, so
+        # the value yields no link (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7,
+        # Phase 2). The original mission -02 is known and is not linked.
+        self.assertEqual(_fixture_finding("Retry suffix link")["mission_id"], "",
+                         msg="retry suffix: -02-retry linked to a known id instead of nothing")
 
-    def test_harness_qualified_id_current_behaviour_is_unlinked(self):
-        # Current behaviour: the two-digit pattern cannot match "anom", so
-        # mission-20260907-anom-01 yields no link.
-        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): the
-        # value yields mission-20260907-anom-01, an archived id.
-        self.assertEqual(_fixture_finding("Harness-qualified id link")["mission_id"], "",
-                         msg="harness-qualified id: current behaviour is no link")
+    def test_harness_qualified_id_links_to_itself(self):
+        # The candidate is mission-20260907-anom-01, an archived id, so the value
+        # yields that id (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
+        self.assertEqual(_fixture_finding("Harness-qualified id link")["mission_id"], "mission-20260907-anom-01",
+                         msg="harness-qualified id: anom-01 not linked to itself")
 
-    def test_unarchived_plain_id_current_behaviour_links_to_itself(self):
-        # Current behaviour: the value is not checked against the known ids, so
-        # mission-20261009-77, which no archive row or folder names, yields itself.
-        # Intended (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2): an
-        # id matching no known mission yields no link.
-        self.assertEqual(_fixture_finding("Unarchived plain id link")["mission_id"], "mission-20261009-77",
-                         msg="unarchived plain id: current behaviour is a link to itself")
+    def test_unarchived_plain_id_stays_unlinked(self):
+        # The candidate mission-20261009-77 names no archived or live mission, so the
+        # value yields no link (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
+        self.assertEqual(_fixture_finding("Unarchived plain id link")["mission_id"], "",
+                         msg="unarchived plain id: candidate naming no known mission was linked")
 
     def test_trailing_text_links_to_id_before_text(self):
-        # Control: the id ends at the space, so the value yields mission-20261009-02,
-        # under the current pattern and under the plan's extraction rule
+        # Control: the candidate ends at the space, so the value yields mission-20261009-02
         # (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
         self.assertEqual(_fixture_finding("Trailing text link")["mission_id"], "mission-20261009-02",
                          msg="trailing text: id before the space not linked")
+
+
+class FindingWarningTests(unittest.TestCase):
+    """reconcile_findings() on the shipped fixture: candidates naming no known mission are warned and unlinked."""
+
+    def _run(self):
+        """Run reconcile_findings() with no existing findings; return (counts, stderr text, payloads by target)."""
+        client = MockClient(findings=[])
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_findings(client, FIXTURE_ROOT, known_missions=_fixture_known_missions())
+        payloads = {w["payload"]["target"]: w["payload"] for w in client.written if w["path"] == "/v1/findings"}
+        return counts, stderr.getvalue(), payloads
+
+    def test_unknown_candidates_are_warned(self):
+        # Two fixture entries name a candidate that no known mission matches: the
+        # retry value and the unarchived id. Each is counted and printed as a WARN
+        # line (docs/plans/HARNESS-PORTABILITY-PLAN.md, section 7, Phase 2).
+        counts, stderr, _ = self._run()
+        self.assertEqual(counts["warned"], 2,
+                         msg=f"unknown candidates: expected 2 warned findings, got counts {counts}")
+        self.assertIn("[WARN] 2026-10-09 Retry suffix link: Mission mission-20261009-02-retry names no known mission",
+                      stderr, msg="retry suffix: no WARN line names the value")
+        self.assertIn("[WARN] 2026-10-09 Unarchived plain id link: Mission mission-20261009-77 names no known mission",
+                      stderr, msg="unarchived plain id: no WARN line names the value")
+
+    def test_known_candidate_is_linked_not_warned(self):
+        # Positive control: a candidate that matches a known id is linked and
+        # produces no WARN line, so the warning is not printed for every entry.
+        _, stderr, payloads = self._run()
+        self.assertEqual(payloads["Harness-qualified id link"].get("mission_id"), "mission-20260907-anom-01",
+                         msg="harness-qualified id: known id not carried in the create payload")
+        self.assertNotIn("Harness-qualified id link", stderr,
+                         msg="harness-qualified id: a known id produced a WARN line")
+
+    def test_unknown_candidate_is_not_in_payload(self):
+        # The create payload carries no mission_id for an entry whose candidate is unknown.
+        _, _, payloads = self._run()
+        self.assertNotIn("mission_id", payloads["Retry suffix link"],
+                         msg="retry suffix: create payload carries a mission_id for an unknown candidate")
+        self.assertNotIn("mission_id", payloads["Unarchived plain id link"],
+                         msg="unarchived plain id: create payload carries a mission_id for an unknown candidate")
 
 
 class StepStatusTests(unittest.TestCase):
