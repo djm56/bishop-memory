@@ -32,10 +32,11 @@ Four things to know:
    `mission.step` row into flight_recorder as part of their transaction.
    Those audit rows are how this script's own work gets tracked.
 
-3. THE JOURNAL IS OPT-IN. flight_recorder cannot be fully enumerated
-   (hard cap of 100 rows per request, no offset). Global dedupe is
-   impossible, so journal reconciliation is opt-in via --include-journal
-   and per-mission only (requires <100 rows per mission).
+3. THE JOURNAL IS OPT-IN. Journal reconciliation runs only with
+   --include-journal, one mission at a time. A mission's rows are read page
+   by page (limit and offset) while the server reports has_more. A server
+   that does not page answers one page of JOURNAL_PAGE_SIZE rows, so a
+   mission whose page is full is warned and skipped (the journal cap).
 
 4. CURRENT-MISSION.md HAS NO SUMMARY FIELD. Its six fields are Mission ID,
    Status, Owner, Next Action, Last Updated, Blockers — see
@@ -997,6 +998,11 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
 # this size; an older server answers one page of this size and no more.
 JOURNAL_PAGE_SIZE = 100
 
+# Most pages fetch_journal reads for one mission. A server still reporting
+# has_more after this many pages is a fetch failure, so a server that always
+# reports has_more on non-empty pages cannot hold the read open.
+JOURNAL_MAX_PAGES = 1000
+
 
 def journal_page_path(mission_id, offset):
     """The GET path for the page of a mission's journal that starts at offset."""
@@ -1017,7 +1023,8 @@ def fetch_journal(client, mission_id):
 
     A failing GET raises, and no rows are returned from the pages before it.
     A page that reports has_more with no rows also raises, because the next
-    offset would not advance.
+    offset would not advance, and so does a read still reporting has_more
+    after JOURNAL_MAX_PAGES pages.
     """
     _, body = client.get(journal_page_path(mission_id, 0))
     if "has_more" not in body:
@@ -1025,13 +1032,17 @@ def fetch_journal(client, mission_id):
         return rows, len(rows) >= JOURNAL_PAGE_SIZE
     rows = []
     offset = 0
+    pages = 0
     while True:
         page = body.get("flight_recorder", [])
         rows.extend(page)
+        pages += 1
         if not body["has_more"]:
             return rows, False
         if not page:
             raise RuntimeError(f"journal paging: has_more is set on an empty page at offset {offset}")
+        if pages >= JOURNAL_MAX_PAGES:
+            raise RuntimeError(f"journal paging: has_more is still set after {JOURNAL_MAX_PAGES} pages")
         offset += len(page)
         _, body = client.get(journal_page_path(mission_id, offset))
 
@@ -1049,7 +1060,7 @@ def reconcile_journal(client, parsed_missions, root):
     # as "skipped_journal_cap", never under "fetch_failed" or "failed".
     # A capped mission with no events in the local journal is still warned
     # once, but skipped_journal_cap stays 0, so it does not set the exit
-    # status: only events actually skipped at the cap do. This is intended.
+    # status: only events actually skipped at the cap do.
     # Note: "parsed" here also excludes events for missions this run never
     # heard of at all (see the `not any(...)` filter below) — that's a
     # separate, deliberate scope filter, not a fetch failure, and is not
@@ -1506,7 +1517,7 @@ def main():
     verb = "would send" if args.dry_run else "sent"
     error_detail = ""
     # Journal events skipped at the cap were not reconciled, so they keep the run
-    # non-zero, as before, but are named as their own category, not as fetch failures.
+    # non-zero, but are named as their own category, not as fetch failures.
     if total_failed_operations > 0 or total_fetch_failures > 0 or total_journal_cap_skips > 0:
         error_parts = []
         if total_failed_operations > 0:
