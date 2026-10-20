@@ -2,9 +2,10 @@
 //
 // mcpd is a stdio Model Context Protocol server that proxies the
 // bishop-memory HTTP API. It is a pure HTTP *client* of the
-// bishop-memory service: it does not import any bishop-memory internal
-// package and never touches the SQLite database directly. All state
-// mutations flow through the HTTP API exposed by cmd/memoryd.
+// bishop-memory service: it imports no service package and never touches
+// the SQLite database directly. Its one internal import is internal/profile,
+// for the default harness identity. All state mutations flow through the
+// HTTP API exposed by cmd/memoryd.
 //
 // Agent identity is conveyed two ways:
 //
@@ -55,18 +56,14 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	"bishop-memory/internal/profile"
 )
 
 // Default configuration values used when the corresponding env vars
 // are unset or empty.
 const (
-	defaultMemoryURL = "http://127.0.0.1:8787"
-	// defaultHarness is "claude-code" by deliberate design: this is the
-	// bishop-harness project, and claude-code is the intended default harness.
-	// The BISHOP_HARNESS env var is set by the harness's project-scope MCP
-	// registration in .mcp.json, so the default is only reached by a bare
-	// invocation. For this project, the claude-code default is correct.
-	defaultHarness     = "claude-code"
+	defaultMemoryURL   = "http://127.0.0.1:8787"
 	defaultHTTPTimeout = 30 * time.Second
 
 	// defaultSyncHTTPTimeout is the timeout used ONLY for documents_sync
@@ -98,7 +95,7 @@ type client struct {
 func main() {
 	loadClientEnv()
 	baseURL := envOrDefault("BISHOP_MEMORY_URL", defaultMemoryURL)
-	harness := envOrDefault("BISHOP_HARNESS", defaultHarness)
+	harness := envOrDefault("BISHOP_HARNESS", profile.Bishop.DefaultHarness)
 
 	// Validate the base URL is an absolute URI (not a relative path or
 	// fragment) before we try to use it. url.ParseRequestURI rejects
@@ -1450,7 +1447,7 @@ func doWithClient(ctx context.Context, httpClient *http.Client, method, urlStr s
 //
 // The empty-harness branch below is defensive, not reachable via any
 // env var an operator can currently set: envOrDefault("BISHOP_HARNESS",
-// defaultHarness) already treats an unset OR explicitly-empty
+// profile.Bishop.DefaultHarness) already treats an unset OR explicitly-empty
 // BISHOP_HARNESS as unset and substitutes "claude-code", so c.harness is
 // never "" in main()'s current wiring (Step 4 review, Review C
 // SUGGESTION 11 — this docblock previously described a scenario the

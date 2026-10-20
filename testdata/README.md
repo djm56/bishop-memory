@@ -46,8 +46,18 @@ cannot see", and the unit test carries that edge. The reconciler mirror was not
 planted. The mutant set from step 2 is not in the repository or the workspace,
 so it is not reproduced here.
 
-## Mutating a layout value (seam check)
+## Layout values at the seam
 
-The layout values read by the importer and the reconciler are declared once,
-at the seam. Changing one of them must fail the goldens. Procedure and results
-are recorded with the seam commit.
+The directory and file names the importer and the reconciler read are declared
+once. The Go values are `profile.Bishop.Layout` in `internal/profile/profile.go`.
+The Python values are `BISHOP_LAYOUT` in `scripts/reconcile-memory.py`. Changing
+one of them must fail the goldens.
+
+Checked at the seam commit by setting the missions folder name to `missionz` in
+each language, running the golden, and restoring the file:
+
+- Go, `TestGoldenImportState`: fails. The first difference is at line 4 of the
+  golden, which is the `# stats:` line. The stats change with the layout.
+- Python, `test_dry_run_matches_golden`: fails.
+
+Each restore was checked with `cmp` against a saved copy.

@@ -18,6 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bishop-memory/internal/importer"
+	"bishop-memory/internal/profile"
 	"bishop-memory/internal/review"
 )
 
@@ -189,7 +190,7 @@ func hudMissionHandler(db *sql.DB) gin.HandlerFunc {
 		reviews := []map[string]any{}
 		for _, step := range out["steps"].([]map[string]any) {
 			agent, _ := step["agent"].(string)
-			if importer.CrewName(agent) != "apone" {
+			if importer.CrewName(agent) != profile.Bishop.ReviewerRole {
 				continue
 			}
 			notes, _ := step["notes"].(string)

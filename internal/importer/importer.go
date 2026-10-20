@@ -114,6 +114,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"bishop-memory/internal/profile"
 )
 
 // MaxJSONLLineBytes is the largest single line a JSONL file may have
@@ -221,8 +223,13 @@ func SyncHarnessStats(db *sql.DB, root, harness string) (SyncStats, error) {
 	return stats, walkErr
 }
 
-// missionFiles are the per-mission documents SyncMission re-imports.
-var missionFiles = []string{"BRIEF.md", "PROGRESS.md", "DEBRIEF.md"}
+// missionFiles are the per-mission documents SyncMission re-imports, named by
+// the profile layout.
+var missionFiles = []string{
+	profile.Bishop.Layout.Brief,
+	profile.Bishop.Layout.Progress,
+	profile.Bishop.Layout.Debrief,
+}
 
 // SyncMission imports only missions/<missionID>/BRIEF.md, PROGRESS.md and
 // DEBRIEF.md under root — the cheap, targeted re-import run after a mission
@@ -245,7 +252,7 @@ func SyncMissionStats(db *sql.DB, root, harness, missionID string) (SyncStats, e
 		return stats, err
 	}
 	for _, name := range missionFiles {
-		path := filepath.Join(resolvedRoot, "missions", missionID, name)
+		path := filepath.Join(resolvedRoot, profile.Bishop.Layout.MissionsDir, missionID, name)
 		info, err := os.Lstat(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -411,10 +418,10 @@ func importMarkdownContent(db *sql.DB, sourcePath, relPath, harness string, cont
 	// CURRENT-MISSION.md and FLIGHT-RECORDER.md get the structured-field prefix;
 	// the raw content is preserved below the prefix so a full-text search still
 	// finds every original token.
-	if filepath.Base(relPath) == "CURRENT-MISSION.md" {
+	if filepath.Base(relPath) == profile.Bishop.Layout.CurrentMission {
 		body = prependCurrentMissionFields(body)
 	}
-	if filepath.Base(relPath) == "FLIGHT-RECORDER.md" {
+	if filepath.Base(relPath) == profile.Bishop.Layout.FlightRecorder {
 		body = prependFlightRecorderFields(body)
 	}
 
@@ -702,35 +709,39 @@ func kindFromPath(relPath string) string {
 	// findings/service-records/<name>.md -> "service-record"
 	// reference/DIRECTIVES.md    -> "directives"
 	//
+	// The directory and file names come from profile.Bishop.Layout. The kind
+	// labels returned below are literal strings.
+	//
 	// These special cases apply only at exactly the specified nesting
 	// level. A missions/<id>/<sub>/BRIEF.md (4+ parts) falls through to
 	// "missions". A bare missions/BRIEF.md (2 parts) falls through to
 	// "missions". These files are NOT mission metadata.
-	if len(parts) == 3 && parts[0] == "missions" {
+	layout := profile.Bishop.Layout
+	if len(parts) == 3 && parts[0] == layout.MissionsDir {
 		switch base {
-		case "BRIEF.md":
+		case layout.Brief:
 			return "brief"
-		case "PROGRESS.md":
+		case layout.Progress:
 			return "progress"
-		case "DEBRIEF.md":
+		case layout.Debrief:
 			return "debrief"
 		}
 	}
 
-	if len(parts) == 2 && parts[0] == "findings" {
+	if len(parts) == 2 && parts[0] == layout.FindingsDir {
 		switch base {
-		case "PATTERNS.md":
+		case layout.Patterns:
 			return "patterns"
 		}
 	}
 
-	if len(parts) == 3 && parts[0] == "findings" && parts[1] == "service-records" {
+	if len(parts) == 3 && parts[0] == layout.FindingsDir && parts[1] == layout.ServiceRecordsDir {
 		return "service-record"
 	}
 
-	if len(parts) == 2 && parts[0] == "reference" {
+	if len(parts) == 2 && parts[0] == layout.ReferenceDir {
 		switch base {
-		case "DIRECTIVES.md":
+		case layout.Directives:
 			return "directives"
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"bishop-memory/internal/importer"
+	"bishop-memory/internal/profile"
 	"bishop-memory/internal/review"
 )
 
@@ -202,7 +203,7 @@ func crewHandler(db *sql.DB) gin.HandlerFunc {
 			}
 
 			// If this is an apone review step, parse it and collect for matching.
-			if importer.CrewName(agentStr) == "apone" {
+			if importer.CrewName(agentStr) == profile.Bishop.ReviewerRole {
 				notes, _ := row["notes"].(string)
 				summary, _ := row["summary"].(string)
 				v := review.Parse(notes, summary)
