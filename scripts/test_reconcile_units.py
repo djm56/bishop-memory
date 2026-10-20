@@ -25,6 +25,10 @@ Nothing touches a real memory root or the live service.
   - main() exit status and summary for the journal cap: cap skips alone exit 1
     and name the cap; no cap skips exit 0; a capped mission with no local events
     exits 0.
+  - fetch_journal() and reconcile_journal() against a paging server: every page
+    is read and no cap arises, an exact page is not capped, a failing page is a
+    fetch failure with no partial pass, a page that reports more with no rows
+    is a fetch failure. Against a server that does not page, the cap holds.
 
 The step-table tests write into the folder and file names BISHOP_LAYOUT
 declares, so they test the parser and not the name. The lookup tests use the
@@ -472,15 +476,25 @@ class JournalCapTests(unittest.TestCase):
 
 
 class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
-    """Answers each GET with an empty body, except a flight-recorder GET, which gets the rows the server names."""
+    """
+    Answers each GET with an empty body, except a flight-recorder GET, which gets the rows the server names.
+    When the server's paged attribute is set, a flight-recorder GET answers as a paging server does:
+    the page at offset, with has_more. Otherwise it answers as an older server does, with every row and no has_more.
+    """
 
     def do_GET(self):
         url = urllib.parse.urlsplit(self.path)
         if url.path == "/v1/flight-recorder":
-            mission = urllib.parse.parse_qs(url.query)["mission_id"][0]
+            query = urllib.parse.parse_qs(url.query)
+            mission = query["mission_id"][0]
             rows = [{"mission_id": mission, "occurred_at": f"row {i}", "step": "", "event": "e", "note": "n"}
                     for i in range(self.server.capped.get(mission, 0))]
-            body = {"flight_recorder": rows}
+            if getattr(self.server, "paged", False):
+                offset = int(query.get("offset", ["0"])[0])
+                page = rows[offset:offset + min(int(query["limit"][0]), 100)]
+                body = {"flight_recorder": page, "has_more": offset + len(page) < len(rows)}
+            else:
+                body = {"flight_recorder": rows}
         else:
             body = {}
         data = json.dumps(body).encode("utf-8")
@@ -495,17 +509,18 @@ class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _run_main(capped):
+def _run_main(capped, paged=False):
     """
     Run the reconciler as a subprocess, dry-run with --include-journal, against a fake
     service. capped maps a mission id to the number of journal rows the fake returns for it.
-    Return the CompletedProcess.
+    paged makes the fake page its journal GETs. Return the CompletedProcess.
     """
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ExitFakeHandler)
     if server.server_address[1] == LIVE_PORT:
         server.server_close()
         raise RuntimeError("fake service bound the live memoryd port")
     server.capped = capped
+    server.paged = paged
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -562,6 +577,192 @@ class JournalCapExitTests(unittest.TestCase):
                       msg="capped without local events: no WARN line names the mission")
         self.assertNotIn("skipped (journal cap)", _summary_line(proc),
                          msg="capped without local events: the summary names a journal cap skip")
+
+
+def _filler_row(i):
+    """A journal row for FIXTURE_MISSION that matches no parsed event."""
+    return {"mission_id": FIXTURE_MISSION, "occurred_at": f"filler {i}", "step": "", "event": "e", "note": "n"}
+
+
+def _event_row(event):
+    """The service's copy of a parsed event: the five fields of the natural key, exactly as parsed."""
+    return {k: event[k] for k in ("mission_id", "occurred_at", "step", "event", "note")}
+
+
+def _journal_rows(total, events_at):
+    """
+    total journal rows for FIXTURE_MISSION. events_at maps a row index to a parsed event
+    the service holds at that index; every other index is a filler row.
+    """
+    rows = [_filler_row(i) for i in range(total)]
+    for index, event in events_at.items():
+        rows[index] = _event_row(event)
+    return rows
+
+
+class PagedJournalClient(MockClient):
+    """
+    Mock service for the flight-recorder GET. paged=True answers as a paging server does:
+    rows[offset:offset+limit] with limit capped at JOURNAL_PAGE_SIZE, and has_more. paged=False
+    answers as an older server does: the first rows up to limit, offset ignored, no has_more.
+    fail_offset names an offset whose GET raises instead of answering. Every journal GET path
+    is kept in requests.
+    """
+
+    def __init__(self, rows, paged=True, fail_offset=None):
+        super().__init__()
+        self.rows = rows
+        self.paged = paged
+        self.fail_offset = fail_offset
+        self.requests = []
+
+    def get(self, path):
+        if not path.startswith("/v1/flight-recorder"):
+            return super().get(path)
+        self.requests.append(path)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+        limit = min(int(query["limit"][0]), reconcile.JOURNAL_PAGE_SIZE)
+        if not self.paged:
+            return 200, {"flight_recorder": self.rows[:limit]}
+        offset = int(query["offset"][0])
+        if offset == self.fail_offset:
+            raise OSError(f"simulated network failure at offset {offset}")
+        page = self.rows[offset:offset + limit]
+        return 200, {"flight_recorder": page, "has_more": offset + len(page) < len(self.rows)}
+
+
+class _EmptyPageClient(PagedJournalClient):
+    """A paging server whose first GETs report has_more on an empty page. Stops after three GETs."""
+
+    def get(self, path):
+        if not path.startswith("/v1/flight-recorder"):
+            return super().get(path)
+        self.requests.append(path)
+        return 200, {"flight_recorder": [], "has_more": len(self.requests) <= 3}
+
+
+FIXTURE_EVENTS = [event for event in reconcile.parse_journal(FIXTURE_ROOT) if event["mission_id"] == FIXTURE_MISSION]
+
+
+def _journal_run(client):
+    """Run reconcile_journal() for FIXTURE_MISSION against client; return (counts, stderr text)."""
+    stderr = io.StringIO()
+    with redirect_stderr(stderr):
+        counts = reconcile.reconcile_journal(client, [{"id": FIXTURE_MISSION}], FIXTURE_ROOT)
+    return counts, stderr.getvalue()
+
+
+class PagedJournalTests(unittest.TestCase):
+    """reconcile_journal() against a paging server, and against a server that does not page."""
+
+    @classmethod
+    def setUpClass(cls):
+        # Positive control: the fixture has the three events every case below looks for.
+        if len(FIXTURE_EVENTS) != 3:
+            raise AssertionError(f"fixture precondition: expected 3 events for {FIXTURE_MISSION}, got {len(FIXTURE_EVENTS)}")
+
+    def test_paged_server_reads_every_page_and_is_not_capped(self):
+        # 250 rows over the page size. The events sit at indexes 150, 151 and 240, past
+        # the first page. All three are found only if the later pages are read.
+        rows = _journal_rows(250, {150: FIXTURE_EVENTS[0], 151: FIXTURE_EVENTS[1], 240: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows)
+        counts, stderr = _journal_run(client)
+        self.assertEqual(counts["skipped"], 3,
+                         msg=f"paged 250 rows: events on later pages not all found as unchanged: {counts}")
+        self.assertEqual(counts["created"], 0,
+                         msg=f"paged 250 rows: an event on a later page was written as missing: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"paged 250 rows: a paging server was counted as the journal cap: {counts}")
+        self.assertEqual(counts["warned"], 0, msg=f"paged 250 rows: a warning was counted: {counts}")
+        self.assertNotIn("[WARN]", stderr, msg="paged 250 rows: a WARN line was printed")
+        self.assertEqual([r.split("offset=")[1] for r in client.requests], ["0", "100", "200"],
+                         msg=f"paged 250 rows: pages requested were {client.requests}")
+
+    def test_paged_server_exact_page_is_not_capped(self):
+        # Exactly one full page, nothing after it. has_more is false, so the page is
+        # complete: the three events are found and nothing is capped.
+        rows = _journal_rows(100, {0: FIXTURE_EVENTS[0], 1: FIXTURE_EVENTS[1], 2: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows)
+        counts, stderr = _journal_run(client)
+        self.assertEqual(counts["warned"], 0,
+                         msg=f"paged exact page: a full page with has_more false was warned as the cap: {counts}")
+        self.assertEqual(counts["skipped"], 3, msg=f"paged exact page: expected 3 events found as unchanged: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"paged exact page: a full page was counted as the journal cap: {counts}")
+        self.assertEqual(len(client.requests), 1,
+                         msg=f"paged exact page: a request past the end was sent: {client.requests}")
+
+    def test_paged_server_exact_two_pages_stops_at_has_more(self):
+        # Two full pages with has_more false on the second. The reader stops there: no
+        # third GET is sent, and the events at the start, middle and end are all found.
+        rows = _journal_rows(200, {0: FIXTURE_EVENTS[0], 100: FIXTURE_EVENTS[1], 199: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows)
+        counts, _ = _journal_run(client)
+        self.assertEqual(counts["skipped"], 3, msg=f"paged two pages: expected 3 events found as unchanged: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"paged two pages: a full second page was counted as the journal cap: {counts}")
+        self.assertEqual([r.split("offset=")[1] for r in client.requests], ["0", "100"],
+                         msg=f"paged two pages: pages requested were {client.requests}")
+
+    def test_failing_page_is_fetch_failure_not_partial_pass(self):
+        # Page one answers and holds the three events; the GET at offset 100 fails. The
+        # mission must be a fetch failure with its events skipped for it, not a pass on page one.
+        rows = _journal_rows(250, {0: FIXTURE_EVENTS[0], 1: FIXTURE_EVENTS[1], 2: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows, fail_offset=100)
+        counts, stderr = _journal_run(client)
+        self.assertEqual(counts["fetch_failed"], 1,
+                         msg=f"failing page: expected 1 fetch failure for the mission: {counts}")
+        self.assertEqual(counts["skipped_fetch_failed"], 3,
+                         msg=f"failing page: expected 3 events skipped for the fetch failure: {counts}")
+        self.assertEqual(counts["skipped"], 0,
+                         msg=f"failing page: events were passed on page one alone: {counts}")
+        self.assertEqual(counts["created"], 0, msg=f"failing page: an event was written: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 0,
+                         msg=f"failing page: the failed page was counted as the journal cap: {counts}")
+        self.assertIn("could not fetch existing", stderr, msg="failing page: no fetch failure line was printed")
+        self.assertIn("simulated network failure at offset 100", stderr,
+                      msg="failing page: the failure text names the page that failed")
+
+    def test_has_more_on_empty_page_is_fetch_failure(self):
+        # has_more with no rows would never advance the offset. The reader must stop with a
+        # fetch failure after the first such page, not send another GET.
+        client = _EmptyPageClient([])
+        counts, stderr = _journal_run(client)
+        self.assertEqual(counts["fetch_failed"], 1,
+                         msg=f"empty page with has_more: expected 1 fetch failure: {counts}")
+        self.assertEqual(len(client.requests), 1,
+                         msg=f"empty page with has_more: {len(client.requests)} GETs sent, expected 1: {client.requests}")
+        self.assertIn("has_more is set on an empty page at offset 0", stderr,
+                      msg="empty page with has_more: the failure text does not name the page")
+
+    def test_server_that_does_not_page_keeps_the_cap(self):
+        # An older server ignores offset and answers one page with no has_more. At
+        # 250 rows it sends only its first page: the mission is capped, one GET is sent.
+        rows = _journal_rows(250, {0: FIXTURE_EVENTS[0], 1: FIXTURE_EVENTS[1], 2: FIXTURE_EVENTS[2]})
+        client = PagedJournalClient(rows, paged=False)
+        counts, stderr = _journal_run(client)
+        self.assertEqual(counts["warned"], 1, msg=f"old server at 250 rows: expected 1 warned mission: {counts}")
+        self.assertEqual(counts["skipped_journal_cap"], 3,
+                         msg=f"old server at 250 rows: expected 3 events skipped at the cap: {counts}")
+        self.assertEqual(len(client.requests), 1,
+                         msg=f"old server at 250 rows: {len(client.requests)} GETs sent, expected 1: {client.requests}")
+        self.assertIn("[WARN] mission-20260904-01: journal at 100-row cap", stderr,
+                      msg="old server at 250 rows: no WARN line names the mission")
+
+
+class PagedJournalExitTests(unittest.TestCase):
+    """main() against a paging fake service over HTTP, so the real Client and the query string are exercised."""
+
+    def test_paged_service_over_http_exits_0_without_cap(self):
+        # 250 filler rows across three pages and no events held: every parsed event is
+        # created in dry-run, nothing is capped, and the run exits 0.
+        proc = _run_main({FIXTURE_MISSION: 250}, paged=True)
+        err = proc.stderr.decode("utf-8", "replace")
+        self.assertEqual(proc.returncode, 0,
+                         msg=f"paged over HTTP: exit code is {proc.returncode}, expected 0; stderr: {err}")
+        self.assertNotIn("journal cap", _summary_line(proc),
+                         msg="paged over HTTP: the summary names the journal cap")
+        self.assertNotIn("journal at", err, msg="paged over HTTP: a journal cap WARN line was printed")
 
 
 if __name__ == "__main__":

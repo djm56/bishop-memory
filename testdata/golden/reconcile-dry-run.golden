@@ -60,11 +60,11 @@ GET /v1/missions/mission-20261009-02/steps
 GET /v1/missions/mission-20261009-10/steps
 GET /v1/missions/mission-20261009-100/steps
 GET /v1/missions/mission-20260907-anom-01/steps
-GET /v1/flight-recorder?mission_id=mission-20260904-01&limit=100
-GET /v1/flight-recorder?mission_id=mission-20261009-02&limit=100
-GET /v1/flight-recorder?mission_id=mission-20261009-10&limit=100
-GET /v1/flight-recorder?mission_id=mission-20261009-100&limit=100
-GET /v1/flight-recorder?mission_id=mission-20260907-anom-01&limit=100
+GET /v1/flight-recorder?mission_id=mission-20260904-01&limit=100&offset=0
+GET /v1/flight-recorder?mission_id=mission-20261009-02&limit=100&offset=0
+GET /v1/flight-recorder?mission_id=mission-20261009-10&limit=100&offset=0
+GET /v1/flight-recorder?mission_id=mission-20261009-100&limit=100&offset=0
+GET /v1/flight-recorder?mission_id=mission-20260907-anom-01&limit=100&offset=0
 GET /v1/findings
 GET /v1/directives
 GET /v1/directive-proposals

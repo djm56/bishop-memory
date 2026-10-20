@@ -993,16 +993,60 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     return status_counts
 
 
+# Rows requested per flight-recorder GET. A server that pages answers each page of
+# this size; an older server answers one page of this size and no more.
+JOURNAL_PAGE_SIZE = 100
+
+
+def journal_page_path(mission_id, offset):
+    """The GET path for the page of a mission's journal that starts at offset."""
+    query = urllib.parse.urlencode({"mission_id": mission_id, "limit": JOURNAL_PAGE_SIZE, "offset": offset})
+    return f"/v1/flight-recorder?{query}"
+
+
+def fetch_journal(client, mission_id):
+    """
+    Read a mission's journal rows from the service. Returns (rows, capped).
+
+    The first GET sends offset=0. A server that pages answers with a has_more
+    key, and the pages are read in turn until has_more is false; capped is
+    then False. A server that does not page ignores offset and sends no
+    has_more key. Its one page is the whole answer, and capped is True when
+    that page holds JOURNAL_PAGE_SIZE rows, since completeness cannot be
+    verified then.
+
+    A failing GET raises, and no rows are returned from the pages before it.
+    A page that reports has_more with no rows also raises, because the next
+    offset would not advance.
+    """
+    _, body = client.get(journal_page_path(mission_id, 0))
+    if "has_more" not in body:
+        rows = body.get("flight_recorder", [])
+        return rows, len(rows) >= JOURNAL_PAGE_SIZE
+    rows = []
+    offset = 0
+    while True:
+        page = body.get("flight_recorder", [])
+        rows.extend(page)
+        if not body["has_more"]:
+            return rows, False
+        if not page:
+            raise RuntimeError(f"journal paging: has_more is set on an empty page at offset {offset}")
+        offset += len(page)
+        _, body = client.get(journal_page_path(mission_id, offset))
+
+
 def reconcile_journal(client, parsed_missions, root):
     """Reconcile flight recorder events (per-mission, opt-in)."""
     # Same per-mission fetch shape as reconcile_steps(): "fetch_failed" counts
     # affected missions, "skipped_fetch_failed" counts the events those
     # missions' rows left untouched, so a reader can tell how many parsed
     # events were genuinely skipped rather than inferring it from stderr.
-    # A mission whose journal GET returns the 100-row cap is not a fetch
-    # failure: the GET succeeded, but completeness cannot be verified. It is
-    # counted as "warned" (one per mission) and its events as
-    # "skipped_journal_cap", never under "fetch_failed" or "failed".
+    # A server that pages is read to the end of the journal, so no cap arises.
+    # Against an older server that does not page, a mission whose one page is
+    # full is not a fetch failure: the GET succeeded, but completeness cannot
+    # be verified. It is counted as "warned" (one per mission) and its events
+    # as "skipped_journal_cap", never under "fetch_failed" or "failed".
     # A capped mission with no events in the local journal is still warned
     # once, but skipped_journal_cap stays 0, so it does not set the exit
     # status: only events actually skipped at the cap do. This is intended.
@@ -1019,10 +1063,9 @@ def reconcile_journal(client, parsed_missions, root):
     missions_journal_capped = set()
     for mission in parsed_missions:
         try:
-            _, body = client.get(f"/v1/flight-recorder?mission_id={urllib.parse.quote_plus(mission['id'])}&limit=100")
-            rows = body.get("flight_recorder", [])
-            if len(rows) >= 100:
-                print(f"  [WARN] {mission['id']}: journal at 100-row cap; cannot verify completeness; skipping writes for this mission", file=sys.stderr)
+            rows, capped = fetch_journal(client, mission["id"])
+            if capped:
+                print(f"  [WARN] {mission['id']}: journal at {JOURNAL_PAGE_SIZE}-row cap; cannot verify completeness; skipping writes for this mission", file=sys.stderr)
                 missions_journal_capped.add(mission["id"])
                 status_counts["warned"] += 1
                 continue
