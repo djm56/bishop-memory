@@ -17,7 +17,7 @@ Status is human-controlled: `proposed` → `approved` → `applied`, with `rejec
 
 ### 2026-10-09 — Plain mission id link
 **Suggestion**: Link a finding to its mission when the Mission field holds a plain id.
-**Rationale**: Control entry. The plain id is the one shape every reader already handles.
+**Rationale**: Control entry.
 **Mission**: mission-20261009-10
 **Status**: proposed
 **Approver**: —
@@ -51,6 +51,14 @@ Status is human-controlled: `proposed` → `approved` → `applied`, with `rejec
 **Suggestion**: Link a finding whose Mission field carries trailing text to the id before the text.
 **Rationale**: Control entry for trailing text. The id ends at the space, so the link is to -02.
 **Mission**: mission-20261009-02 (retry)
+**Status**: proposed
+**Approver**: —
+**Date approved**: —
+
+### 2026-10-09 — Unarchived plain id link
+**Suggestion**: Link a finding whose Mission field holds a plain id that no archive row or mission folder names.
+**Rationale**: The id is in neither MISSION-ARCHIVE.md nor missions/. A candidate that names no known mission is not linked.
+**Mission**: mission-20261009-77
 **Status**: proposed
 **Approver**: —
 **Date approved**: —
