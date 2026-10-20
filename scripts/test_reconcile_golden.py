@@ -9,10 +9,16 @@ with --harness fixture --dry-run --include-journal, pointed at a fake HTTP
 service this test starts on 127.0.0.1 on an ephemeral port. The live memoryd
 at 127.0.0.1:8787 is never contacted.
 
-The fake answers every GET with fixed JSON, so the dry-run's comparisons are
-deterministic. It records every request it receives. The golden holds the exit
-code, stdout, stderr, and that request list, after normalising the fake's URL
-and the fixture root path.
+The fake answers a GET on one of the paths in ROUTES with fixed JSON, and any
+other GET with 404, so the dry-run's comparisons are deterministic. Every
+non-GET request is answered 405. The fake records every request it receives.
+
+The golden holds the exit code, stdout, stderr, and the request list, after
+normalising the fake's URL and the fixture root path. The request list is the
+method and path, query string included, of each request. Request bodies and
+headers are not recorded, so the golden cannot see what a request carried. A
+write that reaches the fake appears in the golden as its method and path only;
+its payload is never compared.
 
 Only the URL and paths are normalised. The fixture's timestamps come from its
 own Markdown, not the clock, so they are not normalised. A volatile value would
@@ -24,6 +30,11 @@ the golden: the fake must have received GETs, and no POST, PUT, PATCH or DELETE.
 Updating the golden after an intended change:
 
     UPDATE_GOLDEN=1 python3 scripts/test_reconcile_golden.py
+
+An update run writes the golden and then fails test_dry_run_matches_golden on
+purpose, so an update run is never green. Run again without UPDATE_GOLDEN to
+confirm. CI refuses to start when UPDATE_GOLDEN is set (.github/workflows/ci.yml),
+so a stray variable cannot turn the gate into a pass or rewrite a golden.
 
 Known reconciler behaviour recorded here as-is, not fixed by this test:
   - MISSION_ID is unanchored (scripts/reconcile-memory.py, MISSION_ID regex).
@@ -191,8 +202,8 @@ class ReconcileDryRunGolden(unittest.TestCase):
             os.makedirs(os.path.dirname(GOLDEN), exist_ok=True)
             with open(GOLDEN, "w", encoding="utf-8") as fh:
                 fh.write(got)
-            print(f"UPDATE_GOLDEN set: wrote {GOLDEN}", file=sys.stderr)
-            return
+            # Fail on purpose: an update run must never be green.
+            self.fail(f"UPDATE_GOLDEN set: wrote {GOLDEN}. Unset UPDATE_GOLDEN and re-run to confirm.")
 
         with open(GOLDEN, encoding="utf-8") as fh:
             want = fh.read()
