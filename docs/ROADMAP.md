@@ -162,17 +162,25 @@ side; not checkable from this repository.
 `in-progress`, `done`, `failed` into an empty string and removes it from the
 payload, so the run reports `unchanged` while the database keeps a stale
 value. Seen when a harness wrote the mission status `blocked` into a step row.
-It should warn and count the row instead. Status: open (confirmed on the
-2026-10-20 read).
+It should warn and count the row instead. Status: done on
+`fix/reconciler-integrity`; moves to Shipped when on `main`. On that branch the
+row is sent without a status, its raw value is kept for the WARN line and not
+sent, and the `[steps]` summary counts it as `warned`.
 
 **The `[flight-recorder]` summary does not add up to `parsed`.** Events for
 missions outside the parsed set are skipped with no counter. Behind the
 opt-in `--include-journal`. Status: open; code reading only, not run.
 
 **The journal's `warned` counter is never incremented.** So the "at cap"
-summary branch cannot run, and a mission skipped at the 100-row cap is
-reported as a generic fetch failure. Behind `--include-journal`. Status: open
-(confirmed on the 2026-10-20 read).
+summary branch cannot run, and a mission skipped at the cap is reported as a
+generic fetch failure. Behind `--include-journal`. Status: done on
+`fix/reconciler-integrity`; moves to Shipped when on `main`. On that branch the
+counter goes up once per capped mission, and the cap has its own summary
+category, `skipped (journal cap)`, apart from fetch failures. The run exits 1
+only when events were skipped at the cap. A memoryd that pages is read to the
+end, with `JOURNAL_MAX_PAGES` as the ceiling, and a read still reporting
+`has_more` at the ceiling is a fetch failure. A memoryd that does not page still
+answers one page per mission; the run names that limit rather than hiding it.
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
 which needs it for Markdown tables; a value from the JSON API does not. It is
@@ -258,14 +266,19 @@ Claude Code, OpenCode, pi and the operator's Kirsch harness, through a generic
 core, a neutral integration contract and one adapter per harness. Bishop stays
 the reference harness and must not break. Status: planned, with phase 1 built on
 branch feat/portability-phase1 and not on `main`. The research and the coupling
-inventory are done; no later phase is started. Plan:
+inventory are done. The reconciler-bug part of phase 2 is built on
+`fix/reconciler-integrity` and is not on `main`; no other later phase is
+started. Plan:
 [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md). Items
 per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
 
 - Phase 1, compatibility guard: golden tests on the shipped fixture, and a seam
   for the Bishop values. Status: built on branch feat/portability-phase1, unmerged.
 - Phase 2, layout profile: the memory layout moves into a profile, and the
-  mission-ID mismatch is fixed. Status: planned.
+  mission-ID mismatch is fixed. Status: the layout profile is not started. The
+  reconciler-bug part (exact-match mission-ID links and the unknown-status
+  warning) is done on `fix/reconciler-integrity`; it moves to Shipped when on
+  `main`.
 - Phase 3, integration contract and generic names. Status: planned.
 - Phase 4, plain Claude Code adapter. Status: planned.
 - Phase 5, OpenCode adapter. Status: planned.

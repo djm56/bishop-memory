@@ -35,6 +35,8 @@ here ahead of an actual release.
   - **Install and operations:** `scripts/install.sh server|client` (systemd on Linux, launchd on macOS, with a settings file and the first key), `make dist` release archives for linux and darwin on amd64 and arm64, and `memoryd backup <file>`.
 - **docs/ folder** now holds only plans and the roadmap (`docs/README.md`, `docs/ROADMAP.md`, `docs/plans/`). The user and developer documentation lives in the wiki. Includes a PostgreSQL backend plan (docs/plans/POSTGRES-PLAN.md).
 
+- **`GET /v1/flight-recorder` pages with `offset` and `has_more`** (on `fix/reconciler-integrity`, not yet on `main`). `offset` is optional and must be zero or more, and anything else is a 400. With `offset` the response carries `has_more`, true while rows follow the page. Without `offset` the response has no new keys. The order is `created_at DESC, id DESC`, so rows sharing a `created_at` come back in a fixed order, with or without `offset`. A row appended between page requests can repeat on the next page.
+
 ### Changed
 
 - **Classifier batch size lowered from 50 to 20** — the classifier and the `triage_next_unclassified` tool default (cap still 200) now take 20 findings per batch, so a large backlog is split into smaller model calls; a run still loops until none remain or it reaches its cap of 300.
@@ -135,6 +137,10 @@ here ahead of an actual release.
   polls `systemctl is-active` with a retry loop (up to 10 attempts), and
   on failure logs the unit's recent `journalctl` output before failing
   the entire install.
+- **The reconciler links a finding to a mission only on an exact id match** (on `fix/reconciler-integrity`, not yet on `main`). The `**Mission**` candidate runs to the end of the id, so a counter with more digits is read whole, and a harness-qualified id such as `mission-20260907-anom-01` is read whole too. A candidate links only when it equals a known mission id. A candidate that equals none is left unlinked and, when the entry is created, warned. A hyphenated suffix such as `-retry` is part of the candidate.
+- **An unknown step status is warned and counted** (on `fix/reconciler-integrity`, not yet on `main`). A status outside `pending`, `in-progress`, `done` and `failed` is sent without a status. The raw value is named in a `[WARN]` line and is not sent, and the `[steps]` summary counts the step as `warned`.
+- **The journal's `warned` counter is live, and the journal cap has its own summary category** (on `fix/reconciler-integrity`, not yet on `main`). A capped mission increments `warned` once and is named in a `[WARN]` line. Its local events are counted as `skipped (journal cap)`, apart from fetch failures and failed writes. The summary names that category, and the run exits 1 only when an event was skipped at the cap. A capped mission with no local events is warned and does not change the exit status.
+- **The reconciler reads every journal page** (on `fix/reconciler-integrity`, not yet on `main`). Against a memoryd that answers `has_more`, the reconciler follows `offset` until `has_more` is false. A page that reports `has_more` with no rows, or a read still reporting it at `JOURNAL_MAX_PAGES` pages, is a fetch failure for that mission, and none of its rows are used. A memoryd that does not page keeps the one-page read and its cap.
 
 ### Added
 

@@ -1,7 +1,8 @@
 // Package api — HTTP handlers for /v1/flight-recorder and /v1/documents/sync.
 //
 // appendFlightRecorderHandler appends a durable agent/system event.
-// listFlightRecorderHandler reads recent events, optionally filtered by mission.
+// listFlightRecorderHandler reads recent events, optionally filtered by mission
+// and paged with offset.
 // syncDocumentsHandler triggers an explicit Markdown/JSONL import of the
 // agent's memory tree into the documents + FTS5 tables via the importer.
 package api
@@ -159,9 +160,26 @@ func appendFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 // Optional query params:
 //
 //	mission_id — filter to events for one mission (NULL mission_id events excluded)
-//	limit      — cap at 100, default 50
+//	limit      — page size, cap at 100, default 50
+//	offset     — integer of zero or more; rows to skip before the page starts
 //
-// Events are returned newest-first (ORDER BY created_at DESC).
+// Events are returned newest-first, ORDER BY created_at DESC, id DESC. The id
+// tie-break makes the order total: created_at has one-second resolution, so
+// rows appended within the same second share it, and their order follows id.
+//
+// Without offset the response is {"flight_recorder": [...]}, with no other keys. With
+// offset the response also carries "has_more": true when at least one row
+// follows the page, so a paging client asks for the next page only while it is
+// true. The field is added only when offset is sent, so a client that never
+// sends offset sees no new key, and a client that does send it can tell an
+// older server (which ignores offset and never sends has_more) by the field's
+// absence.
+//
+// A row appended between two page requests moves every later row down one
+// place, so a page can repeat a row. Rows are not skipped unless a row is
+// deleted, and the reconciler keys on the event's natural key, so a repeat is
+// harmless. A non-integer or negative offset is a 400. An offset past the last
+// row returns an empty page with has_more false.
 func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		missionID := strings.TrimSpace(c.Query("mission_id"))
@@ -176,6 +194,21 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 			}
 		}
 
+		// offset is validated only when present, so an absent offset leaves the
+		// response unpaged. An empty value is present and is rejected.
+		offset := 0
+		rawOffset, paged := c.GetQuery("offset")
+		if paged {
+			n, err := strconv.Atoi(rawOffset)
+			if err != nil || n < 0 {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "offset must be an integer of zero or more",
+				})
+				return
+			}
+			offset = n
+		}
+
 		query := `
 			SELECT id, mission_id, step, occurred_at, event, note, agent, created_at
 			FROM flight_recorder
@@ -187,8 +220,9 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 			args = append(args, missionID)
 		}
 
-		query += ` ORDER BY created_at DESC LIMIT ?`
-		args = append(args, limit)
+		// One row past the page is fetched, so has_more is known without a count.
+		query += ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+		args = append(args, limit+1, offset)
 
 		rows, err := db.QueryContext(c.Request.Context(), query, args...)
 		if err != nil {
@@ -235,7 +269,17 @@ func listFlightRecorderHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{"flight_recorder": entries})
+		// The probe row, if fetched, proves more rows follow; it is not returned.
+		hasMore := len(entries) > limit
+		if hasMore {
+			entries = entries[:limit]
+		}
+
+		body := gin.H{"flight_recorder": entries}
+		if paged {
+			body["has_more"] = hasMore
+		}
+		c.JSON(http.StatusOK, body)
 	}
 }
 

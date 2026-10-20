@@ -141,10 +141,12 @@ belong in phase 2.
   (`reconcile-memory.py:110`, used at `:561`). A finding that names
   `mission-20261009-100` is linked to `mission-20261009-10`, and a finding that
   names a harness-qualified id such as `mission-20260907-anom-01` is not linked
-  at all. The first is a wrong link. The second is a missed link. The reconciler
-  reports no warning for these.
+  at all. The first is a wrong link. The second is a missed link. On `main` the
+  reconciler reports no warning for these. Built on `fix/reconciler-integrity`,
+  not yet on `main`: see §7 phase 2.
 - **The reconciler drops unknown step statuses silently**, as ROADMAP already
-  records (`reconcile-memory.py:522`).
+  records (`reconcile-memory.py:522` on `main`). Built on `fix/reconciler-integrity`,
+  not yet on `main`: see §7 phase 2.
 - **`defaultHarness` silently substitutes `claude-code`** (`cmd/mcpd/main.go:69`).
   A harness that forgets to set `BISHOP_HARNESS` writes its audit rows under the
   wrong identity. For any harness other than Claude Code this is a trap.
@@ -562,13 +564,14 @@ added, with no change to the output. A reviewer can diff the dry-run output.
 
 ### Phase 2 — Layout profile and the reconciler bugs
 
+**Status.** The reconciler-bug part (the mission-ID extraction rule and the unknown-status warning, below) is built on `fix/reconciler-integrity` and is not on `main`. The layout profile is not started.
+
 **Work.** Move the layout (§2.2) into a profile with the Bishop profile as the
 default. Settle the profile format (H4). Fix the mission-ID mismatch (§2.7) in
 the reconciler with the extraction rule below (H6), and make unknown step statuses a counted warning, not a silent drop.
 Make DEBRIEF headings and the verdict line profile-driven.
 
-The extraction rule runs on the free-text `**Mission**` value at
-`reconcile-memory.py:561`, and replaces `MISSION_ID` at `:110`. The candidate is
+The extraction rule runs on the free-text `**Mission**` value in `mission_candidate` (`scripts/reconcile-memory.py:613`, called from `parse_findings` at `:639`), and replaces the two-digit `MISSION_ID` pattern that §2.3 records on `main` at `:110`. On `fix/reconciler-integrity` the pattern is `MISSION_CANDIDATE` at `:155`, and the exact-match link is at `:645`. The candidate is
 `(?<![A-Za-z0-9-])mission-\d{8}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`, matched greedily,
 so it runs to the end of the id and never stops at a hyphen. A finding is linked
 only when the candidate equals a known mission id exactly. A candidate that equals
@@ -576,15 +579,15 @@ no known id leaves the entry unlinked and is counted as a warning. It is never
 shortened to a prefix. Expected results:
 
 - `mission-20260907-anom-01` links to `mission-20260907-anom-01`, if that mission
-  exists. Today it is not linked, because the two-digit pattern cannot match `anom`.
+  exists. Under the two-digit pattern it is not linked, because the pattern cannot match `anom`.
 - `mission-20261009-100` links to `mission-20261009-100` and never to
-  `mission-20261009-10`. Today it is linked to the wrong mission.
+  `mission-20261009-10`. Under the two-digit pattern it is linked to the wrong mission.
 - `mission-20261009-02 (retry)`, or `mission-20261009-02.`, links to
   `mission-20261009-02`, because the candidate ends at the space or the full stop.
-  Today it links correctly, and must still.
+  Under the two-digit pattern it links correctly, and must still.
 - `mission-20261009-02-retry` links to no mission, because the hyphenated suffix is
-  part of the candidate and matches no known id. Today it links to
-  `mission-20261009-02`, because the unanchored two-digit pattern stops after the
+  part of the candidate and matches no known id. Under the unanchored two-digit
+  pattern it links to `mission-20261009-02`, because that pattern stops after the
   counter. This is an intended behaviour change, and it differs from Bishop's
   golden output wherever a finding carries such a suffix. It is the intended fix
   that the §8 golden-test gate allows, and it ships with its own test.

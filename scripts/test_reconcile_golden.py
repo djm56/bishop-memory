@@ -37,11 +37,11 @@ confirm. CI sets UPDATE_GOLDEN to the empty string (.github/workflows/ci.yml),
 so update mode never runs in CI. The test itself fails whenever the variable is
 non-empty, so a stray value cannot turn the gate into a pass.
 
-Known reconciler behaviour recorded here as-is, not fixed by this test:
-  - MISSION_ID is unanchored (scripts/reconcile-memory.py, MISSION_ID regex).
-  - parse_steps() drops an unknown step status silently.
-The fixture exercises neither. FINDINGS.md has no **Mission** field, and every
-PROGRESS.md status is a known value.
+The golden shows a finding's mission link only as its date and target. A
+finding whose candidate names no known mission, and a step whose status is not
+in the step set, each appear as a WARN line on stderr and in the summary's
+"warned" count. The links are pinned by FindingMissionLinkTests and the step
+statuses by StepStatusTests and StepWarningTests in scripts/test_reconcile_units.py.
 """
 import difflib
 import http.server

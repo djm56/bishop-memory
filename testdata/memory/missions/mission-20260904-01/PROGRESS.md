@@ -4,3 +4,4 @@
 |------|-------|-------|--------|-------|
 | 1 | — | @hicks | done | Restructured fixture tree and updated importer code |
 | 2 | — | @apone | done | Reviewed restructuring — APPROVED, no CRITICAL |
+| 3 | — | @ripley | blocked | Fixture row with a status outside the step set |
