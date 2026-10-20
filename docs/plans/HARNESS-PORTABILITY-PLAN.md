@@ -12,9 +12,9 @@ source is marked **uncertain**.
 
 ## 1. Goal
 
-Today bishop-memory works with one harness: Bishop, the crew-based
-development workflow. Its memory tree, its Markdown tables, its agent names and
-its environment variables are written into the service, the reconciler and the
+Today bishop-memory's code and conventions are built around Bishop, the
+crew-based development workflow. Its memory tree, its Markdown tables, its agent
+names and its environment variables are written into the service, the reconciler and the
 MCP adapter.
 
 The goal is a general memory service that can be installed into:
@@ -33,7 +33,7 @@ working.
 ## 2. Coupling inventory
 
 The inventory was taken from the code on `docs/roadmap-progress` at `8a4714b`.
-Line numbers are for that commit. Each item is classed as one of:
+Line numbers are for that commit. Each item is classed as:
 
 - **core-generic** — works for any harness; no change needed.
 - **Bishop-specific-but-configurable** — Bishop's convention, but a value,
@@ -64,7 +64,7 @@ route, the harness registry) is generic. Coupling sits at these edges:
 | Reconciler `--root` help | `scripts/reconcile-memory.py:1188` | "Path to the `.claude/memory` tree" | Bishop-specific-but-configurable (help text only) |
 | Agent definitions beside the root | `internal/importer/agents.go:15-16` (`AgentsDirFor` returns `<checkout>/.claude/agents`); `scripts/reconcile-memory.py:224-233` (`agent_files`) | The agent folder is a sibling of `memory/` under `.claude/` | Bishop-specific-but-configurable |
 | CURRENT-MISSION fields | `internal/importer/importer.go:750-756` (`currentMissionKnownFields`: Mission ID, Status, Owner, Next Action, Last Updated, Blockers) | Bullet-list format from Bishop's template | Bishop-specific-but-configurable |
-| PROGRESS, FLIGHT-RECORDER, MISSION-ARCHIVE table columns | `scripts/reconcile-memory.py:324` (`table_rows` with expected column counts), `:507-522` (PROGRESS five columns), `:421` (archive four columns), `:528` (journal) | Column count and order from Bishop's templates | Bishop-specific-but-configurable |
+| PROGRESS, FLIGHT-RECORDER, MISSION-ARCHIVE table columns | `scripts/reconcile-memory.py:324` (`table_rows` with expected column counts), `:507-522` (PROGRESS columns), `:421` (archive columns), `:528` (journal) | Column count and order from Bishop's templates | Bishop-specific-but-configurable |
 | Step status vocabulary | `scripts/reconcile-memory.py:522` (`pending`, `in-progress`, `done`, `failed`); `internal/api/missions.go:30` (`not-started`, `in-progress`, `blocked`, `complete`) | Bishop's lifecycle words. Unknown step statuses are silently dropped (ROADMAP, Reconciler) | Core-generic in the service, Bishop-specific in the reconciler |
 | Flight-recorder pipe escaping | `internal/importer/importer.go:810-816`, `prependFlightRecorderFields` `:828` | Markdown table escaping `\|` | Core-generic format rule, Bishop-specific file |
 | DEBRIEF section names | `internal/debrief/parser.go:12,27,35` ("Sub-Agent Mistakes and Corrections", "Deliverables Changed"); `internal/importer/lessons.go:70` ("Wrong Assumptions"); `internal/importer/criteria.go:19-20` ("Acceptance Criteria", "Acceptance Criteria Outcome"); `internal/api/grades.go:229-236` ("Tracker And Reality", "QA Verdict", and the others) | Bishop's DEBRIEF and BRIEF template headings | Bishop-specific-but-configurable (the headings move into a profile, §4.4) |
@@ -76,7 +76,7 @@ route, the harness registry) is generic. Coupling sits at these edges:
 
 | Area | Where | What it assumes | Class |
 |---|---|---|---|
-| Allocator pattern | `internal/api/allocate.go:56` — `^mission-(\d{8})-(\d+)$`, with the comment at `:50-55` | UTC date and a daily counter | Core-generic in the service (a configurable prefix is cheap) |
+| Allocator pattern | `internal/api/allocate.go:56` — `^mission-(\d{8})-(\d+)$`, with the comment at `:48-55` | UTC date and a daily counter | Core-generic in the service (a configurable prefix is cheap) |
 | Reconciler pattern | `scripts/reconcile-memory.py:110` — `mission-\d{8}-\d{2}`, used at `:561` | Two digits, with **no end anchor**, so it matches the prefix of any longer ID. The allocator is anchored and takes three or more digits past 99 | Hard-coupled, and **already inconsistent** (see §2.7) |
 | Stale rule | `internal/api/hud.go:40` (`staleAfter = "-48 hours"`) | Bishop's 48-hour stale convention | Core-generic policy, configurable value |
 
@@ -91,7 +91,7 @@ route, the harness registry) is generic. Coupling sits at these edges:
 | Identity composition | `cmd/mcpd/main.go:1460` (`composeAgent`, `<harness>:<agent>`); `:928-947` and `:987-1000` (`flight_recorder_append`, `mission_step_record` require `agent`) | Actor is `<harness>:<agent>` | Core-generic (the pattern is good for any harness) |
 | Sub-agent argument descriptions | `cmd/mcpd/main.go:327` and `:351` ("e.g. \"bishop\", \"hicks\"") | Examples name Bishop crew | Bishop-specific-but-configurable (text only) |
 | Step agent value | `internal/model/mission_step.go:18` (comment: `@bishop`, `@hicks`); `internal/debrief/parser.go:13,19` | `@name` in the Agent cell | Bishop-specific-but-configurable |
-| Service-record subject | `cmd/mcpd/main.go:438` (subject is not composed) | Subject name, not actor | Core-generic |
+| Service-record subject | `cmd/mcpd/main.go:437-438` (the subject, not composed), `:442` (the `agent` parameter) | Subject name, not actor | Core-generic |
 | Crew page | `internal/ui/crew.html`, `GET /v1/crew` (`internal/api/crew.go`) | Reads crew from the `crew` table filled from agent files | Core-generic once the agent folder is configurable |
 
 ### 2.5 Environment names, config file and connect script
@@ -110,10 +110,10 @@ route, the harness registry) is generic. Coupling sits at these edges:
 
 | Area | Where | What it assumes | Class |
 |---|---|---|---|
-| Engine switch | `scripts/triage-run.sh:35-36, 190-193` (`TRIAGE_ENGINE=claude\|opencode`) | Two engines already exist | Core-generic in shape |
+| Engine switch | `scripts/triage-run.sh:35-36, 190-193` (`TRIAGE_ENGINE=claude\|opencode`) | The engine is already chosen at run time by `TRIAGE_ENGINE` | Core-generic in shape |
 | Agent folders | `scripts/triage-run.sh:21-23` (`.claude/agents/`, `.opencode/agents/`), `:253` (`AGENT="findings-classifier"`) | Bishop's repository layout and agent names | Hard-coupled to this repository's files |
-| Tool allow-list | `scripts/triage-run.sh:256` (`mcp__bishop-triage__*`); `.claude/agents/*.md` `tools:` lines; `.opencode/agents/*.md` `bishop-triage_*` permissions | The MCP server is named `bishop-triage` | Hard-coupled (server name is in five agent files and the script) |
-| Triage MCP profile | `cmd/mcpd/triage.go`; `MCPD_PROFILE=triage` (ROADMAP, Shipped) | A separate tool set under one server name | Core-generic profile idea |
+| Tool allow-list | `scripts/triage-run.sh:256` (`mcp__bishop-triage__*`); `.claude/agents/*.md` `tools:` lines; `.opencode/agents/*.md` `bishop-triage_*` permissions | The MCP server is named `bishop-triage` | Hard-coupled (the server name is in `findings-processor`, `findings-classifier` and `mission-grader` under both `.claude/agents/` and `.opencode/agents/`, and in the script) |
+| Triage MCP profile | `cmd/mcpd/triage.go`; `MCPD_PROFILE=triage` (ROADMAP, Shipped) | A separate tool set under the same server name | Core-generic profile idea |
 | Doctrine paths | `.claude/skills/findings-triage/SKILL.md`, `.claude/skills/mission-grading/SKILL.md` (named in `triage-run.sh:24-25`) | The agents read Bishop-style skill files | Bishop-specific-but-configurable |
 | Grader packet | `internal/api/grades.go:229-236, 356, 400` | Reads Bishop's DEBRIEF sections | Bishop-specific-but-configurable (see §2.2) |
 
@@ -122,17 +122,18 @@ route, the harness registry) is generic. Coupling sits at these edges:
 These are not portability work, but the inventory turned them up and they
 belong in phase 2.
 
-- **Two mission-ID rules disagree.** The allocator is anchored at both ends
+- **The mission-ID rules disagree.** The allocator is anchored at both ends
   and takes a numeric counter of two or more digits (`allocate.go:56`); its
-  comment at `:50-55` says a harness-qualified id is deliberately excluded from
-  its sequence. The reconciler matches `mission-\d{8}-\d{2}` with no end anchor
+  comment at `:48-55` says that a harness-qualified id, whose trailing number
+  is not a global sequence number, must not fold into the sequence. The
+  reconciler matches `mission-\d{8}-\d{2}` with no end anchor
   (`reconcile-memory.py:110`, used at `:561`). A finding that names
   `mission-20261009-100` is linked to `mission-20261009-10`, and a finding that
   names a harness-qualified id such as `mission-20260907-anom-01` is not linked
-  at all. The first is a wrong link and the second a missed one; the
-  reconciler warns about neither.
+  at all. The first is a wrong link. The second is a missed link. The reconciler
+  reports no warning for these.
 - **The reconciler drops unknown step statuses silently**, as ROADMAP already
-  records (`reconcile-memory.py:520-521`).
+  records (`reconcile-memory.py:522`).
 - **`defaultHarness` silently substitutes `claude-code`** (`cmd/mcpd/main.go:69`).
   A harness that forgets to set `BISHOP_HARNESS` writes its audit rows under the
   wrong identity. For any harness other than Claude Code this is a trap.
@@ -176,13 +177,21 @@ Sources: [MCP](https://code.claude.com/docs/en/mcp),
   frontmatter. Handlers are `command`, `http`, `mcp_tool`, `prompt` or `agent`.
 - **Hook input.** Every hook gets `session_id`, `transcript_path`, `cwd`,
   `hook_event_name`, and — inside a subagent — `agent_id` and `agent_type`.
-  Those last two give a mirror hook the **agent identity** without reading a
+  Those fields give a mirror hook the **agent identity** without reading a
   Markdown file. MCP tools do not receive that context, so the `agent` argument
-  stays necessary on the two identity-bearing tools.
+  stays necessary on the identity-bearing tools (`flight_recorder_append`,
+  `mission_step_record`).
 - **Instruction files.** `CLAUDE.md` at the project root or `.claude/CLAUDE.md`,
   and `~/.claude/CLAUDE.md` for the user; `CLAUDE.local.md` for personal use;
   `@path/to/file` imports. Claude Code also reads a repository's `AGENTS.md` when
-  no `CLAUDE.md` is present (requires v2.1.277 or later, per the page).
+  no `CLAUDE.md` is present (requires v2.1.277 or later, per the page). Two
+  caveats from the same page:
+  - A `CLAUDE.md`, `CLAUDE.local.md` or `.claude/CLAUDE.md` in the working
+    directory or any directory above it stops `AGENTS.md` from loading by default.
+  - Before v2.1.281, some sessions, such as those on Amazon Bedrock or with
+    telemetry disabled, read `CLAUDE.md` files only.
+  Source: [Memory (CLAUDE.md and AGENTS.md)](https://code.claude.com/docs/en/memory),
+  section "AGENTS.md", read 2026-10-20.
 - **Skills and agents.** `SKILL.md` folders and subagent Markdown with
   frontmatter, under `.claude/` or inside a plugin.
 - **Plugins.** A plugin is a directory with `.claude-plugin/plugin.json`. It may
@@ -223,8 +232,8 @@ Sources: [MCP servers](https://opencode.ai/docs/mcp-servers/) (page shows
   `.opencode/agents/` files already use the Markdown form. `"default_agent"`
   chooses the primary agent.
 - **Plugins.** Plugins go in `.opencode/plugins/` (project) or
-  `~/.config/opencode/plugins/` (global); the page uses the plural and
-  **uncertain** spelling should be checked against the installed version. npm
+  `~/.config/opencode/plugins/` (global). The folder name is taken from the
+  page and is **uncertain**; check it against the installed version. npm
   plugins are listed in the `"plugin"` array of `opencode.json`. A plugin exports
   an async function that receives `{ project, client, $, directory, worktree }`
   and returns hooks. Events named on the page include `session.created`,
@@ -243,8 +252,8 @@ but nothing generates it, and `.opencode/` holds the triage agents only.
 
 ### 3.3 pi (Earendil; identity corrected)
 
-The brief named "pi" as the coding agent by Mario Zechner (pi-mono). Research
-shows the project has moved, and its MCP stance has reversed.
+An earlier description gave pi as the coding agent by Mario Zechner
+(pi-mono). Research shows the project has moved, and its MCP stance has reversed.
 
 Sources: [pi.dev](https://pi.dev/), [GitHub repository](https://github.com/badlogic/pi-mono)
 (which now resolves to `earendil-works/pi`), [pi docs: MCP](https://pi.dev/docs/latest/mcp),
@@ -301,7 +310,7 @@ pages are undated, so the dates below come from secondary sources and are
 No external research applies. Kirsch is the operator's own custom agent
 harness, the same class as pi and OpenCode. This plan treats it as a target
 that implements the **integration contract** in §4.2. Its specifics are the
-operator's to supply (§11, questions K1 to K6).
+operator's to supply (§11, the K-questions).
 
 One fact is already in the repository: `kirsch` appears as a live harness name
 in the database and in the documentation examples (ROADMAP, the "263 kirsch
@@ -335,8 +344,8 @@ memory layout or something else. The plan does not assume either.
 [agents.md](https://agents.md/) describes `AGENTS.md` as an open format stewarded
 by the Agentic AI Foundation under the Linux Foundation. The page names Codex,
 OpenCode, Gemini CLI, Cursor, Zed, Warp and others as readers, and says it is
-"used by over 60k open-source projects" (undated). Claude Code reads it
-directly when no `CLAUDE.md` is present (§3.1). pi reads it (§3.3). So one
+in wide open-source use. The page gives a figure, which is not checked here
+(undated). Claude Code reads it directly when no `CLAUDE.md` is present (§3.1). pi reads it (§3.3). So one
 `AGENTS.md` can carry the harness-neutral instructions for most targets, and
 each adapter adds only its own files.
 
@@ -440,12 +449,14 @@ harness config is the likely choice. Phase 2 settles it.
 - **Harness** is per project and must be set by the project's own registration.
   A user-scope registration (one setting for every project) cannot be used for
   more than one harness. The plan keeps that rule.
-- **Agent** is per call on the two identity-bearing tools
+- **Agent** is per call on the identity-bearing tools
   (`flight_recorder_append`, `mission_step_record`). A hook may derive it from
   the payload (Claude Code `agent_type`), but the MCP call still names it.
-- **Default.** The silent `claude-code` default (`cmd/mcpd/main.go:69`) becomes
-  a refusal with a message naming the variable to set, for every harness except
-  Bishop, which keeps its current value.
+- **Default.** The silent `claude-code` default (`cmd/mcpd/main.go:69`) is
+  governed by H5. While no generic profile is configured it stays, with a warning
+  on stderr. Once the generic or adapter configuration is in use, an unset
+  `BISHOP_HARNESS` is a refusal that names the variable to set. Bishop sets
+  `BISHOP_HARNESS` in its own registration, so it reaches neither branch.
 
 ## 5. Per-harness adapter notes
 
@@ -477,7 +488,7 @@ harness config is the likely choice. Phase 2 settles it.
 - **Timeout.** The default 5000 ms may be short for a cold `mcpd`. Set it in
   the generated config and test it.
 - **Mirror.** An OpenCode plugin using `tool.execute.after` (for journal file
-  writes) and `session.idle` (end of unit). Both are named on the plugin page.
+  writes) and `session.idle` (end of unit). Each is named on the plugin page.
 - **Agents.** The adapter can ship the crew as `.opencode/agents/` Markdown, as
   the repository already does for triage. Bishop's crew is a pack, not core.
 - **Instructions.** `"instructions"` in `opencode.json` pointing at the
@@ -502,7 +513,7 @@ harness config is the likely choice. Phase 2 settles it.
 ### 5.4 Kirsch
 
 Kirsch is built to the contract in §4.2. The adapter for it cannot be written
-until the operator answers K1 to K6 (§11). The plan asks for the contract to
+until the operator answers the K-questions (§11). The plan asks for the contract to
 be **testable without Kirsch**: a conformance fixture (phase 3) that a harness
 author can run, which is the test Kirsch's adapter must pass.
 
@@ -541,15 +552,39 @@ added, with no change to the output. A reviewer can diff the dry-run output.
 ### Phase 2 — Layout profile and the reconciler bugs
 
 **Work.** Move the layout (§2.2) into a profile with the Bishop profile as the
-default. Settle the profile format (H4). Fix the mission-ID mismatch (§2.7) by
-using one rule for both the allocator and the reconciler, and make unknown step
-statuses a counted warning, not a silent drop. Make DEBRIEF headings and the
-verdict line profile-driven.
+default. Settle the profile format (H4). Fix the mission-ID mismatch (§2.7) in
+the reconciler with the extraction rule below (H6), and make unknown step statuses a counted warning, not a silent drop.
+Make DEBRIEF headings and the verdict line profile-driven.
+
+The extraction rule runs on the free-text `**Mission**` value at
+`reconcile-memory.py:561`, and replaces `MISSION_ID` at `:110`. The candidate is
+`(?<![A-Za-z0-9-])mission-\d{8}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`, matched greedily,
+so it runs to the end of the id and never stops at a hyphen. A finding is linked
+only when the candidate equals a known mission id exactly. A candidate that equals
+no known id leaves the entry unlinked and is counted as a warning. It is never
+shortened to a prefix. Expected results:
+
+- `mission-20260907-anom-01` links to `mission-20260907-anom-01`, if that mission
+  exists. Today it is not linked, because the two-digit pattern cannot match `anom`.
+- `mission-20261009-100` links to `mission-20261009-100` and never to
+  `mission-20261009-10`. Today it is linked to the wrong mission.
+- `mission-20261009-02 (retry)`, or `mission-20261009-02.`, links to
+  `mission-20261009-02`, because the candidate ends at the space or the full stop.
+  Today it links correctly, and must still.
+- `mission-20261009-02-retry` links to no mission, because the hyphenated suffix is
+  part of the candidate and matches no known id.
+
+A lazy form such as `[A-Za-z0-9-]+?\b` is not used: it stops at the first hyphen
+and turns `mission-20260907-anom-01` into `mission-20260907-anom`. The anchored
+allocator rule (`internal/api/allocate.go:56`) stays as it is. It governs the ids
+the service allocates, and it cannot match a harness-qualified id that already
+exists, so the reconciler needs this rule of its own.
 
 **Exit.** The golden tests pass unchanged. A second fixture, with a non-Bishop
 layout and a plain PROGRESS table, imports and reconciles. The mission-ID
-regression has a test for `mission-20260907-anom-01` and for a three-digit
-counter.
+regression has a test for each expected result above, asserting the link it
+expects, including `mission-20260907-anom-01`, `mission-20261009-100` and the
+trailing-text case.
 
 ### Phase 3 — The integration contract and generic names
 
@@ -557,12 +592,14 @@ counter.
 `task_*` aliases (if H2 says yes), and neutral environment names with the
 `BISHOP_*` names still accepted (H3). Remove `.claude/bishop-memory.conf` from
 tool descriptions and error text in favour of "the harness's registration".
-Make the `defaultHarness` silent fallback a refusal for non-Bishop harnesses
-(§4.5). Publish a conformance fixture that a harness author can run.
+Make the `defaultHarness` silent fallback warn on stderr while no generic
+profile is configured, and refuse once the generic or adapter configuration is in
+use (§4.5, H5). Publish a conformance fixture that a harness author can run.
 
 **Exit.** A fixture harness with no Bishop files can register, write a task, a
 step and an event, and read them back, using only the contract. The old tool
-names return the same results. The wiki page exists.
+names return the same results. The wiki page exists. With no profile, an unset
+identity warns and keeps `claude-code`; with the generic configuration, it refuses.
 
 ### Phase 4 — Plain Claude Code adapter
 
@@ -597,7 +634,7 @@ install output. The Earendil identity correction (§3.3) is confirmed against th
 
 ### Phase 7 — Kirsch adapter
 
-**Work.** Build against the operator's answers to K1 to K6. Run the conformance
+**Work.** Build against the operator's answers to the K-questions. Run the conformance
 fixture (phase 3) against Kirsch.
 
 **Exit.** The conformance fixture passes against Kirsch. Kirsch's existing
@@ -620,11 +657,13 @@ journal row. The release notes name each harness and the trust steps.
 The Bishop harness must not break. These rules hold for every phase:
 
 - **Defaults stay Bishop.** The default layout profile, the `apone` role, the
-  `claude-code` default identity and the `BISHOP_*` names keep their current
-  behaviour.
+  `claude-code` default identity keeps its value while no generic profile is
+  configured, and the `BISHOP_*` names keep their current behaviour. The only
+  change is a stderr warning (H5); the refusal begins once the generic or
+  adapter configuration is in use.
 - **Names are added, not renamed.** `BISHOP_*` variables keep working. The old
   MCP tool names keep working. New names are aliases.
-- **The database schema does not change in phases 1 to 5.** Storage names
+- **The database schema does not change in phases 1, 2, 3, 4 and 5.** Storage names
   (`missions`, `mission_steps`) stay. Any schema change needs its own plan.
 - **The golden tests are the gate.** A phase that changes the importer or the
   reconciler does not merge unless the golden output is identical, or the
@@ -654,9 +693,17 @@ ratified.
   settled in phase 2. *Recommended: TOML, to match the Go service.*
 - **H5. Identity is per project.** Harness is set by the project's registration,
   never a user-scope value shared across projects. The silent `claude-code`
-  default becomes a refusal for non-Bishop harnesses. *Recommended.*
-- **H6. One mission-ID rule.** The allocator's rule is the single source. The
-  reconciler uses it. A configurable prefix is allowed later. *Recommended.*
+  default is the open point. *Recommended, operator to ratify:* while no generic
+  profile is configured, an unset `BISHOP_HARNESS` keeps the `claude-code` default
+  and writes a warning to stderr, so Bishop and existing installs see no change.
+  Once the generic or adapter configuration is in use, an unset `BISHOP_HARNESS`
+  is a refusal that names the variable to set.
+- **H6. Mission-ID rules: allocation and extraction.** The allocator's anchored
+  rule is the source for the ids the service allocates, and it is unchanged. The
+  reconciler reads free-text `**Mission**` fields with the extraction rule in
+  phase 2, because the anchored rule cannot match a harness-qualified id that
+  already exists (`mission-20260907-anom-01`). A configurable prefix is allowed
+  later. *Recommended.*
 - **H7. Claude Code plugin: local marketplace first.** Publish publicly only
   after the trust text is reviewed. *Recommended.*
 - **H8. Triage and grading are a pack, not core.** They stay optional, with the
@@ -668,12 +715,14 @@ ratified.
 ## 10. Risks
 
 - **Silent identity drift.** A harness that does not set its identity writes
-  under `claude-code`. Mitigation: H5, and the refusal in phase 3.
+  under `claude-code`. Mitigation: H5. The stderr warning in phase 3 is the only
+  change while no generic profile is configured; the refusal follows once the
+  generic configuration is in use.
 - **Hidden tools.** A pi default exposure hides the memory tools from the model
   and nothing reports it. Mitigation: H9, and a phase 6 exit check that lists the
   tools to the model.
 - **Trust steps that fail quietly.** Claude Code's `claude -p` loads project
-  servers without asking; pi reads project MCP only after trust. Both are safe
+  servers without asking; pi reads project MCP only after trust. Each is safe
   but can surprise. Mitigation: the install output names the step.
 - **Plugin reach.** An enabled Claude Code plugin runs its hooks in every session
   it is enabled for, with the user's privileges. Mitigation: a local marketplace

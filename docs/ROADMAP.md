@@ -275,10 +275,10 @@ per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
 - Phase 6, pi adapter (pi is now maintained by Earendil and its MCP stance has
   reversed; see the plan's §3.3). Status: planned.
 - Phase 7, Kirsch adapter, which waits on the operator's answers (plan §11,
-  K1 to K6). Status: planned.
+  the K-questions). Status: planned.
 - Phase 8, packaging and distribution. Status: planned.
 
-Decisions H1 to H9 are open for the operator (plan §9).
+The decisions in plan §9 are open for the operator.
 
 ## Docs and README
 

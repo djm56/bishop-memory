@@ -224,5 +224,5 @@ Research and the coupling inventory are done; nothing is built.
 - [ ] Phase 4: plain Claude Code adapter (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-4--plain-claude-code-adapter))
 - [ ] Phase 5: OpenCode adapter, including the `AGENTS.md` loading test (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-5--opencode-adapter))
 - [ ] Phase 6: pi adapter, with `exposure: "direct"` for the memory tools (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-6--pi-adapter))
-- [ ] Phase 7: Kirsch adapter, which waits on the operator's answers K1 to K6 (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-7--kirsch-adapter), [§11](plans/HARNESS-PORTABILITY-PLAN.md#11-open-questions-for-the-operator))
+- [ ] Phase 7: Kirsch adapter, which waits on the operator's answers to the K-questions (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-7--kirsch-adapter), [§11](plans/HARNESS-PORTABILITY-PLAN.md#11-open-questions-for-the-operator))
 - [ ] Phase 8: packaging, a Claude Code plugin and marketplace, a pi package, and `install.sh --harness` (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-8--packaging), [§6](plans/HARNESS-PORTABILITY-PLAN.md#6-packaging-and-distribution))
