@@ -1,10 +1,19 @@
 # Harness Portability — Plan
 
-**Status as of 2026-10-20: research/plan, not started.** No code has changed.
-This document records the coupling inventory from the code, what the vendor
-documentation says about each target harness, the target architecture, and a
-phased plan with exit criteria. Nothing here is built. The Bishop harness must
-keep working unchanged through every phase (§8).
+**Status as of 2026-10-20: phase 1 built on branch `feat/portability-phase1`
+(commits `260bb7c^..718cb7a`), not on `main`; later phases not started.**
+Phase 1 adds golden tests for the importer and the reconciler's dry-run output,
+the `internal/profile` seam for the Go values, the `BISHOP_LAYOUT` and
+`APPROVER_DEFAULT` seam in the reconciler, and a CI step that runs the Python
+script tests. This document records the coupling inventory from the code, what
+the vendor documentation says about each target harness, the target
+architecture, and a phased plan with exit criteria. The Bishop harness must keep
+working unchanged through every phase (§8).
+
+Phase 1 does not pin `AgentsDir`, `DefaultHarness`, `ReviewerRole` or request
+payloads, and the fixture contains no nested mission folders, so a golden cannot
+see behaviour that differs there. The gaps are listed in `testdata/README.md`,
+"What the goldens cannot see". These are inputs for phase 2.
 
 Date of research: 2026-10-20. Vendor pages were read on that date; where a page
 shows its own date it is given in §3. Anything not confirmed from a primary

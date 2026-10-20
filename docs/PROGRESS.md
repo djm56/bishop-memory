@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-20, against `main` at `f9d8f1f` (harness portability items added on `docs/roadmap-progress`)
+Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase 1 is on `feat/portability-phase1` at `718cb7a`, not yet on `main`.
 
 ## Summary
 
@@ -13,13 +13,13 @@ Last updated: 2026-10-20, against `main` at `f9d8f1f` (harness portability items
 | Network deployment | 11 | 11 | 50% |
 | PostgreSQL | 0 | 5 | 0% |
 | Memory insight | 7 | 14 | 33% |
-| Mission HUD | 15 | 8 | 65% |
+| Mission HUD | 17 | 6 | 74% |
 | Triage & grading | 10 | 14 | 42% |
 | Reconciler | 0 | 13 | 0% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 0 | 10 | 0% |
 | Harness portability | 0 | 8 | 0% |
-| **Total** | **45** | **87** | **34%** |
+| **Total** | **47** | **85** | **36%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -135,9 +135,9 @@ Plan: [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md)
 - [ ] Browser check of the triage close controls (unverified: code reading only) ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Triage category rail is mouse-only, with no keyboard access ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Pager focus edge cases on the HUD pages ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [ ] Stray `bin/memoryd.new` (about 36 MB, gitignored) to be removed ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
+- [x] Stray `bin/memoryd.new` (about 36 MB, gitignored) removed. Evidence: removed 2026-10-20, mission-20261020-02 step 1; identical rollback kept at `~/.local/libexec/bishop-memory/memoryd.pre-mission-20261018-03` (the identity of the rollback to the removed file is operator-reported; the removed file cannot be compared from the repository). Operational action on the live system, not code, so there is no commit. ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Live memoryd matches the plan's `b15baa93` (partial: the binary's hash matches; the running process has not been inspected) ([header](plans/MISSION-HUD-PLAN.md))
-- [ ] `mission-20261009-02` is still `not-started` and stale: abandon it or keep it (decision) ([ROADMAP](ROADMAP.md#planned-work))
+- [x] `mission-20261009-02` closed complete/failed (abandoned by operator) 2026-10-20 via PATCH. Evidence: a live read of `GET /v1/missions/mission-20261009-02` on 2026-10-20 returns `status` complete, `outcome` failed, `closed_at` 2026-10-20 08:18:34 and `next_action` "Abandoned by operator 2026-10-20 (mission-20261020-02); not run." The read shows the state only; the PATCH method is operator-reported. Operational action on the live system, not code, so there is no commit. ([ROADMAP](ROADMAP.md#planned-work))
 
 ## Triage & grading
 
@@ -216,9 +216,9 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 ## Harness portability
 
 Plan: [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md).
-Research and the coupling inventory are done; nothing is built.
+Research and the coupling inventory are done. Phase 1 is built on `feat/portability-phase1` and is not on `main`; no later phase is started.
 
-- [ ] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
+- [ ] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values (done on feat/portability-phase1, 260bb7c^..718cb7a; ticks when on main) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
 - [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
 - [ ] Phase 3: neutral integration contract, generic names and the conformance fixture (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-3--the-integration-contract-and-generic-names))
 - [ ] Phase 4: plain Claude Code adapter (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-4--plain-claude-code-adapter))
