@@ -6,8 +6,9 @@ Reads files and runs no tests, so it is fast enough for every `make test` and
 every CI run. It checks that:
 
   - the spec is well formed and no id appears twice;
-  - every active mutant's `before` occurs exactly once in its file, starting on
-    the stated line, and `after` differs from `before`;
+  - every active mutant's `before` has exactly one occurrence that begins on the
+    stated line (other copies of the text elsewhere in the file are allowed),
+    and `after` differs from `before`;
   - every active mutant's mirror exists, is active, and points back;
   - testdata/README.md carries the table rendered from the spec, byte for byte.
 
@@ -28,6 +29,7 @@ two cannot disagree about what a mutant's edit is.
 import argparse
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -160,6 +162,13 @@ def locate(text, line, before):
     )
 
 
+def _anchor_fields_ok(row):
+    """True when `before` is a non-empty string and `line` a positive integer, the inputs locate() needs."""
+    line = row.get("line")
+    return (isinstance(row.get("before"), str) and row.get("before") != ""
+            and isinstance(line, int) and not isinstance(line, bool) and line >= 1)
+
+
 def check_record(items, read_file):
     """
     Full record check. `read_file(relpath)` returns the file text, or None when
@@ -191,7 +200,7 @@ def check_record(items, read_file):
         if text is None:
             errors.append(f"{ident}: file {relpath} does not exist")
             continue
-        if not isinstance(row.get("before"), str) or not isinstance(row.get("line"), int):
+        if not _anchor_fields_ok(row):
             continue  # already reported by schema_errors
         try:
             locate(text, row["line"], row["before"])
@@ -205,11 +214,24 @@ def _cell(text):
     return text.replace("|", "\\|")
 
 
+def _code(text):
+    """
+    Wrap text in a Markdown code span. When the text contains backticks, the
+    fence is one backtick longer than the longest run inside it, padded with a
+    space on each side, so an inner backtick cannot close the span early.
+    """
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    if longest == 0:
+        return f"`{text}`"
+    fence = "`" * (longest + 1)
+    return f"{fence} {text} {fence}"
+
+
 def _edit(row):
     """The Edit cell for an active row: the exact before/after, or the summary for a multi-line or deleting edit."""
     if row.get("summary") and (row["after"] == "" or "\n" in row["before"] or "\n" in row["after"]):
         return row["summary"]
-    return f"`{row['before']}` becomes `{row['after']}`"
+    return f"{_code(row['before'])} becomes {_code(row['after'])}"
 
 
 def render_block(items):
@@ -226,20 +248,21 @@ def render_block(items):
     ]
     for row in act:
         runs_in = row.get("suite") or row.get("package") or ""
-        killers = ", ".join(f"`{_cell(k)}`" for k in row["killers"])
+        killers = ", ".join(_code(_cell(k)) for k in row["killers"])
+        anchor = _code(f"{row['file']}:{row['line']}")
         cells = [
             row["id"],
-            f"`{row['file']}:{row['line']}` {_cell(_edit(row))}",
+            f"{anchor} {_cell(_edit(row))}",
             _cell(row["property"]),
             row["mirror"],
-            f"`{runs_in}`",
+            _code(runs_in),
             killers,
         ]
         lines.append("| " + " | ".join(cells) + " |")
     lines += ["", "Retired rows are not applied; their targets are no longer in the tree:", ""]
     lines += ["| Mutant | Last target | Reason | Mirror |", "|--------|-------------|--------|--------|"]
     for row in retired:
-        target = f"`{row.get('file', '')}`"
+        target = _code(row.get("file", ""))
         lines.append(f"| {row['id']} | {target} | {_cell(row.get('reason', ''))} | {row.get('mirror', '')} |")
     lines += ["", END]
     return "\n".join(lines)
