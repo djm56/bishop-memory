@@ -1426,6 +1426,54 @@ class GroupKillTests(unittest.TestCase):
         self.assertFalse(pid_gone(grandchild, 1.0), "the grandchild should survive a leader-only kill")
 
 
+class GroupCleanupSignalTests(unittest.TestCase):
+    """
+    _run_group() with a real SIGTERM delivered at the start of its cleanup, after a timeout. The
+    process group is real (a `sleep`); only the signal is sent by a wrapper around _kill_group.
+    """
+
+    def setUp(self):
+        self.installed = {}
+        mutate.install_handlers(self.installed)
+        self.addCleanup(mutate.restore_handlers, self.installed)
+        self.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
+        self.pids = []
+        self.addCleanup(lambda: [kill_quietly(pid) for pid in self.pids])
+
+    def run_with_signal_in_cleanup(self):
+        """
+        Run `sleep 30` with a 0.5-second timeout; the signal is sent as _kill_group starts. Returns the
+        exception _run_group raised, or None, and records the killer's pid in self.pids.
+        """
+        real = mutate._kill_group
+
+        def signal_then_kill(proc):
+            self.pids.append(proc.pid)
+            os.kill(os.getpid(), signal.SIGTERM)
+            real(proc)
+        with mock.patch.object(mutate, "_kill_group", side_effect=signal_then_kill):
+            try:
+                mutate._run_group(["sleep", "30"], "/", None, 0.5)
+            except BaseException as exc:  # TimeoutExpired when masked, Interrupted when not
+                return exc
+        return None
+
+    def test_a_signal_in_the_cleanup_is_held_and_the_group_is_still_killed(self):
+        raised = self.run_with_signal_in_cleanup()
+        self.assertIsInstance(raised, subprocess.TimeoutExpired)
+        self.assertTrue(pid_gone(self.pids[0]), "the group must be killed and reaped")
+        self.assertIn(signal.SIGTERM, signal.sigpending(), "the signal is held, not lost")
+        out = mutate.Outcome("M1")
+        mutate.release_signals(out, [])  # the held signal is delivered here
+        self.assertEqual(out.late_signals, ["SIGTERM"])
+
+    def test_control_unmasked_the_signal_skips_the_kill(self):
+        with unmasked_variant():
+            raised = self.run_with_signal_in_cleanup()
+        self.assertIsInstance(raised, mutate.Interrupted)
+        self.assertFalse(pid_gone(self.pids[0], 1.0), "unmasked, the interrupt skips _kill_group")
+
+
 @unittest.skipUnless(shutil.which("go"), "go is not installed")
 class GoGroupKillTests(unittest.TestCase):
     """The Go branch: `go test` leads a group whose test binary and sleep child must die with it."""

@@ -409,12 +409,27 @@ def _run_group(cmd, cwd, env, timeout):
     re-raised. A normal exit does not kill the group. The pipes are not read
     after the kill, because a grandchild that outlived the group could hold
     them open.
+
+    HANDLED_SIGNALS are blocked from before the process starts until the wait
+    begins, and again from the first line of the cleanup, so a signal cannot land
+    between the start and the wait, or skip the kill and the reap. A signal that
+    arrives in either span is held, and the cleanup leaves them blocked on the way
+    out, so the held signal waits for whoever puts the mask back. The killer itself starts with the mask the caller had. A caller whose
+    mask already blocks the signals gets no interrupt from the wait either.
     """
-    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, start_new_session=True)
+    prior = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
     try:
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, start_new_session=True,
+                                preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, prior))
+    except BaseException:
+        signal.pthread_sigmask(signal.SIG_SETMASK, prior)
+        raise
+    try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, prior)  # a signal held so far is delivered here, inside the try
         stdout, stderr = proc.communicate(timeout=timeout)
     except BaseException:
+        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
         _kill_group(proc)
         proc.wait()
         proc.stdout.close()
