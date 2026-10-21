@@ -22,6 +22,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import threading
@@ -291,14 +292,24 @@ class TriageRunCase(unittest.TestCase):
             "STUB_RUN_RC": str(run_rc),
             "TRIAGE_GUARD_TIMEOUT_SEC": str(guard_timeout),
         })
-        return subprocess.run(
+        # The script runs in its own session, so a hung run can be killed with
+        # every process it started. Past the limit the test fails with a message.
+        proc = subprocess.Popen(
             ["/bin/bash", self.script, kind, "--engine", "opencode"],
             env=env,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=30,
+            start_new_session=True,
         )
+        try:
+            out, err = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            self.fail("triage-run.sh did not finish within 30 seconds; the run was killed")
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
 
     def run_help(self, *args):
         """Run the copied script with the given arguments and return the completed process."""

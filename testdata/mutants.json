@@ -1246,6 +1246,554 @@
       "reason": "The journal cap guard moved from `reconcile_journal` into `fetch_journal`. No active mutant covers the one-below-cap edge that this row named; PY-OLDCAP covers the cap edge itself.",
       "property": "A mission at 99 rows is capped (the opposite edge: 99 is below the cap)",
       "mirror": "MUT-CAP-GT"
+    },
+    {
+      "id": "GUARD-DESC-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 383,
+      "before": "if a.get(\"description\") != want_desc:",
+      "after": "if False:",
+      "property": "A listing whose description differs from the definition is refused",
+      "mirror": "GUARD-DESC-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_description_that_is_not_ours"
+      ]
+    },
+    {
+      "id": "GUARD-DESC-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 383,
+      "before": "if a.get(\"description\") != want_desc:",
+      "after": "if a.get(\"description\") == want_desc:",
+      "property": "A listing whose description matches the definition is accepted",
+      "mirror": "GUARD-DESC-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it",
+        "GuardAccepts.test_guard_accepts_a_description_equal_to_the_literal_in_the_definition"
+      ]
+    },
+    {
+      "id": "GUARD-BODY-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 385,
+      "before": "if str(a.get(\"system\", \"\")).strip() != body:",
+      "after": "if False:",
+      "property": "A listing whose system prompt differs from the definition body is refused",
+      "mirror": "GUARD-BODY-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_definition_that_is_not_ours"
+      ]
+    },
+    {
+      "id": "GUARD-BODY-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 385,
+      "before": "if str(a.get(\"system\", \"\")).strip() != body:",
+      "after": "if str(a.get(\"system\", \"\")).strip() == body:",
+      "property": "A listing whose system prompt matches the definition body is accepted",
+      "mirror": "GUARD-BODY-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-MODE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 387,
+      "before": "if a.get(\"mode\") != want_mode:",
+      "after": "if False:",
+      "property": "A listing whose mode differs from the declared mode is refused",
+      "mirror": "GUARD-MODE-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_mode_that_is_not_the_declared_one"
+      ]
+    },
+    {
+      "id": "GUARD-MODE-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 387,
+      "before": "if a.get(\"mode\") != want_mode:",
+      "after": "if a.get(\"mode\") == want_mode:",
+      "property": "A listing whose mode matches the declared mode is accepted",
+      "mirror": "GUARD-MODE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-COUNT-LOW",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 380,
+      "before": "if len(named) != 1:",
+      "after": "if len(named) > 1:",
+      "property": "A listing with no entry of the agent's name is refused, not run with a missing agent",
+      "mirror": "GUARD-COUNT-HIGH",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_unknown_agent_name"
+      ]
+    },
+    {
+      "id": "GUARD-COUNT-HIGH",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 380,
+      "before": "if len(named) != 1:",
+      "after": "if len(named) < 1:",
+      "property": "A listing with two entries of the agent's name is refused",
+      "mirror": "GUARD-COUNT-LOW",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_two_entries_with_the_same_name"
+      ]
+    },
+    {
+      "id": "GUARD-NAME-ONLY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 379,
+      "before": "agent in (a.get(\"name\"), a.get(\"id\"))",
+      "after": "a.get(\"name\") == agent",
+      "property": "An entry whose id is the agent name counts toward the one-entry rule",
+      "mirror": "GUARD-ID-ONLY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_shadowing_entry_whose_id_is_the_agent_name"
+      ]
+    },
+    {
+      "id": "GUARD-ID-ONLY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 379,
+      "before": "agent in (a.get(\"name\"), a.get(\"id\"))",
+      "after": "a.get(\"id\") == agent",
+      "property": "An entry whose name is the agent name is matched when its id differs",
+      "mirror": "GUARD-NAME-ONLY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_an_entry_matched_by_name_when_its_id_differs"
+      ]
+    },
+    {
+      "id": "GUARD-NOCOVER-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 288,
+      "before": "raise Refused(\"%s: no rule denies every action on every resource\" % who)",
+      "after": "return",
+      "property": "A rule list with no rule covering every action on every resource is refused",
+      "mirror": "GUARD-COVER-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_listing_with_no_rule_covering_every_action"
+      ]
+    },
+    {
+      "id": "GUARD-COVER-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 287,
+      "before": "if not covering:",
+      "after": "if covering:",
+      "property": "A rule list with a covering rule is not refused for lacking one",
+      "mirror": "GUARD-NOCOVER-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-CLAST-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 290,
+      "before": "if rules[last][\"effect\"] != \"deny\":",
+      "after": "if False:",
+      "property": "A last covering rule that is an allow is refused",
+      "mirror": "GUARD-CLAST-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_last_covering_rule_that_is_an_allow"
+      ]
+    },
+    {
+      "id": "GUARD-CLAST-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 290,
+      "before": "if rules[last][\"effect\"] != \"deny\":",
+      "after": "if rules[last][\"effect\"] == \"deny\":",
+      "property": "A last covering rule that is a deny is not refused for its effect",
+      "mirror": "GUARD-CLAST-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-ACTION-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 296,
+      "before": "if not allowed_action(rule[\"action\"]):",
+      "after": "if False:",
+      "property": "A non-deny rule after the final deny that names an action outside the allowed set is refused",
+      "mirror": "GUARD-ACTION-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_edit_allowed_after_the_deny",
+        "GuardRefuses.test_guard_refuses_an_edit_allowed_for_some_paths",
+        "GuardRefuses.test_guard_refuses_a_shell_allowed_after_the_deny",
+        "GuardRefuses.test_guard_refuses_an_ask_for_a_shell_action_after_the_deny"
+      ]
+    },
+    {
+      "id": "GUARD-ACTION-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 296,
+      "before": "if not allowed_action(rule[\"action\"]):",
+      "after": "if allowed_action(rule[\"action\"]):",
+      "property": "A non-deny rule after the final deny that names an allowed action is accepted",
+      "mirror": "GUARD-ACTION-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DENY-NARROW",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 294,
+      "before": "if rule[\"effect\"] == \"deny\":",
+      "after": "if rule[\"effect\"] == \"deny\" and rule[\"resource\"] == \"*\":",
+      "property": "A deny on a resource other than `*` after the final deny is accepted",
+      "mirror": "GUARD-DENY-STAR",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_deny_on_a_narrower_resource_after_the_final_deny"
+      ]
+    },
+    {
+      "id": "GUARD-DENY-STAR",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 294,
+      "before": "if rule[\"effect\"] == \"deny\":",
+      "after": "if rule[\"effect\"] == \"deny\" and rule[\"resource\"] != \"*\":",
+      "property": "A deny on `*` after the final deny is accepted",
+      "mirror": "GUARD-DENY-NARROW",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_deny_on_every_resource_after_the_final_deny",
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-PREFIX-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 270,
+      "before": "star_match(ALLOWED_PREFIX + \"*\", action)",
+      "after": "False",
+      "property": "A bishop-triage_ action after the final deny is accepted",
+      "mirror": "GUARD-PREFIX-LOOSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-PREFIX-LOOSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 270,
+      "before": "star_match(ALLOWED_PREFIX + \"*\", action)",
+      "after": "star_match(\"bishop*\", action)",
+      "property": "A bishop action outside the bishop-triage_ prefix after the final deny is refused",
+      "mirror": "GUARD-PREFIX-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_bishop_action_outside_the_triage_prefix"
+      ]
+    },
+    {
+      "id": "GUARD-ALLOW-DROP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 247,
+      "before": "ALLOWED_ACTIONS = (\"read\", \"glob\", \"grep\", \"list\", \"external_directory\")",
+      "after": "ALLOWED_ACTIONS = (\"read\", \"glob\", \"grep\", \"list\")",
+      "property": "external_directory after the final deny is accepted",
+      "mirror": "GUARD-ALLOW-ADD",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_an_external_directory_allow_after_the_final_deny"
+      ]
+    },
+    {
+      "id": "GUARD-ALLOW-ADD",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 247,
+      "before": "ALLOWED_ACTIONS = (\"read\", \"glob\", \"grep\", \"list\", \"external_directory\")",
+      "after": "ALLOWED_ACTIONS = (\"read\", \"glob\", \"grep\", \"list\", \"external_directory\", \"edit\")",
+      "property": "An action outside the allowed set (edit) after the final deny is refused",
+      "mirror": "GUARD-ALLOW-DROP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_edit_allowed_after_the_deny"
+      ]
+    },
+    {
+      "id": "GUARD-EMPTY-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 390,
+      "before": "if not isinstance(rules, list) or not rules:",
+      "after": "if False:",
+      "property": "A listing with missing or empty permissions is refused by name",
+      "mirror": "GUARD-EMPTY-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_listing_with_missing_or_empty_permissions"
+      ]
+    },
+    {
+      "id": "GUARD-EMPTY-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 390,
+      "before": "if not isinstance(rules, list) or not rules:",
+      "after": "if isinstance(rules, list) and rules:",
+      "property": "A listing with permission rules is not refused for having them",
+      "mirror": "GUARD-EMPTY-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-FILE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 393,
+      "before": "check_rules(file_rules, \"definition \" + path)",
+      "after": "pass",
+      "property": "A loosened definition is refused while the listing is stale",
+      "mirror": "GUARD-FILE-EMPTY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_stale_listing_whose_definition_grants_more",
+        "GuardRefuses.test_guard_refuses_a_definition_with_no_permission_block"
+      ]
+    },
+    {
+      "id": "GUARD-FILE-EMPTY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 361,
+      "before": "permission_rules(head, path), \"\\n\".join(lines[end + 1:]).strip()",
+      "after": "[], \"\\n\".join(lines[end + 1:]).strip()",
+      "property": "The definition's own permission block is read and checked",
+      "mirror": "GUARD-FILE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-TIMEOUT-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 438,
+      "before": "alarm shift; exec @ARGV",
+      "after": "shift; exec @ARGV",
+      "property": "A listing that does not finish is stopped at the bound",
+      "mirror": "GUARD-TIMEOUT-CODE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_hangs"
+      ]
+    },
+    {
+      "id": "GUARD-TIMEOUT-CODE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 440,
+      "before": "if [[ $rc -eq 142 ]]; then",
+      "after": "if [[ $rc -eq 143 ]]; then",
+      "property": "A listing stopped by the alarm is reported as timed out",
+      "mirror": "GUARD-TIMEOUT-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_hangs"
+      ]
+    },
+    {
+      "id": "GUARD-DEBUG-ACCEPT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 439,
+      "before": "if [[ $rc -ne 0 ]]; then",
+      "after": "if [[ $rc -ne 0 && $rc -eq 999 ]]; then",
+      "property": "A listing whose call exited non-zero is not accepted, even with a listing",
+      "mirror": "GUARD-DEBUG-OK-FAIL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_fails_even_with_a_listing"
+      ]
+    },
+    {
+      "id": "GUARD-DEBUG-OK-FAIL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 439,
+      "before": "if [[ $rc -ne 0 ]]; then",
+      "after": "if [[ $rc -eq 0 ]]; then",
+      "property": "A listing whose call exited zero is read, not refused as failed",
+      "mirror": "GUARD-DEBUG-ACCEPT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-RETRY-NONE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 447,
+      "before": "if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then",
+      "after": "if [[ $attempt -lt 1 ]]; then",
+      "property": "A cold listing is retried before the guard gives up",
+      "mirror": "GUARD-RETRY-UNBOUNDED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_retries_an_empty_listing_and_accepts_the_next_one"
+      ]
+    },
+    {
+      "id": "GUARD-RETRY-UNBOUNDED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 447,
+      "before": "if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then",
+      "after": "if true; then",
+      "property": "Retries of a cold listing stop after the bounded number of attempts",
+      "mirror": "GUARD-RETRY-NONE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_an_empty_listing_after_the_retries",
+        "GuardCannotCheck.test_guard_cannot_check_a_cold_listing_of_no_agents"
+      ]
+    },
+    {
+      "id": "GUARD-PERL-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 431,
+      "before": "if ! command -v perl >/dev/null 2>&1; then",
+      "after": "if false; then",
+      "property": "Without perl the listing is not run unbounded",
+      "mirror": "GUARD-PERL-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_without_perl_to_bound_the_listing"
+      ]
+    },
+    {
+      "id": "GUARD-PERL-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 431,
+      "before": "if ! command -v perl >/dev/null 2>&1; then",
+      "after": "if command -v perl >/dev/null 2>&1; then",
+      "property": "With perl on PATH the listing is run",
+      "mirror": "GUARD-PERL-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-PY-ACCEPT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 456,
+      "before": "if [[ $py_rc -eq 0 ]]; then",
+      "after": "if [[ $py_rc -ne 2 ]]; then",
+      "property": "A guard that fails to run is not accepted",
+      "mirror": "GUARD-PY-REFUSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_an_unparseable_agent_listing"
+      ]
+    },
+    {
+      "id": "GUARD-PY-REFUSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 457,
+      "before": "if [[ $py_rc -eq 2 ]]; then",
+      "after": "if [[ $py_rc -ne 0 ]]; then",
+      "property": "A listing that cannot be parsed is reported as could not check, not as refused",
+      "mirror": "GUARD-PY-ACCEPT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_an_unparseable_agent_listing",
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_line_it_cannot_read"
+      ]
     }
   ]
 }
