@@ -1252,7 +1252,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 383,
+      "line": 423,
       "before": "if a.get(\"description\") != want_desc:",
       "after": "if False:",
       "property": "A listing whose description differs from the definition is refused",
@@ -1267,7 +1267,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 383,
+      "line": 423,
       "before": "if a.get(\"description\") != want_desc:",
       "after": "if a.get(\"description\") == want_desc:",
       "property": "A listing whose description matches the definition is accepted",
@@ -1283,7 +1283,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 385,
+      "line": 425,
       "before": "if str(a.get(\"system\", \"\")).strip() != body:",
       "after": "if False:",
       "property": "A listing whose system prompt differs from the definition body is refused",
@@ -1298,7 +1298,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 385,
+      "line": 425,
       "before": "if str(a.get(\"system\", \"\")).strip() != body:",
       "after": "if str(a.get(\"system\", \"\")).strip() == body:",
       "property": "A listing whose system prompt matches the definition body is accepted",
@@ -1313,7 +1313,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 387,
+      "line": 427,
       "before": "if a.get(\"mode\") != want_mode:",
       "after": "if False:",
       "property": "A listing whose mode differs from the declared mode is refused",
@@ -1328,7 +1328,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 387,
+      "line": 427,
       "before": "if a.get(\"mode\") != want_mode:",
       "after": "if a.get(\"mode\") == want_mode:",
       "property": "A listing whose mode matches the declared mode is accepted",
@@ -1343,7 +1343,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 380,
+      "line": 420,
       "before": "if len(named) != 1:",
       "after": "if len(named) > 1:",
       "property": "A listing with no entry of the agent's name is refused, not run with a missing agent",
@@ -1358,7 +1358,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 380,
+      "line": 420,
       "before": "if len(named) != 1:",
       "after": "if len(named) < 1:",
       "property": "A listing with two entries of the agent's name is refused",
@@ -1373,7 +1373,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 379,
+      "line": 419,
       "before": "agent in (a.get(\"name\"), a.get(\"id\"))",
       "after": "a.get(\"name\") == agent",
       "property": "An entry whose id is the agent name counts toward the one-entry rule",
@@ -1388,7 +1388,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 379,
+      "line": 419,
       "before": "agent in (a.get(\"name\"), a.get(\"id\"))",
       "after": "a.get(\"id\") == agent",
       "property": "An entry whose name is the agent name is matched when its id differs",
@@ -1587,7 +1587,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 390,
+      "line": 430,
       "before": "if not isinstance(rules, list) or not rules:",
       "after": "if False:",
       "property": "A listing with missing or empty permissions is refused by name",
@@ -1602,7 +1602,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 390,
+      "line": 430,
       "before": "if not isinstance(rules, list) or not rules:",
       "after": "if isinstance(rules, list) and rules:",
       "property": "A listing with permission rules is not refused for having them",
@@ -1617,7 +1617,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 393,
+      "line": 402,
       "before": "check_rules(file_rules, \"definition \" + path)",
       "after": "pass",
       "property": "A loosened definition is refused while the listing is stale",
@@ -1633,7 +1633,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 361,
+      "line": 391,
       "before": "permission_rules(head, path), \"\\n\".join(lines[end + 1:]).strip()",
       "after": "[], \"\\n\".join(lines[end + 1:]).strip()",
       "property": "The definition's own permission block is read and checked",
@@ -1648,10 +1648,10 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 438,
+      "line": 505,
       "before": "alarm shift; exec @ARGV",
       "after": "shift; exec @ARGV",
-      "property": "A listing that does not finish is stopped at the bound",
+      "property": "The listing runs under the alarm, so a listing that hangs is stopped at the bound",
       "mirror": "GUARD-TIMEOUT-CODE",
       "suite": "scripts/test_triage_run.py",
       "killers": [
@@ -1663,10 +1663,10 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 440,
+      "line": 507,
       "before": "if [[ $rc -eq 142 ]]; then",
       "after": "if [[ $rc -eq 143 ]]; then",
-      "property": "A listing stopped by the alarm is reported as timed out",
+      "property": "A listing stopped by the alarm (status 142) is reported as timed out, not as exited",
       "mirror": "GUARD-TIMEOUT-OFF",
       "suite": "scripts/test_triage_run.py",
       "killers": [
@@ -1678,7 +1678,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 439,
+      "line": 506,
       "before": "if [[ $rc -ne 0 ]]; then",
       "after": "if [[ $rc -ne 0 && $rc -eq 999 ]]; then",
       "property": "A listing whose call exited non-zero is not accepted, even with a listing",
@@ -1693,7 +1693,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 439,
+      "line": 506,
       "before": "if [[ $rc -ne 0 ]]; then",
       "after": "if [[ $rc -eq 0 ]]; then",
       "property": "A listing whose call exited zero is read, not refused as failed",
@@ -1708,7 +1708,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 448,
+      "line": 515,
       "before": "if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then",
       "after": "if [[ $attempt -lt 1 ]]; then",
       "property": "A cold listing is retried before the guard gives up",
@@ -1723,7 +1723,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 448,
+      "line": 515,
       "before": "if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then",
       "after": "if true; then",
       "property": "Retries of a cold listing stop after the bounded number of attempts",
@@ -1739,10 +1739,10 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 431,
+      "line": 498,
       "before": "if ! command -v perl >/dev/null 2>&1; then",
       "after": "if false; then",
-      "property": "Without perl the listing is not run unbounded",
+      "property": "With perl absent the guard exits 4 with the perl reason and starts no listing; the kill is on that reason text",
       "mirror": "GUARD-PERL-FLIP",
       "suite": "scripts/test_triage_run.py",
       "killers": [
@@ -1754,7 +1754,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 431,
+      "line": 498,
       "before": "if ! command -v perl >/dev/null 2>&1; then",
       "after": "if command -v perl >/dev/null 2>&1; then",
       "property": "With perl on PATH the listing is run",
@@ -1769,9 +1769,9 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 457,
-      "before": "if [[ $py_rc -eq 0 ]]; then",
-      "after": "if [[ $py_rc -ne 2 ]]; then",
+      "line": 485,
+      "before": "if [[ $rc -eq 0 ]]; then",
+      "after": "if [[ $rc -ne 2 ]]; then",
       "property": "A guard that fails to run is not accepted",
       "mirror": "GUARD-PY-REFUSE",
       "suite": "scripts/test_triage_run.py",
@@ -1784,15 +1784,650 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 458,
-      "before": "if [[ $py_rc -eq 2 ]]; then",
-      "after": "if [[ $py_rc -ne 0 ]]; then",
+      "line": 486,
+      "before": "if [[ $rc -eq 2 ]]; then",
+      "after": "if [[ $rc -ne 0 ]]; then",
       "property": "A listing that cannot be parsed is reported as could not check, not as refused",
       "mirror": "GUARD-PY-ACCEPT",
       "suite": "scripts/test_triage_run.py",
       "killers": [
         "GuardCannotCheck.test_guard_cannot_check_an_unparseable_agent_listing",
         "GuardCannotCheck.test_guard_cannot_check_a_definition_line_it_cannot_read"
+      ]
+    },
+    {
+      "id": "GUARD-FIRST-SKIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 292,
+      "before": "for i in range(last + 1, len(rules)):",
+      "after": "for i in range(last + 2, len(rules)):",
+      "property": "The first rule after the final deny is read; a loop that starts one rule later skips it and accepts an allow there",
+      "mirror": "GUARD-FIRST-DENY-REFUSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_edit_allowed_directly_after_the_final_deny",
+        "GuardRefuses.test_guard_refuses_an_edit_allowed_directly_after_the_final_deny_in_the_file"
+      ]
+    },
+    {
+      "id": "GUARD-FIRST-DENY-REFUSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 294,
+      "before": "if rule[\"effect\"] == \"deny\":",
+      "after": "if rule[\"effect\"] == \"deny\" and i != last + 1:",
+      "property": "A deny in the first slot after the final deny is skipped as every other deny is; the mutant refuses it",
+      "mirror": "GUARD-FIRST-SKIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_deny_directly_after_the_final_deny"
+      ]
+    },
+    {
+      "id": "GUARD-ASK-SKIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 294,
+      "before": "if rule[\"effect\"] == \"deny\":",
+      "after": "if rule[\"effect\"] in (\"deny\", \"ask\"):",
+      "property": "An ask after the final deny is not a deny; the mutant skips it, so an ask on a shell action is accepted",
+      "mirror": "GUARD-ASK-REFUSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_ask_for_a_shell_action_after_the_deny"
+      ]
+    },
+    {
+      "id": "GUARD-ASK-REFUSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 296,
+      "before": "if not allowed_action(rule[\"action\"]):",
+      "after": "if not allowed_action(rule[\"action\"]) or rule[\"effect\"] == \"ask\":",
+      "property": "An ask on an allowed action after the final deny is accepted; the mutant refuses it",
+      "mirror": "GUARD-ASK-SKIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_an_ask_on_an_allowed_action_after_the_final_deny"
+      ]
+    },
+    {
+      "id": "GUARD-NEST-DROP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 354,
+      "before": "rules.append({\"action\": action, \"resource\": key, \"effect\": value})",
+      "after": "pass",
+      "property": "A nested rule under an action is read; the mutant drops it, so a nested allow is not seen",
+      "mirror": "GUARD-NEST-DENY-SWAP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_nested_edit_allow_in_the_definition"
+      ]
+    },
+    {
+      "id": "GUARD-NEST-DENY-SWAP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 354,
+      "before": "rules.append({\"action\": action, \"resource\": key, \"effect\": value})",
+      "after": "rules.append({\"action\": action, \"resource\": key, \"effect\": \"allow\" if value == \"deny\" else value})",
+      "property": "A nested deny keeps its effect; the mutant reads it as allow, so a file that denies is refused",
+      "mirror": "GUARD-NEST-DROP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_deny_on_a_resource_in_a_nested_block_after_the_final_deny"
+      ]
+    },
+    {
+      "id": "GUARD-NEST-RES",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 354,
+      "before": "rules.append({\"action\": action, \"resource\": key, \"effect\": value})",
+      "after": "rules.append({\"action\": action, \"resource\": \"*\", \"effect\": value})",
+      "property": "A nested rule takes its own resource; the mutant reads every nested rule as every resource, so a refusal names the wrong one",
+      "mirror": "GUARD-NEST-RES-NARROW",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_nested_edit_allow_for_some_paths_in_the_definition"
+      ]
+    },
+    {
+      "id": "GUARD-NEST-RES-NARROW",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 354,
+      "before": "rules.append({\"action\": action, \"resource\": key, \"effect\": value})",
+      "after": "rules.append({\"action\": action, \"resource\": \"src/*\", \"effect\": value})",
+      "property": "A nested rule takes its own resource; the mutant narrows every nested rule to src/*, so a nested allow on every resource is named wrongly",
+      "mirror": "GUARD-NEST-RES",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_nested_edit_allow_in_the_definition"
+      ]
+    },
+    {
+      "id": "GUARD-SHAPE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 285,
+      "before": "raise CannotCheck(\"%s: rule %d is malformed\" % (who, i))",
+      "after": "pass",
+      "property": "A rule that is not an object, has a non-string action or resource, or an effect outside EFFECTS is CannotCheck; the mutant reads it",
+      "mirror": "GUARD-SHAPE-DENY-REFUSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_rule_that_is_not_an_object",
+        "GuardCannotCheck.test_guard_cannot_check_a_rule_whose_action_is_not_a_string",
+        "GuardCannotCheck.test_guard_cannot_check_a_rule_whose_resource_is_not_a_string",
+        "GuardCannotCheck.test_guard_cannot_check_a_rule_with_an_unknown_effect"
+      ]
+    },
+    {
+      "id": "GUARD-SHAPE-DENY-REFUSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 284,
+      "before": "rule.get(\"effect\") not in EFFECTS):",
+      "after": "rule.get(\"effect\") not in (\"allow\", \"ask\")):",
+      "property": "A deny is a well-formed effect; the mutant refuses it as malformed, so every listing that denies is CannotCheck",
+      "mirror": "GUARD-SHAPE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-LIST-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 416,
+      "before": "if not isinstance(agents, list):",
+      "after": "if False:",
+      "property": "A listing that is valid JSON but not a list is CannotCheck; the mutant iterates an object's keys or fails on a scalar",
+      "mirror": "GUARD-LIST-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_listing_that_is_not_a_list"
+      ]
+    },
+    {
+      "id": "GUARD-LIST-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 416,
+      "before": "if not isinstance(agents, list):",
+      "after": "if isinstance(agents, list):",
+      "property": "A listing that is a list is read; the mutant refuses every list as CannotCheck",
+      "mirror": "GUARD-LIST-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-DESC-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 387,
+      "before": "if desc is None:",
+      "after": "if False:",
+      "property": "A definition with no quoted description is CannotCheck before the listing is compared; the mutant lets a None description through",
+      "mirror": "GUARD-DEF-DESC-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_with_no_description"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-DESC-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 387,
+      "before": "if desc is None:",
+      "after": "if desc is not None:",
+      "property": "A definition with a quoted description is read; the mutant refuses every definition as having no description",
+      "mirror": "GUARD-DEF-DESC-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-MODE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 389,
+      "before": "if mode is None:",
+      "after": "if False:",
+      "property": "A definition with no mode line is CannotCheck; the mutant lets a None mode through",
+      "mirror": "GUARD-DEF-MODE-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_with_no_mode"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-MODE-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 389,
+      "before": "if mode is None:",
+      "after": "if mode is not None:",
+      "property": "A definition with a mode line is read; the mutant refuses every definition as having no mode",
+      "mirror": "GUARD-DEF-MODE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-FIRST-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 375,
+      "before": "if lines[0] != \"---\" or \"---\" not in lines[1:]:",
+      "after": "if \"---\" not in lines[1:]:",
+      "property": "A definition that does not open with its frontmatter delimiter is CannotCheck; the mutant reads a later delimiter",
+      "mirror": "GUARD-DEF-FIRST-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_with_no_frontmatter"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-FIRST-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 375,
+      "before": "if lines[0] != \"---\" or \"---\" not in lines[1:]:",
+      "after": "if lines[0] == \"---\" or \"---\" not in lines[1:]:",
+      "property": "A definition that opens with its delimiter is read; the mutant refuses it as having no frontmatter",
+      "mirror": "GUARD-DEF-FIRST-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-CLOSE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 375,
+      "before": "if lines[0] != \"---\" or \"---\" not in lines[1:]:",
+      "after": "if lines[0] != \"---\":",
+      "property": "Frontmatter that never closes is CannotCheck; the mutant calls index() on the missing delimiter",
+      "mirror": "GUARD-DEF-CLOSE-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_with_no_closing_delimiter"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-CLOSE-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 375,
+      "before": "if lines[0] != \"---\" or \"---\" not in lines[1:]:",
+      "after": "if lines[0] != \"---\" or \"---\" in lines[1:]:",
+      "property": "A definition whose frontmatter closes is read; the mutant refuses it as having no frontmatter",
+      "mirror": "GUARD-DEF-CLOSE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-OS-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 371,
+      "before": "except OSError as exc:",
+      "after": "except ZeroDivisionError as exc:",
+      "property": "A definition that is missing or cannot be opened is CannotCheck with its reason; the mutant lets the OSError escape",
+      "mirror": "GUARD-READ-ASCII",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_that_is_missing_at_once"
+      ]
+    },
+    {
+      "id": "GUARD-READ-ASCII",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 369,
+      "before": "with open(path, encoding=\"utf8\") as fh:",
+      "after": "with open(path, encoding=\"ascii\") as fh:",
+      "property": "A definition is read as UTF-8; the mutant reads it as ASCII and refuses a valid non-ASCII body as not readable",
+      "mirror": "GUARD-DEF-OS-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_definition_whose_body_is_not_ascii"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-PRECHECK-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 497,
+      "before": "if [[ $rc -ne 0 ]]; then guard_outcome \"$rc\"; return $?; fi",
+      "after": ":",
+      "property": "The definition is checked before the listing is requested; the mutant asks for the listing first",
+      "mirror": "GUARD-DEF-PRECHECK-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_definition_that_is_missing_at_once"
+      ]
+    },
+    {
+      "id": "GUARD-DEF-PRECHECK-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 497,
+      "before": "if [[ $rc -ne 0 ]]; then guard_outcome \"$rc\"; return $?; fi",
+      "after": "if [[ $rc -eq 0 ]]; then guard_outcome \"$rc\"; return $?; fi",
+      "property": "A definition that passes its own check still reaches the listing; the mutant passes a definition without the listing",
+      "mirror": "GUARD-DEF-PRECHECK-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_a_description_that_is_not_ours"
+      ]
+    },
+    {
+      "id": "GUARD-TMO-LOOSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 216,
+      "before": "^[1-9][0-9]*$",
+      "after": "^[0-9]+$",
+      "property": "TRIAGE_GUARD_TIMEOUT_SEC must be a whole number of seconds of at least 1; the mutant accepts 0",
+      "mirror": "GUARD-TMO-STRICT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardTimeoutValue.test_guard_timeout_that_is_not_a_whole_number_of_seconds_exits_64"
+      ]
+    },
+    {
+      "id": "GUARD-TMO-STRICT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 216,
+      "before": "^[1-9][0-9]*$",
+      "after": "^[1-9][0-9]+$",
+      "property": "A timeout of 1 second is accepted; the mutant refuses single-digit values",
+      "mirror": "GUARD-TMO-LOOSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_guard_timeout_of_one_second"
+      ]
+    },
+    {
+      "id": "GUARD-TMO-ENGINE-ALWAYS",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 216,
+      "before": "\"$ENGINE\" == \"opencode\" && ! \"$GUARD_TIMEOUT_SEC\"",
+      "after": "! \"$GUARD_TIMEOUT_SEC\"",
+      "property": "The timeout is validated only on the opencode engine; the mutant validates it on the claude engine too",
+      "mirror": "GUARD-TMO-ENGINE-NEVER",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardTimeoutValue.test_guard_timeout_is_checked_only_for_the_opencode_engine"
+      ]
+    },
+    {
+      "id": "GUARD-TMO-ENGINE-NEVER",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 216,
+      "before": "\"$ENGINE\" == \"opencode\" && ! \"$GUARD_TIMEOUT_SEC\"",
+      "after": "\"$ENGINE\" == \"never\" && ! \"$GUARD_TIMEOUT_SEC\"",
+      "property": "A bad timeout is refused on the opencode engine, where the guard uses it; the mutant never validates it there",
+      "mirror": "GUARD-TMO-ENGINE-ALWAYS",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardTimeoutValue.test_guard_timeout_that_is_bad_is_refused_on_the_opencode_engine"
+      ]
+    },
+    {
+      "id": "GUARD-EMPTY-ACCEPT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 514,
+      "before": "\"$stripped\" != \"[]\"",
+      "after": "true",
+      "property": "A listing of [] is empty and is retried; the mutant takes it as a listing and refuses it as having no agents",
+      "mirror": "GUARD-EMPTY-NONE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_cold_listing_of_no_agents"
+      ]
+    },
+    {
+      "id": "GUARD-EMPTY-NONE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 514,
+      "before": "-n \"$stripped\" && \"$stripped\" != \"[]\"",
+      "after": "\"$stripped\" != \"[]\"",
+      "property": "An empty listing is retried; the mutant takes an empty string as a listing and reports it as not JSON",
+      "mirror": "GUARD-EMPTY-ACCEPT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_retries_a_cold_listing_of_only_whitespace",
+        "GuardCannotCheck.test_guard_cannot_check_an_empty_listing_after_the_retries"
+      ]
+    },
+    {
+      "id": "GUARD-PROPAGATE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 719,
+      "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
+      "after": "if [[ $guard_rc -ne 0 ]]; then exit 0; fi",
+      "property": "A refused or could-not-check guard ends the run with its own status; the mutant exits 0 on a refusal",
+      "mirror": "GUARD-PROPAGATE-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardRefuses.test_guard_refuses_an_unknown_agent_name"
+      ]
+    },
+    {
+      "id": "GUARD-PROPAGATE-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 719,
+      "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
+      "after": "if [[ $guard_rc -eq 0 ]]; then exit \"$guard_rc\"; fi",
+      "property": "A passing guard lets the run start; the mutant ends the script on a pass, before anything runs",
+      "mirror": "GUARD-PROPAGATE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-PY3-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 552,
+      "before": "if [[ \"$ENGINE\" == \"opencode\" ]] && ! command -v python3 >/dev/null 2>&1; then",
+      "after": "if false; then",
+      "property": "With python3 absent the opencode guard cannot run: exit 4 before the listing; the mutant lets the run go on",
+      "mirror": "GUARD-PY3-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_without_python3_before_the_listing"
+      ]
+    },
+    {
+      "id": "GUARD-PY3-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 552,
+      "before": "if [[ \"$ENGINE\" == \"opencode\" ]] && ! command -v python3 >/dev/null 2>&1; then",
+      "after": "if [[ \"$ENGINE\" == \"opencode\" ]] && command -v python3 >/dev/null 2>&1; then",
+      "property": "With python3 present the guard runs; the mutant treats a present python3 as absent",
+      "mirror": "GUARD-PY3-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
+      ]
+    },
+    {
+      "id": "GUARD-STRIP-BASH",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 513,
+      "before": "stripped=\"$(tr -d '[:space:]' <\"$gtmp/listing\")\"",
+      "after": "stripped=\"$(cat \"$gtmp/listing\")\"; stripped=\"${stripped//[[:space:]]/}\"",
+      "property": "The listing is stripped of whitespace with tr; the mutant strips it with a bash pattern substitution, which is quadratic in the listing's length",
+      "mirror": "GUARD-STRIP-NONE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_completes_a_listing_of_live_size_within_the_bound"
+      ]
+    },
+    {
+      "id": "GUARD-STRIP-NONE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 513,
+      "before": "stripped=\"$(tr -d '[:space:]' <\"$gtmp/listing\")\"",
+      "after": "stripped=\"$(cat \"$gtmp/listing\")\"",
+      "property": "A listing of only whitespace is empty and is retried; the mutant does not strip it",
+      "mirror": "GUARD-STRIP-BASH",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_retries_a_cold_listing_of_only_whitespace"
+      ]
+    },
+    {
+      "id": "GUARD-TIMEOUT-SHORT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 505,
+      "before": "\"$GUARD_TIMEOUT_SEC\" \"$OPENCODE_BIN\" debug agents",
+      "after": "1 \"$OPENCODE_BIN\" debug agents",
+      "property": "The listing is bounded by TRIAGE_GUARD_TIMEOUT_SEC; the mutant bounds it at a constant 1 second",
+      "mirror": "GUARD-TIMEOUT-LONG",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_slow_listing_that_finishes_inside_the_bound"
+      ]
+    },
+    {
+      "id": "GUARD-TIMEOUT-LONG",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 505,
+      "before": "\"$GUARD_TIMEOUT_SEC\" \"$OPENCODE_BIN\" debug agents",
+      "after": "999 \"$OPENCODE_BIN\" debug agents",
+      "property": "The listing is bounded by TRIAGE_GUARD_TIMEOUT_SEC; the mutant bounds it at a constant 999 seconds, so a hung listing is not stopped",
+      "mirror": "GUARD-TIMEOUT-SHORT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_hangs"
+      ]
+    },
+    {
+      "id": "GUARD-COMMENT-COL0",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 334,
+      "before": "if line.lstrip().startswith(\"#\"):",
+      "after": "if line.lstrip().startswith(\"#\") and line[0] in \" \\t\":",
+      "property": "A comment at column 0 inside the permission block is skipped; the mutant does not skip it, so the block is CannotCheck",
+      "mirror": "GUARD-COMMENT-INDENT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_refuses_an_edit_allow_after_a_column_zero_comment_in_the_permission_block"
+      ]
+    },
+    {
+      "id": "GUARD-COMMENT-INDENT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 334,
+      "before": "if line.lstrip().startswith(\"#\"):",
+      "after": "if line.startswith(\"#\"):",
+      "property": "An indented comment inside the permission block is skipped; the mutant skips only column-0 comments",
+      "mirror": "GUARD-COMMENT-COL0",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_accepts_an_indented_comment_in_the_permission_block"
+      ]
+    },
+    {
+      "id": "GUARD-TOPKEY-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 337,
+      "before": "if in_block and not TOP_KEY.match(line):",
+      "after": "if False:",
+      "property": "A column-0 line in the permission block that is not a top-level key is CannotCheck; the mutant ends the block at it",
+      "mirror": "GUARD-TOPKEY-NEVER",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardCannotCheck.test_guard_cannot_check_a_column_zero_line_in_the_permission_block_that_is_not_a_key"
+      ]
+    },
+    {
+      "id": "GUARD-TOPKEY-NEVER",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 306,
+      "before": "TOP_KEY = re.compile(r\"^[A-Za-z_][\\w-]*:\")",
+      "after": "TOP_KEY = re.compile(r\"(?!)\")",
+      "property": "A top-level key after the permission block ends it and the file is read; the mutant never recognises a key",
+      "mirror": "GUARD-TOPKEY-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_guard_accepts_a_top_level_key_after_the_permission_block"
       ]
     }
   ]
