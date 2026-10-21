@@ -64,6 +64,7 @@ dist:
 test:
 	go test ./...
 	python3 -m unittest discover -s scripts -p 'test_*.py'
+	python3 -I scripts/check_mutants.py
 
 fmt:
 	go fmt ./...

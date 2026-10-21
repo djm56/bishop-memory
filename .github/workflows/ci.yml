@@ -64,3 +64,8 @@ jobs:
       # which runs against a local fake service and never the live daemon.
       - name: python unittest (scripts/)
         run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+      # The DIR-017 mutant record check (testdata/mutants.json against the tree and
+      # testdata/README.md). Reads files only; it runs no mutants, so it is fast.
+      - name: mutant record check
+        run: python3 -I scripts/check_mutants.py
