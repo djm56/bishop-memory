@@ -202,8 +202,9 @@ temporary directory. A refused run names that directory when it still holds
 saved originals, so a file left mutated by an earlier run can be compared with
 its copy.
 
-Exit status is listed under `--help` and here. A test in `scripts/test_mutate.py`
-fails when this table and the `--help` text differ.
+Exit status is listed under `--help` and here; `--help` prints `EXIT_DOC`. A test
+in `scripts/test_mutate.py` fails when the rows of this table and `EXIT_DOC` differ
+in either direction: a row with no entry, an entry with no row, or a different meaning.
 
 | Status | Meaning |
 |--------|---------|

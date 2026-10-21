@@ -13,6 +13,7 @@ Each test name says the edge it covers.
 import contextlib
 import io
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -390,15 +391,81 @@ class MutateOneTests(_RepoTest):
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
 
 
+def readme_exit_rows(text):
+    """
+    The rows of the exit-status table in a README text, as (code, meaning) pairs in
+    the order written. The table is the one headed "| Status | Meaning |", and it
+    ends at the first line that does not start with "|". A row that does not match
+    the "| code | meaning |" shape comes back as (None, the line).
+    Raises ValueError when there is no such table.
+    """
+    lines = text.splitlines()
+    start = lines.index("| Status | Meaning |")  # raises ValueError when the header is absent
+    rows = []
+    for line in lines[start + 2:]:  # start + 1 is the |---|---| separator
+        if not line.startswith("|"):
+            break
+        match = re.match(r"^\| (\d+) \| (.*) \|$", line)
+        rows.append((int(match.group(1)), match.group(2)) if match else (None, line))
+    return rows
+
+
+def exit_table_errors(text, doc):
+    """
+    Every difference between the README exit table and `doc` (EXIT_DOC), checked in
+    both directions: a README row with no entry, an entry with no row, a repeated
+    row, a malformed row, and a row whose meaning differs. Empty when they agree.
+    """
+    try:
+        rows = readme_exit_rows(text)
+    except ValueError:
+        return ["README has no '| Status | Meaning |' table"]
+    errors, seen = [], set()
+    for code, meaning in rows:
+        if code is None:
+            errors.append(f"malformed row: {meaning!r}")
+            continue
+        if code in seen:
+            errors.append(f"exit {code} has more than one README row")
+        seen.add(code)
+        if code not in doc:
+            errors.append(f"README row {code} has no EXIT_DOC entry")
+        elif doc[code] != meaning:
+            errors.append(f"exit {code}: README says {meaning!r}, EXIT_DOC says {doc[code]!r}")
+    for code in doc:
+        if code not in seen:
+            errors.append(f"EXIT_DOC entry {code} has no README row")
+    return errors
+
+
 class ReadmeExitTableTests(unittest.TestCase):
     """The exit-status table in testdata/README.md against EXIT_DOC, the source of --help."""
 
-    def test_readme_exit_table_matches_exit_doc(self):
+    def setUp(self):
         readme = os.path.join(HERE, "..", "testdata", "README.md")
         with open(readme, encoding="utf-8") as handle:
-            text = handle.read()
-        for code, meaning in mutate.EXIT_DOC.items():
-            self.assertIn(f"| {code} | {meaning} |", text, f"exit {code} row missing or different")
+            self.text = handle.read()
+
+    def test_readme_exit_table_matches_exit_doc_both_ways(self):
+        # Positive control: the real table parses to every EXIT_DOC code, and no difference is reported.
+        self.assertEqual(len(readme_exit_rows(self.text)), len(mutate.EXIT_DOC))
+        self.assertEqual(exit_table_errors(self.text, mutate.EXIT_DOC), [])
+
+    def test_row_with_no_exit_doc_entry_is_reported(self):
+        # An invented status 6 in the README: the table has a row EXIT_DOC does not.
+        text = self.text.replace("| 5 |", "| 6 | invented status |\n| 5 |", 1)
+        self.assertIn("README row 6 has no EXIT_DOC entry", exit_table_errors(text, mutate.EXIT_DOC))
+
+    def test_exit_doc_entry_with_no_row_is_reported(self):
+        # Row 4 removed from the README: EXIT_DOC keeps a code the table no longer lists.
+        text = "\n".join(line for line in self.text.splitlines() if not line.startswith("| 4 |"))
+        self.assertIn("EXIT_DOC entry 4 has no README row", exit_table_errors(text, mutate.EXIT_DOC))
+
+    def test_changed_meaning_is_reported(self):
+        text = self.text.replace("interrupted by a signal or Ctrl-C", "stopped by a signal", 1)
+        errors = exit_table_errors(text, mutate.EXIT_DOC)
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("exit 5: README says", errors[0])
 
 
 class MainTests(_RepoTest):
