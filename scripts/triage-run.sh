@@ -63,14 +63,15 @@
 # Credentials: a launchd job has no Claude login and no API key in its
 # environment, so the headless Claude CLI stops at "Not logged in". The runner
 # sources $TRIAGE_ENV_FILE (default: <bishop-root>/.env, gitignored, the same
-# file the service reads) before anything else. For the claude engine put
+# file the service reads) before it reads any flag; only --help comes first, so
+# it works with a broken file. For the claude engine put
 #   ANTHROPIC_API_KEY=sk-ant-...      (API billing), or
 #   CLAUDE_CODE_OAUTH_TOKEN=...       (your Claude subscription; `claude setup-token`)
 # in it, mode 0600. The opencode engine needs nothing there: OpenCode reads its
 # own config (~/.config/opencode/opencode.json, ~/.local/share/opencode/auth.json),
 # which a launchd job running as you can read. Any TRIAGE_* or
 # BISHOP_MEMORY_URL value in the file is a default; a variable already set in
-# the environment wins.
+# the environment wins, and a flag on the command line wins over both.
 #
 # Exit codes: 0 ran, or there was nothing to do; 1 the agent run failed or timed
 # out; 2 the guard checked the agent and refused it, or a precondition the run
@@ -82,47 +83,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BISHOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# Flags are read before anything is sourced, so --help has no side effects and
-# works with a broken .env.
 # print_help: the header comment, from line 2 down to its first blank line, with
 # the comment marks removed. Read from the file, so the header and --help agree.
 print_help() {
   awk 'NR > 1 && /^$/ { exit } NR > 1 { print }' "$0" | sed 's/^# \{0,1\}//'
 }
 
-case "${1:-}" in
-  -h|--help) print_help; exit 0 ;;
-esac
-
-KIND="${1:-}"
-shift || true
-CATEGORY=""
-RECLASSIFY=""
-MODEL=""
-LIMIT=""
-ENGINE_FLAG=""
-MISSIONS=""
-REGRADE=0
-DRY_RUN=0
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --category) CATEGORY="${2:-}"; shift 2 ;;
-    --category=*) CATEGORY="${1#*=}"; shift ;;
-    --reclassify) RECLASSIFY="${2:-}"; shift 2 ;;
-    --reclassify=*) RECLASSIFY="${1#*=}"; shift ;;
-    --model) MODEL="${2:-}"; shift 2 ;;
-    --model=*) MODEL="${1#*=}"; shift ;;
-    --limit) LIMIT="${2:-}"; shift 2 ;;
-    --limit=*) LIMIT="${1#*=}"; shift ;;
-    --engine) ENGINE_FLAG="${2:-}"; shift 2 ;;
-    --engine=*) ENGINE_FLAG="${1#*=}"; shift ;;
-    --mission) MISSIONS="${2:-}"; shift 2 ;;
-    --mission=*) MISSIONS="${1#*=}"; shift ;;
-    --regrade) REGRADE=1; shift ;;
-    --dry-run) DRY_RUN=1; shift ;;
+# --help and -h are the only thing read before the environment files are
+# sourced, so help has no side effects and works with a broken .env. They are
+# looked for in every argument, and win wherever they stand, even as the value of
+# another flag. The other flags are read further down, after the files, so that a
+# flag wins over a file value.
+for arg in "$@"; do
+  case "$arg" in
     -h|--help) print_help; exit 0 ;;
-    *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
 
@@ -191,6 +165,40 @@ OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
 MCPD_BIN="$BISHOP_ROOT/bin/mcpd"
 GUARD_TIMEOUT_SEC="${TRIAGE_GUARD_TIMEOUT_SEC:-30}"
 GUARD_ATTEMPTS=3  # listings tried while the service is cold or empty, one second apart
+
+# --- Flags ---------------------------------------------------------------------
+# Read after the environment files, so a flag wins over a value in either. The
+# flag variables are set here whatever a file said.
+KIND="${1:-}"
+shift || true
+CATEGORY=""
+RECLASSIFY=""
+MODEL=""
+LIMIT=""
+ENGINE_FLAG=""
+MISSIONS=""
+REGRADE=0
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --category) CATEGORY="${2:-}"; shift 2 ;;
+    --category=*) CATEGORY="${1#*=}"; shift ;;
+    --reclassify) RECLASSIFY="${2:-}"; shift 2 ;;
+    --reclassify=*) RECLASSIFY="${1#*=}"; shift ;;
+    --model) MODEL="${2:-}"; shift 2 ;;
+    --model=*) MODEL="${1#*=}"; shift ;;
+    --limit) LIMIT="${2:-}"; shift 2 ;;
+    --limit=*) LIMIT="${1#*=}"; shift ;;
+    --engine) ENGINE_FLAG="${2:-}"; shift 2 ;;
+    --engine=*) ENGINE_FLAG="${1#*=}"; shift ;;
+    --mission) MISSIONS="${2:-}"; shift 2 ;;
+    --mission=*) MISSIONS="${1#*=}"; shift ;;
+    --regrade) REGRADE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
+  esac
+done
 
 case "$KIND" in
   classify) KIND_ENGINE="${TRIAGE_CLASSIFY_ENGINE:-}" ;;

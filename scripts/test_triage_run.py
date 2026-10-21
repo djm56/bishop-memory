@@ -309,12 +309,15 @@ class TriageRunCase(unittest.TestCase):
         }
 
     def run_script(self, kind, listing, *, debug_rc=0, debug_err=None, run_out=STEP_OK, run_rc=0,
-                   cold=0, cold_out="", hang=False, guard_timeout=30, path=None, slow=None):
+                   cold=0, cold_out="", hang=False, guard_timeout=30, path=None, slow=None,
+                   flags=(), extra_env=None, env_file_text=None):
         """Run the copied script for one kind. The listing is JSON, or raw text when a string, or raw bytes.
 
         `cold` makes the first that many `debug` calls print `cold_out`. `hang`
         makes every `debug` call sleep until the guard's alarm stops it. `slow`
         makes every `debug` call sleep that many seconds, then answer normally.
+        `flags` are given after `--engine opencode`, `extra_env` is added to the
+        environment, and `env_file_text` is written to the file TRIAGE_ENV_FILE names.
         """
         if isinstance(listing, bytes):
             data = listing
@@ -335,10 +338,16 @@ class TriageRunCase(unittest.TestCase):
             "STUB_RUN_RC": str(run_rc),
             "TRIAGE_GUARD_TIMEOUT_SEC": str(guard_timeout),
         })
+        if env_file_text is not None:
+            env_file = os.path.join(self.tmp, "run.env")
+            with open(env_file, "w", encoding="utf8") as fh:
+                fh.write(env_file_text)
+            env["TRIAGE_ENV_FILE"] = env_file
+        env.update(extra_env or {})
         # The script runs in its own session, so a hung run can be killed with
         # every process it started. Past the limit the test fails with a message.
         proc = subprocess.Popen(
-            ["/bin/bash", self.script, kind, "--engine", "opencode"],
+            ["/bin/bash", self.script, kind, "--engine", "opencode", *flags],
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -1335,6 +1344,78 @@ class RunReportsErrors(TriageRunCase):
                                run_out=ERROR_EVENT, run_rc=1)
         self.assertEqual(proc.returncode, 1, proc.stderr + self.log())
         self.assertIn("agent exited 1; see", self.log())
+
+
+class FlagAndFilePrecedence(TriageRunCase):
+    """
+    The order of authority for a setting is the flag, then the environment, then
+    the env file, then the default. Each test runs the script through the grade
+    kind on the opencode engine with --dry-run, so the model it would hand to
+    OpenCode, and whether it would run at all, show on stderr and in the stub.
+    """
+
+    def dry_run(self, **kwargs):
+        """Run `grade --dry-run` against the accepted grader listing; kwargs go to run_script."""
+        flags = tuple(kwargs.pop("flags", ())) + ("--dry-run",)
+        return self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], flags=flags, **kwargs)
+
+    def test_run_takes_a_setting_from_the_env_file_when_nothing_else_sets_it(self):
+        """Path: the env file sets TRIAGE_GRADE_MODEL, and no flag or environment value does.
+
+        This is the positive control for the other tests here: the file is read,
+        and its value reaches the command. Mutant: GUARD-PREC-FILE-IGNORED (the
+        file is not sourced) leaves the default model, and the assertion fails.
+        """
+        proc = self.dry_run(env_file_text="TRIAGE_GRADE_MODEL=opencode-go/from-file\n")
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertIn("--model  opencode-go/from-file", proc.stderr)
+
+    def test_run_prefers_the_environment_to_the_env_file(self):
+        """Path: TRIAGE_GRADE_MODEL is set in the environment and in the env file, with different values.
+
+        The environment's value reaches the command and the file's does not.
+        Mutant: GUARD-PREC-FILE-OVER-ENV (the snapshot of the environment is not
+        restored after the file is sourced) lets the file's value win, and the
+        assertion fails.
+        """
+        proc = self.dry_run(env_file_text="TRIAGE_GRADE_MODEL=opencode-go/from-file\n",
+                            extra_env={"TRIAGE_GRADE_MODEL": "opencode-go/from-env"})
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertIn("--model  opencode-go/from-env", proc.stderr)
+        self.assertNotIn("from-file", proc.stderr)
+
+    def test_run_prefers_the_model_flag_to_the_environment(self):
+        """Path: --model and TRIAGE_GRADE_MODEL are both given, with different values.
+
+        The flag's value reaches the command and the environment's does not.
+        Mutant: GUARD-PREC-ENV-OVER-FLAG (the environment is read before the flag
+        in the model default) lets the environment win, and the assertion fails.
+        """
+        proc = self.dry_run(flags=("--model", "opencode-go/from-flag"),
+                            extra_env={"TRIAGE_GRADE_MODEL": "opencode-go/from-env"})
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertIn("--model  opencode-go/from-flag", proc.stderr)
+        self.assertNotIn("from-env", proc.stderr)
+
+    def test_run_prefers_every_flag_to_the_same_name_in_the_env_file(self):
+        """Path: the env file sets the names the flags are read into, and the command line gives the flags.
+
+        The file says MODEL, LIMIT, DRY_RUN=0 and ENGINE_FLAG=claude. The flags
+        say --model, --limit, --dry-run and (from run_script) --engine opencode.
+        Every flag wins: the command carries the flag's model and limit, it is a
+        dry run so the stub is not called, and the engine is opencode. Mutant:
+        GUARD-PREC-FILE-OVER-FLAG (the file is sourced again after the flags are
+        read) lets the file win, and the test fails on the exit code, 2 for the
+        claude engine.
+        """
+        proc = self.dry_run(
+            env_file_text="MODEL=opencode-go/from-file\nLIMIT=3\nDRY_RUN=0\nENGINE_FLAG=claude\n",
+            flags=("--model", "opencode-go/from-flag", "--limit", "7"))
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertIn("--model  opencode-go/from-flag", proc.stderr)
+        self.assertIn("limit=7", proc.stderr)
+        self.assertNotIn("from-file", proc.stderr)
+        self.assertFalse(self.ran(), "the run stub was called on a dry run")
 
 
 class HelpText(TriageRunCase):
