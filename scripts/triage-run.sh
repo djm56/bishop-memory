@@ -19,8 +19,8 @@
 #      bishop-triage MCP server (mcpd in its triage profile) and the tools the
 #      agent definition names, on one of two engines:
 #        claude    Claude Code (`claude -p`); agents in .claude/agents/
-#        opencode  OpenCode (`opencode run`); agents in .opencode/agents/,
-#                  using the providers and keys in your own OpenCode config
+#        opencode  OpenCode v2 (`opencode run`; checked against 2.0.32); agents in
+#                  .opencode/agents/, using the providers and keys in your own OpenCode config
 #      Both engines follow the same doctrine: .claude/skills/findings-triage/SKILL.md
 #      for classify and process, .claude/skills/mission-grading/SKILL.md for grade;
 #   4. appends one line per run to $TRIAGE_LOG_DIR/triage.log and keeps the
@@ -393,19 +393,93 @@ print(json.dumps({
 }))
 PY
 )"
-  # OpenCode does not fail on an unknown --agent: it warns and falls back to
-  # its default agent, which can edit files and run shell commands. Refuse to
-  # run unless the agent resolves to our definition with neither.
-  agent_json="$(cd "$BISHOP_ROOT" && OPENCODE_CONFIG_CONTENT="$OC_CONFIG" "$OPENCODE_BIN" debug agent "$AGENT" --pure </dev/null 2>/dev/null)" || {
+  # The guard does not trust --agent to fail closed: an unknown name must never
+  # reach a default agent that can edit files and run shell commands. Refuse to
+  # run unless the one agent of that name has the description and body of our
+  # definition, and no edit or shell permission. OpenCode v2 lists agents with
+  # `debug agents`. That listing comes from the background service, which
+  # ignores OPENCODE_CONFIG_CONTENT (checked on 2.0.32). The layered config sets
+  # this agent's step cap and external_directory allow; it never grants edit or
+  # shell, nor changes the agent's identity.
+  agent_json="$(cd "$BISHOP_ROOT" && "$OPENCODE_BIN" debug agents </dev/null 2>/dev/null)" || {
     log "[$KIND] OpenCode cannot resolve agent $AGENT (.opencode/agents/$AGENT.md); nothing run"
     exit 2
   }
-  if ! printf '%s' "$agent_json" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-tools = d.get("tools") or {}
-ok = d.get("name") == sys.argv[1] and not d.get("native") and not any(tools.get(t) for t in ("edit", "write", "bash", "task"))
-sys.exit(0 if ok else 1)' "$AGENT"; then
+  if ! AGENTS_JSON="$agent_json" python3 -I - "$AGENT" "$BISHOP_ROOT/.opencode/agents/$AGENT.md" <<'PY'
+import fnmatch
+import json
+import os
+import re
+import sys
+
+# Actions that edit files or run commands: the edit and shell names, plus write,
+# patch and task, which may or may not be names v2 uses. An action missing from
+# this list is not checked. Each listed action must end in a deny that covers
+# every resource.
+GUARDED = ("edit", "write", "patch", "bash", "shell", "task")
+
+
+def fail(why):
+    print(why, file=sys.stderr)
+    sys.exit(1)
+
+
+def definition(path):
+    # The description from the frontmatter, and the body after it, stripped.
+    with open(path, encoding="utf8") as fh:
+        lines = fh.read().split("\n")
+    if not lines or lines[0] != "---":
+        fail("no frontmatter in " + path)
+    end = lines.index("---", 1)
+    desc = None
+    for line in lines[1:end]:
+        m = re.match(r'^description:\s*"(.*)"\s*$', line)
+        if m:
+            desc = m.group(1)
+    if desc is None:
+        fail("no quoted description in " + path)
+    return desc, "\n".join(lines[end + 1:]).strip()
+
+
+def denied(rules, action):
+    # OpenCode takes the LAST rule matching the action and resource, and asks
+    # when no rule matches. So the last rule covering every resource for this
+    # action must deny, and no later rule for the action may allow or ask.
+    hits = [i for i, r in enumerate(rules) if fnmatch.fnmatchcase(action, str(r.get("action", "")))]
+    covering = [i for i in hits if rules[i].get("resource") == "*"]
+    if not covering:
+        return False
+    last = covering[-1]
+    if rules[last].get("effect") != "deny":
+        return False
+    return all(rules[i].get("effect") == "deny" for i in hits if i > last)
+
+
+def main():
+    agent, path = sys.argv[1], sys.argv[2]
+    agents = json.loads(os.environ.get("AGENTS_JSON", ""))
+    if not isinstance(agents, list):
+        fail("the agent listing is not a list")
+    want_desc, body = definition(path)
+    named = [a for a in agents if isinstance(a, dict) and a.get("name") == agent]
+    if len(named) != 1:
+        fail("%d agents named %s" % (len(named), agent))
+    a = named[0]
+    if a.get("description") != want_desc or str(a.get("system", "")).strip() != body:
+        fail("agent %s is not the definition in %s" % (agent, path))
+    for action in GUARDED:
+        if not denied(a.get("permissions") or [], action):
+            fail("agent %s is not denied %s" % (agent, action))
+
+
+try:
+    main()
+except SystemExit:
+    raise
+except Exception as exc:
+    fail("guard check failed: %s" % exc)
+PY
+  then
     log "[$KIND] OpenCode resolved $AGENT to something other than .opencode/agents/$AGENT.md, or it can edit files or run commands; nothing run"
     exit 2
   fi
@@ -434,13 +508,16 @@ run_agent() {
       cmd+=("${ADD_DIR_ARGS[@]}")
     fi
   else
-    # --pure leaves the user's OpenCode plugins out of an unattended run.
-    cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run "$prompt"
-      --pure
+    # OpenCode v2 has no --pure, so the operator's own OpenCode plugins load in
+    # this run. --standalone starts a private server, which reads
+    # OPENCODE_CONFIG_CONTENT (checked on 2.0.32). The background service did not
+    # pick it up for `debug` commands, which is why the guard lists agents without it.
+    cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run --standalone
       --agent "$AGENT"
       --model "$MODEL"
       --title "$title"
-      --format json)
+      --format json
+      "$prompt")
   fi
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[$KIND] DRY RUN — would run from $BISHOP_ROOT (engine=$ENGINE):"
@@ -506,7 +583,7 @@ for line in open(path):
             run_failed = True
     elif kind == "error":
         err = e.get("error") or {}
-        errors.append((err.get("data") or {}).get("message") or err.get("name") or "error")
+        errors.append((err.get("data") or {}).get("message") or err.get("message") or err.get("type") or "error")
 text = " ".join(texts).strip().replace("\n", " | ")
 failed = bool(errors) or steps == 0 or run_failed
 flag = ("ERROR run closed as failed " if run_failed else "ERROR ") if failed else ""
