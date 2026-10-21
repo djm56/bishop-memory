@@ -7,8 +7,9 @@ every CI run. The checks live in this module, and each error prints its own
 message. The README table is checked byte for byte against the rendering of the
 spec.
 
-Retired rows are checked for shape only (they must carry a reason); their
-anchors and mirrors are not checked, because their targets are gone.
+Retired rows must carry a reason, and every other row's id that the reason names
+must be an active row (see _reason_errors). Their anchors and mirrors are not
+checked, because their targets are gone.
 
 The anchors are read from the working tree. In a clean checkout that is HEAD.
 
@@ -164,6 +165,32 @@ def _anchor_fields_ok(row):
             and isinstance(line, int) and not isinstance(line, bool) and line >= 1)
 
 
+# A mutant id as a retired row's reason writes it: capitals, digits and hyphens, at least one hyphen.
+REASON_ID = re.compile(r"\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+\b")
+
+
+def _reason_errors(row, by_id):
+    """
+    Errors for a retired row whose reason names a mutant id (see REASON_ID) that is
+    absent or not active, or names another row's id (any form) that is not active.
+    A reason that names no id has none.
+    """
+    reason = row.get("reason")
+    if not isinstance(reason, str):
+        return []
+    named = set(REASON_ID.findall(reason))
+    named |= {i for i in by_id if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", reason)}
+    named.discard(row["id"])
+    errors = []
+    for ident in sorted(named):
+        target = by_id.get(ident)
+        if target is None:
+            errors.append(f"{row['id']}: reason names {ident}, which does not exist")
+        elif target.get("status") != "active":
+            errors.append(f"{row['id']}: reason names {ident}, which is not active")
+    return errors
+
+
 def check_record(items, read_file):
     """
     Full record check. `read_file(relpath)` returns the file text, or None when
@@ -172,6 +199,8 @@ def check_record(items, read_file):
     errors = schema_errors(items)
     by_id = {r["id"]: r for r in items if isinstance(r, dict) and isinstance(r.get("id"), str)}
     for row in items:
+        if isinstance(row, dict) and row.get("status") == "retired" and isinstance(row.get("id"), str):
+            errors.extend(_reason_errors(row, by_id))
         if not isinstance(row, dict) or row.get("status") != "active" or not isinstance(row.get("id"), str):
             continue
         ident = row["id"]

@@ -114,6 +114,28 @@ class RecordCheckTests(unittest.TestCase):
         errors = check.check_record(items, reader({"f.py": SOURCE}))
         self.assertEqual(errors, [], errors)
 
+    def test_retired_reason_naming_active_ids_passes(self):
+        items = [row("A", "B-TWO"), row("B-TWO", "A", before="return 2", line=3),
+                 retired("OLD", "OLD2", reason="covered by A and by B-TWO")]
+        self.assertEqual(check.check_record(items, reader({"f.py": SOURCE})), [])
+
+    def test_retired_reason_naming_a_missing_hyphenated_id_is_reported(self):
+        items = [row("A", "B"), row("B", "A", before="return 2", line=3),
+                 retired("OLD", "OLD2", reason="covered by GONE-ID")]
+        errors = check.check_record(items, reader({"f.py": SOURCE}))
+        self.assertEqual(errors, ["OLD: reason names GONE-ID, which does not exist"])
+
+    def test_retired_reason_naming_a_retired_id_is_reported(self):
+        items = [row("A", "B"), row("B", "A", before="return 2", line=3),
+                 retired("OLD", "OLD2", reason="covered by OLD2"), retired("OLD2", "OLD")]
+        errors = check.check_record(items, reader({"f.py": SOURCE}))
+        self.assertEqual(errors, ["OLD: reason names OLD2, which is not active"])
+
+    def test_retired_reason_naming_its_own_id_is_not_reported(self):
+        items = [row("A", "B"), row("B", "A", before="return 2", line=3),
+                 retired("OLD-ONE", "A", reason="OLD-ONE was replaced by A")]
+        self.assertEqual(check.check_record(items, reader({"f.py": SOURCE})), [])
+
     def test_clean_pass(self):
         items = [row("A", "B"), row("B", "A", before="return 2", line=3)]
         self.assertEqual(check.check_record(items, reader({"f.py": SOURCE})), [])

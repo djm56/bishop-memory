@@ -142,6 +142,15 @@ def unmasked_variant():
     return mock.patch.object(mutate.signal, "pthread_sigmask", side_effect=lambda how, sigs: set())
 
 
+def keep_mask(case):
+    """
+    Put the signal mask back when `case` ends. A killer that times out leaves the handled signals blocked
+    on purpose (see _run_group), so a test that calls run_killers() or _run_group() directly, without
+    mutate_one()'s release, would hand the blocked mask to every later test.
+    """
+    case.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
+
+
 # A killer that tells the runner's process to stop. It runs after the mutant is planted, and checks the
 # planted text first, so a missing plant fails the run instead of looking like an interrupt.
 SIGNAL_SUITE = """import os, signal, time, unittest
@@ -306,6 +315,7 @@ class RealPythonRunTests(unittest.TestCase):
     """run_killers() and mutate_one() against a real unittest suite in a temporary directory."""
 
     def setUp(self):
+        keep_mask(self)
         self.repo = make_repo({"f.py": TARGET})
         self.tmp = tempfile.mkdtemp(prefix="mutate-test-suite-")
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
@@ -1389,6 +1399,7 @@ class GroupKillTests(unittest.TestCase):
     """A killer that times out takes its whole process group with it, grandchildren included."""
 
     def setUp(self):
+        keep_mask(self)
         self.repo = make_repo({"f.py": TARGET})
         self.tmp = tempfile.mkdtemp(prefix="mutate-test-group-")
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
@@ -1479,6 +1490,7 @@ class GoGroupKillTests(unittest.TestCase):
     """The Go branch: `go test` leads a group whose test binary and sleep child must die with it."""
 
     def setUp(self):
+        keep_mask(self)
         self.repo = make_repo({"go.mod": "module hang\n\ngo 1.18\n", "hang_test.go": GO_HANG_TEST})
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
         patcher = mock.patch.object(mutate, "ROOT", self.repo)
