@@ -2762,6 +2762,36 @@
       "killers": [
         "GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it"
       ]
+    },
+    {
+      "id": "GUARD-RUN-STANDALONE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 762,
+      "before": "\"$OPENCODE_BIN\" run --standalone",
+      "after": "\"$OPENCODE_BIN\" run",
+      "property": "The run starts OpenCode with --standalone; the mutant leaves it out",
+      "mirror": "GUARD-RUN-PURE-ADD",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_run_is_started_standalone_without_pure_and_with_the_layered_config"
+      ]
+    },
+    {
+      "id": "GUARD-RUN-PURE-ADD",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 762,
+      "before": "\"$OPENCODE_BIN\" run --standalone",
+      "after": "\"$OPENCODE_BIN\" run --pure --standalone",
+      "property": "The run does not pass --pure, which OpenCode v2 is reported to lack; the mutant passes it",
+      "mirror": "GUARD-RUN-STANDALONE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GuardAccepts.test_run_is_started_standalone_without_pure_and_with_the_layered_config"
+      ]
     }
   ]
 }

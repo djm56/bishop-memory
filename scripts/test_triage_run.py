@@ -462,6 +462,11 @@ class GuardAccepts(TriageRunCase):
 
     def test_run_is_started_standalone_without_pure_and_with_the_layered_config(self):
         """Path: the run invocation under v2 (no --pure, --standalone, layered config).
+
+        The layered config is checked only for the text `bishop-triage`; no row
+        pins its other keys. Mutants: GUARD-RUN-STANDALONE-OFF (--standalone is
+        left out) and GUARD-RUN-PURE-ADD (--pure is passed) each fail the
+        argument assertion for their own flag.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
