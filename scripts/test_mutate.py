@@ -390,6 +390,17 @@ class MutateOneTests(_RepoTest):
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
 
 
+class ReadmeExitTableTests(unittest.TestCase):
+    """The exit-status table in testdata/README.md against EXIT_DOC, the source of --help."""
+
+    def test_readme_exit_table_matches_exit_doc(self):
+        readme = os.path.join(HERE, "..", "testdata", "README.md")
+        with open(readme, encoding="utf-8") as handle:
+            text = handle.read()
+        for code, meaning in mutate.EXIT_DOC.items():
+            self.assertIn(f"| {code} | {meaning} |", text, f"exit {code} row missing or different")
+
+
 class MainTests(_RepoTest):
     """main(): exit statuses, refusals, and the SHARED-TEXT verdict."""
 

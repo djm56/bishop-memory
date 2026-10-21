@@ -67,9 +67,12 @@ test:
 	python3 -I scripts/check_mutants.py
 
 # Mutation run over testdata/mutants.json (scripts/mutate.py). Slow: minutes, not
-# part of make test. ID='M1 GO-KEY' runs selected mutants only.
+# part of make test. ID='M1 GO-KEY' runs selected mutants only. ID is exported
+# and passed as data ("$$MUTATE_IDS"), never spliced into the shell line, and
+# mutate.py refuses any id outside the id charset.
+export MUTATE_IDS := $(ID)
 mutate:
-	python3 -I scripts/mutate.py $(foreach i,$(ID),--id $(i))
+	python3 -I scripts/mutate.py --ids "$$MUTATE_IDS"
 
 fmt:
 	go fmt ./...

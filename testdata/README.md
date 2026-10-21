@@ -173,24 +173,54 @@ Retired rows are not applied; their targets are no longer in the tree:
 ## Mutation testing
 
 `scripts/mutate.py` runs the active mutants in [`mutants.json`](mutants.json).
-For each mutant it checks that the file is clean against HEAD, plants the edit
-alone, runs the mutant's killers, then restores the file and verifies the
-restore: the bytes equal the original, `cmp` matches a copy saved before
-planting, and `git diff` is clean. Each killer's full output goes to a
-per-mutant log.
+For each mutant it refuses unless the file is clean against HEAD: `git status
+--porcelain --ignored` for the file must print nothing, so a staged edit, an
+unstaged edit, an untracked file and an ignored file all refuse. It then plants
+the edit alone, runs the mutant's killers, and restores the file. The restore is
+verified three ways: the bytes equal the original, `cmp` matches a copy saved
+before planting, and the file is clean against HEAD again. Each killer's full
+output goes to a per-mutant log.
 
     make mutate                    # every active mutant
     make mutate ID='GO-KEY M2'     # selected ids only
 
-Exit status is 0 only when every selected mutant is killed and every restore
-verifies. A mutant is KILLED when at least one of its killers fails. A selector
-that matches no test marks the mutant INVALID. SHARED-TEXT is a warning, printed
-when a mutant and its mirror fail with the same message.
+A mutant is KILLED when at least one of its killers fails and none did not run
+or timed out. A selector that matches no test is NOT-RUN. A module that does not
+compile, a Go build that fails, or a run that exceeds the timeout is also not a
+kill. Any of these makes the mutant INVALID, with the reason printed beside it.
+A killer that passes is listed as not failing. SHARED-TEXT is printed when a
+mutant and its mirror fail with the same message; the run then fails, because a
+shared kill is not two kills.
 
-Python killers run as one `unittest -v` process per mutant, with
-`PYTHONDONTWRITEBYTECODE=1` and `python3 -B -I`. Go killers run the parent test
-with `go test -v -run`, and each selector picks the subtests it names. Logs go to
-a temporary directory unless `--log-dir` is given.
+Each killer run is bounded by `--timeout SECONDS` (default 600). Python killers
+run as one `unittest -v` process per mutant, with `PYTHONDONTWRITEBYTECODE=1`
+and `python3 -B -I`, so the timeout bounds that process. Go killers run the
+parent test with `go test -v -run`, one process per selector, and each selector
+picks the subtests it names. Logs go to a temporary directory unless
+`--log-dir` is given. A refused run names the newest saved originals in the
+temporary directory, so a file left mutated by an earlier run can be compared
+with its copy.
+
+Exit status is listed under `--help` and here. A test in `scripts/test_mutate.py`
+fails when this table and the `--help` text differ.
+
+| Status | Meaning |
+|--------|---------|
+| 0 | every selected mutant KILLED, every restore verified, tree unchanged, no SHARED-TEXT |
+| 1 | a mutant SURVIVED or was INVALID, a restore failed, or the tree changed |
+| 2 | refused before planting: usage error, malformed spec, not a git checkout, or uncommitted changes |
+| 3 | a required tool (git, or go for a Go mutant) is not installed or cannot answer |
+| 4 | every mutant KILLED, but a mutant and its mirror fail with the same message |
+| 5 | interrupted by a signal or Ctrl-C after planting began; the file was restored |
+
+A SIGKILL or a power loss skips every restore. Nothing in the runner can
+handle those; the next run refuses on the dirty file and names the saved copy.
+
+The runner and the record check are tooling, not product code. DIR-017 governs
+the product invariants the mutants target, so the tooling is not given mirrored
+mutants of its own. It is covered by the per-edge unit tests in
+`scripts/test_mutate.py` and `scripts/test_check_mutants.py`, and by controls that
+run it against deliberately corrupted inputs (DIR-001).
 
 `make test` runs the record check, not the mutants. The check takes a fraction of
 a second; a mutant run takes minutes.
