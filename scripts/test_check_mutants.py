@@ -1,9 +1,8 @@
 """
 Unit tests for scripts/check_mutants.py: the DIR-017 record check.
 
-Each test calls one entry point of check_mutants (check_record, schema_errors,
-locate, render_block, check_readme or main) on an in-memory spec and an
-in-memory file map, or on a temporary directory. The tests never read the real
+Each test calls one entry point of check_mutants, named in its class docstring,
+on an in-memory spec and an in-memory file map, or on a temporary directory. The tests never read the real
 testdata or tree. The real spec is checked by the command-line run in `make
 test` and in CI.
 

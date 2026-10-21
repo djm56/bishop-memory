@@ -3,14 +3,9 @@
 Record check for the DIR-017 mutant spec, testdata/mutants.json.
 
 Reads files and runs no tests, so it is fast enough for every `make test` and
-every CI run. It checks that:
-
-  - the spec is well formed and no id appears twice;
-  - every active mutant's `before` has exactly one occurrence that begins on the
-    stated line (other copies of the text elsewhere in the file are allowed),
-    and `after` differs from `before`;
-  - every active mutant's mirror exists, is active, and points back;
-  - testdata/README.md carries the table rendered from the spec, byte for byte.
+every CI run. The checks live in this module, and each error prints its own
+message. The README table is checked byte for byte against the rendering of the
+spec.
 
 Retired rows are checked for shape only (they must carry a reason); their
 anchors and mirrors are not checked, because their targets are gone.
@@ -66,8 +61,8 @@ def _text_fields(row, keys):
 
 def schema_errors(items):
     """
-    Structural errors for every row: ids, status, language, required fields,
-    and the fields an active row needs to be applied and rendered.
+    Structural errors for every row, one string each. An active row is held to
+    more than a retired one.
     """
     errors = []
     first_seen = {}
