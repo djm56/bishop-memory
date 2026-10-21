@@ -2255,7 +2255,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 730,
+      "line": 742,
       "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
       "after": "if [[ $guard_rc -ne 0 ]]; then exit 0; fi",
       "property": "A refused or could-not-check guard ends the run with its own status; the mutant exits 0 on a refusal",
@@ -2270,7 +2270,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 730,
+      "line": 742,
       "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
       "after": "if [[ $guard_rc -eq 0 ]]; then exit \"$guard_rc\"; fi",
       "property": "A passing guard lets the run start; the mutant ends the script on a pass, before anything runs",
@@ -2768,14 +2768,14 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 762,
+      "line": 774,
       "before": "\"$OPENCODE_BIN\" run --standalone",
       "after": "\"$OPENCODE_BIN\" run",
       "property": "The run starts OpenCode with --standalone; the mutant leaves it out",
       "mirror": "GUARD-RUN-PURE-ADD",
       "suite": "scripts/test_triage_run.py",
       "killers": [
-        "GuardAccepts.test_run_is_started_standalone_without_pure_and_with_the_layered_config"
+        "GuardAccepts.test_run_is_started_standalone_without_pure"
       ]
     },
     {
@@ -2783,14 +2783,200 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 762,
+      "line": 774,
       "before": "\"$OPENCODE_BIN\" run --standalone",
       "after": "\"$OPENCODE_BIN\" run --pure --standalone",
       "property": "The run does not pass --pure, which OpenCode v2 is reported to lack; the mutant passes it",
       "mirror": "GUARD-RUN-STANDALONE-OFF",
       "suite": "scripts/test_triage_run.py",
       "killers": [
-        "GuardAccepts.test_run_is_started_standalone_without_pure_and_with_the_layered_config"
+        "GuardAccepts.test_run_is_started_standalone_without_pure"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-LEGACY-SHAPE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 731,
+      "before": "\"mcp\": {\"servers\": {\"bishop-triage\": {\n        \"type\": \"local\", \"command\": [mcpd], \"codemode\": False,\n        \"environment\": {\"MCPD_PROFILE\": \"triage\", \"BISHOP_MEMORY_URL\": url, \"BISHOP_HARNESS\": \"triage\"}}}},",
+      "after": "\"mcp\": {\"bishop-triage\": {\n        \"type\": \"local\", \"command\": [mcpd], \"enabled\": True,\n        \"environment\": {\"MCPD_PROFILE\": \"triage\", \"BISHOP_MEMORY_URL\": url, \"BISHOP_HARNESS\": \"triage\"}}},",
+      "summary": "the three-line mcp block is written as the legacy mcp.<name> entry with `enabled` true and no codemode",
+      "property": "The bishop-triage server is under mcp.servers, the v2 shape; the mutant restores the legacy mcp.<name> shape with an `enabled` key and no codemode, which the binary rewrites into mcp.servers with codemode unset",
+      "mirror": "GUARD-MCP-LEGACY-ALSO",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode",
+        "LayeredConfigRealOpenCode.test_real_opencode_keeps_codemode_off_in_the_config_the_run_builds"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-LEGACY-ALSO",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 731,
+      "before": "\"mcp\": {\"servers\": {\"bishop-triage\": {",
+      "after": "\"mcp\": {\"bishop-triage\": {\"type\": \"local\", \"command\": [mcpd]}, \"servers\": {\"bishop-triage\": {",
+      "property": "mcp holds only the v2 `servers` map; the mutant leaves a legacy mcp.<name> entry beside it",
+      "mirror": "GUARD-MCP-LEGACY-SHAPE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-CODEMODE-DROP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"codemode\": False,",
+      "after": "",
+      "summary": "the `\"codemode\": False,` entry is removed from the server",
+      "property": "The server sets codemode; the mutant sets none, so v2 defaults to Code Mode",
+      "mirror": "GUARD-MCP-CODEMODE-TRUE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode",
+        "LayeredConfigRealOpenCode.test_real_opencode_keeps_codemode_off_in_the_config_the_run_builds"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-CODEMODE-TRUE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"codemode\": False",
+      "after": "\"codemode\": True",
+      "property": "codemode is the JSON false; the mutant sets it true",
+      "mirror": "GUARD-MCP-CODEMODE-DROP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode",
+        "LayeredConfigRealOpenCode.test_real_opencode_keeps_codemode_off_in_the_config_the_run_builds"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-ENABLED-KEY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"codemode\": False,",
+      "after": "\"codemode\": False, \"enabled\": True,",
+      "property": "The server carries no `enabled` key, which v2 does not have; the mutant adds one",
+      "mirror": "GUARD-MCP-DISABLED-TRUE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-DISABLED-TRUE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"codemode\": False,",
+      "after": "\"codemode\": False, \"disabled\": True,",
+      "property": "The server is not disabled; the mutant sets `disabled` true, which turns a v2 server off",
+      "mirror": "GUARD-MCP-ENABLED-KEY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-COMMAND-STR",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"command\": [mcpd],",
+      "after": "\"command\": mcpd,",
+      "property": "The server's command is an argv list; the mutant gives the path as a string",
+      "mirror": "GUARD-MCP-COMMAND-ARG",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-COMMAND-ARG",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 732,
+      "before": "\"command\": [mcpd],",
+      "after": "\"command\": [mcpd, \"--help\"],",
+      "property": "The server's command is the mcpd path alone; the mutant appends an argument",
+      "mirror": "GUARD-MCP-COMMAND-STR",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-PROFILE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 733,
+      "before": "\"environment\": {\"MCPD_PROFILE\": \"triage\", ",
+      "after": "\"environment\": {",
+      "property": "The server is started with MCPD_PROFILE set; the mutant sets none, so mcpd starts in its default harness profile",
+      "mirror": "GUARD-MCP-PROFILE-FULL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-PROFILE-FULL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 733,
+      "before": "\"MCPD_PROFILE\": \"triage\"",
+      "after": "\"MCPD_PROFILE\": \"harness\"",
+      "property": "MCPD_PROFILE is triage; the mutant sets the other value mcpd accepts, harness",
+      "mirror": "GUARD-MCP-PROFILE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-URL-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 733,
+      "before": "\"BISHOP_MEMORY_URL\": url, ",
+      "after": "",
+      "summary": "the `\"BISHOP_MEMORY_URL\": url, ` entry is removed from the server's environment",
+      "property": "The server is given the run's service URL; the mutant gives it none",
+      "mirror": "GUARD-MCP-URL-DEFAULT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-MCP-URL-DEFAULT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 733,
+      "before": "\"BISHOP_MEMORY_URL\": url",
+      "after": "\"BISHOP_MEMORY_URL\": \"http://127.0.0.1:8787\"",
+      "property": "The server is given the run's service URL; the mutant gives it the default URL whatever the run uses",
+      "mirror": "GUARD-MCP-URL-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
       ]
     }
   ]

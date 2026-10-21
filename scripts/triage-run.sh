@@ -703,6 +703,18 @@ else
   # external_directory allow), and nothing shared, snapshotted, formatted or
   # auto-updated. small_model is pinned to the run's model so no side call
   # (titles, compaction) goes to another provider.
+  # The server is written in the v2 shape, mcp.servers.<name>, with codemode
+  # false. v2 has no `enabled` key: a server is on unless `disabled` is true.
+  # Observed on 2.0.32: the binary's schema text for `codemode` reads "Expose
+  # this server's tools through Code Mode. Defaults to true", and its tool
+  # snapshot sends a tool to Code Mode unless its codemode is false
+  # (`codemode!==!1`); a live run on the legacy shape mcp.<name> logged
+  # `mcp connected server=bishop-triage tools=15` and then had the grader's calls
+  # by name refused with `No tool named "bishop-triage_triage_run_start" is currently
+  # available`; `opencode api --standalone GET /api/config` reports a legacy
+  # mcp.<name> entry as mcp.servers.<name> with no codemode, and the v2 shape
+  # as written here with codemode false. Not observed: a live run on this
+  # shape, in which the model calls a bishop-triage tool by name.
   OC_CONFIG="$(python3 - "$MCPD_BIN" "$URL" "$AGENT" "$MAX_TURNS" "$MODEL" "$ADD_DIRS" <<'PY'
 import json, sys
 mcpd, url, agent, steps, model, dirs = sys.argv[1:7]
@@ -716,9 +728,9 @@ if external:
 print(json.dumps({
     "share": "disabled", "autoupdate": False, "snapshot": False,
     "lsp": False, "formatter": False, "small_model": model,
-    "mcp": {"bishop-triage": {
-        "type": "local", "command": [mcpd], "enabled": True,
-        "environment": {"MCPD_PROFILE": "triage", "BISHOP_MEMORY_URL": url, "BISHOP_HARNESS": "triage"}}},
+    "mcp": {"servers": {"bishop-triage": {
+        "type": "local", "command": [mcpd], "codemode": False,
+        "environment": {"MCPD_PROFILE": "triage", "BISHOP_MEMORY_URL": url, "BISHOP_HARNESS": "triage"}}}},
     "agent": {agent: agent_cfg},
 }))
 PY

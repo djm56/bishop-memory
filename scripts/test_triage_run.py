@@ -383,6 +383,16 @@ class TriageRunCase(unittest.TestCase):
         return subprocess.run(["/bin/bash", self.script, *args], env=self.base_env(),
                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
 
+    def generated_config(self, kind):
+        """The layered config the run for `kind` hands the stub, parsed. The stub's copy is removed first, so a stale one is never read."""
+        agent = KIND_AGENT[kind]
+        if os.path.exists(self.run_config):
+            os.remove(self.run_config)
+        proc = self.run_script(kind, [self.agent_entry(agent, RULES[agent])])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        with open(self.run_config, encoding="utf8") as fh:
+            return json.loads(fh.read())
+
     def log(self):
         """The runner's log file for this test."""
         path = os.path.join(self.log_dir, "triage.log")
@@ -460,21 +470,19 @@ class GuardAccepts(TriageRunCase):
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
         self.assertTrue(self.ran())
 
-    def test_run_is_started_standalone_without_pure_and_with_the_layered_config(self):
-        """Path: the run invocation under v2 (no --pure, --standalone, layered config).
+    def test_run_is_started_standalone_without_pure(self):
+        """Path: the run invocation under v2 passes --standalone and no --pure.
 
-        The layered config is checked only for the text `bishop-triage`; no row
-        pins its other keys. Mutants: GUARD-RUN-STANDALONE-OFF (--standalone is
-        left out) and GUARD-RUN-PURE-ADD (--pure is passed) each fail the
-        argument assertion for their own flag.
+        This test reads the arguments only; the layered config is read in
+        LayeredConfig. Mutants: GUARD-RUN-STANDALONE-OFF (--standalone is left
+        out) and GUARD-RUN-PURE-ADD (--pure is passed) each fail the argument
+        assertion for their own flag.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
         args = self.args()
         self.assertNotIn("--pure", args)
         self.assertIn("--standalone", args)
-        with open(self.run_config, encoding="utf8") as fh:
-            self.assertIn("bishop-triage", fh.read())
 
     def test_guard_accepts_an_external_directory_allow_after_the_final_deny(self):
         """Path: the layered config's external_directory allow is named by the listing after the deny.
@@ -1377,6 +1385,117 @@ class GuardPositiveControl(TriageRunCase):
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
         self.assertTrue(self.ran())
+
+
+class LayeredConfig(TriageRunCase):
+    """
+    The config the opencode run layers over the user's own, which the script
+    hands to OpenCode in OPENCODE_CONFIG_CONTENT. Each test starts the copied
+    script on its main path (`run_script`, the stub OPENCODE_BIN) and reads back
+    the text the stub received in that variable. The one builder serves classify,
+    process and grade, so each test runs all three kinds.
+    """
+
+    def test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode(self):
+        """Path: the config for each kind is parsed, and the one MCP server is read as OpenCode v2 reads it.
+
+        v2 reads MCP servers from `mcp.servers`, routes a server's tools through
+        Code Mode unless `codemode` is false (so the model cannot call them by
+        name), and has no `enabled` key (a server is on unless `disabled` is
+        true). The legacy shape `mcp.<name>` is rewritten into `mcp.servers` by
+        OpenCode, and the rewrite drops `codemode`. Each assertion carries its
+        own message. Mutants, each with its mirror: GUARD-MCP-LEGACY-SHAPE and
+        GUARD-MCP-LEGACY-ALSO (the shape); GUARD-MCP-CODEMODE-DROP and
+        GUARD-MCP-CODEMODE-TRUE (codemode); GUARD-MCP-ENABLED-KEY and
+        GUARD-MCP-DISABLED-TRUE (the server is on); GUARD-MCP-COMMAND-STR and
+        GUARD-MCP-COMMAND-ARG (the command); GUARD-MCP-PROFILE-OFF and
+        GUARD-MCP-PROFILE-FULL (the triage profile); GUARD-MCP-URL-OFF and
+        GUARD-MCP-URL-DEFAULT (the service URL). The server's `type` and the
+        BISHOP_HARNESS value are not asserted, and have no row.
+        """
+        mcpd = os.path.join(self.root, "bin", "mcpd")
+        for kind in KIND_AGENT:
+            with self.subTest(kind=kind):
+                mcp = self.generated_config(kind)["mcp"]
+                self.assertEqual(sorted(mcp), ["servers"], "kind=%s: mcp holds keys other than the v2 `servers` map" % kind)
+                self.assertEqual(sorted(mcp["servers"]), ["bishop-triage"],
+                                 "kind=%s: mcp.servers is not the one bishop-triage server" % kind)
+                server = mcp["servers"]["bishop-triage"]
+                self.assertIn("codemode", server, "kind=%s: the server sets no codemode, so v2 routes its tools through Code Mode" % kind)
+                self.assertIs(server["codemode"], False, "kind=%s: codemode is not the JSON false" % kind)
+                self.assertNotIn("enabled", server, "kind=%s: the server carries an `enabled` key, which v2 does not have" % kind)
+                self.assertIsNot(server.get("disabled"), True, "kind=%s: the server is disabled" % kind)
+                self.assertIsInstance(server["command"], list, "kind=%s: command is not an argv list" % kind)
+                self.assertEqual([os.path.realpath(c) for c in server["command"]], [os.path.realpath(mcpd)],
+                                 "kind=%s: command is not the mcpd path alone" % kind)
+                self.assertEqual(server["environment"].get("MCPD_PROFILE"), "triage",
+                                 "kind=%s: the server is not started in the triage profile" % kind)
+                self.assertEqual(server["environment"].get("BISHOP_MEMORY_URL"), self.url,
+                                 "kind=%s: the server is not given the run's service URL" % kind)
+
+
+class LayeredConfigRealOpenCode(TriageRunCase):
+    """
+    The layered config against the real OpenCode binary, with no model and no
+    session. `opencode api --standalone GET /api/config` starts a private
+    server, lists the config documents it loaded, and exits. It runs with HOME
+    and the working directory in the test's temporary directory, so none of the
+    operator's own config, plugins or keys is read, and the no-op mcpd of the
+    temporary root is the only command the config names.
+    """
+
+    def real_opencode(self):
+        """The real opencode (OPENCODE_BIN of the test's own environment, else `opencode`) resolved on PATH, or None."""
+        return shutil.which(os.environ.get("OPENCODE_BIN") or "opencode")
+
+    def test_real_opencode_keeps_codemode_off_in_the_config_the_run_builds(self):
+        """Path: the grade run's config (built by the script, read back from the stub) is loaded by `opencode api --standalone GET /api/config`.
+
+        The config document is found by the step cap the script set for the
+        grader, the positive control that the binary read OPENCODE_CONFIG_CONTENT
+        at all. Its bishop-triage server must then report `codemode` false and
+        must not be disabled. With the legacy `mcp.<name>` shape the binary
+        reports the server with no codemode, and the first assertion fails.
+        Without a real opencode, or when it exits non-zero, times out, prints
+        something that is not JSON, or lists no document with the step cap, the
+        check could not be made and the test is skipped with that reason: it
+        neither passes nor fails (DIR-002). Mutant: GUARD-MCP-LEGACY-SHAPE.
+        """
+        real = self.real_opencode()
+        if real is None:
+            self.skipTest("could not check: no opencode on PATH and OPENCODE_BIN names none")
+        config = self.generated_config("grade")
+        steps = config["agent"]["mission-grader"]["steps"]
+        home = os.path.join(self.tmp, "oc-home")
+        cwd = os.path.join(self.tmp, "oc-cwd")
+        os.makedirs(home)
+        os.makedirs(cwd)
+        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": home,
+               "OPENCODE_CONFIG_CONTENT": json.dumps(config)}
+        proc = subprocess.Popen([real, "api", "--standalone", "GET", "/api/config"], env=env, cwd=cwd,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, start_new_session=True)
+        try:
+            out, err = proc.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.communicate()
+            self.skipTest("could not check: opencode api --standalone did not answer within 60 seconds")
+        if proc.returncode != 0:
+            self.skipTest("could not check: opencode api --standalone exited %d" % proc.returncode)
+        try:
+            documents = json.loads(out)
+        except ValueError:
+            self.skipTest("could not check: opencode api --standalone printed something that is not JSON")
+        infos = [d["info"] for d in documents if isinstance(d, dict) and isinstance(d.get("info"), dict)
+                 and isinstance(d["info"].get("agents"), dict)
+                 and isinstance(d["info"]["agents"].get("mission-grader"), dict)
+                 and d["info"]["agents"]["mission-grader"].get("steps") == steps]
+        if len(infos) != 1:
+            self.skipTest("could not check: the binary listed %d documents with the grader's step cap, not one" % len(infos))
+        server = infos[0]["mcp"]["servers"]["bishop-triage"]
+        self.assertIs(server.get("codemode"), False, "the binary reports codemode %r for the bishop-triage server" % (server.get("codemode"),))
+        self.assertIsNot(server.get("disabled"), True, "the binary reports the bishop-triage server as disabled")
 
 
 ERROR_EVENT = (
