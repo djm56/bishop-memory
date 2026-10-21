@@ -927,6 +927,38 @@
       ]
     },
     {
+      "id": "EXIT-ORDER",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1569,
+      "before": "    if total_failed_operations > 0 or total_fetch_failures > 0:\n        sys.exit(1)\n    if total_journal_cap_skips > 0:\n        sys.exit(3)\n",
+      "after": "    if total_journal_cap_skips > 0:\n        sys.exit(3)\n    if total_failed_operations > 0 or total_fetch_failures > 0:\n        sys.exit(1)\n",
+      "summary": "the cap exit is checked before the failure exit, so a run with both a failure and a cap skip exits 3",
+      "property": "A failure outranks a cap skip: a run with both exits 1 (the precedence edge)",
+      "mirror": "EXIT-ORDER-MIRROR",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalCapExitTests.test_failure_with_cap_skip_exits_1"
+      ]
+    },
+    {
+      "id": "EXIT-ORDER-MIRROR",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1569,
+      "before": "    if total_failed_operations > 0 or total_fetch_failures > 0:\n        sys.exit(1)\n",
+      "after": "    if total_failed_operations > 0 or total_fetch_failures > 0 or total_journal_cap_skips > 0:\n        sys.exit(1)\n",
+      "summary": "the failure exit also takes a cap skip, so a run whose only problem is a cap skip exits 1",
+      "property": "A cap skip with no failure is not taken by the failure exit (the opposite edge of EXIT-ORDER: the cap exit stays reachable)",
+      "mirror": "EXIT-ORDER",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalCapExitTests.test_cap_skips_only_exits_3_and_names_cap"
+      ]
+    },
+    {
       "id": "DETAIL-DROP",
       "status": "active",
       "language": "py",

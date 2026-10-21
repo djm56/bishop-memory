@@ -1013,7 +1013,7 @@ JOURNAL_MAX_PAGES = 1000
 
 # The buckets reconcile_journal() splits "parsed" into. Each parsed event lands in
 # exactly one of them, so their sum is "parsed". "skipped" is the count of events
-# the service already holds (unchanged). main() and the tests read this list.
+# the service already holds (unchanged). reconcile_journal() and the tests read it.
 JOURNAL_SUMMED_BUCKETS = ("created", "skipped", "failed", "skipped_fetch_failed",
                           "skipped_journal_cap", "out_of_scope")
 

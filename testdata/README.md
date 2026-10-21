@@ -153,6 +153,8 @@ message for each error it finds. Failure text is not stored here. `make mutate`
 | PY-DEDUPE-NOTE | `scripts/reconcile-memory.py:1124` `if key in existing_journal:` becomes `if key[:4] in {k[:4] for k in existing_journal}:` | A row that differs from an event only in its note is not that event (the opposite edge: a near match is not a match) | PY-DEDUPE-REPEAT | `scripts/test_reconcile_units.py` | `PagedJournalTests.test_row_differing_only_in_note_is_not_the_event` |
 | EXIT-FAIL | `scripts/reconcile-memory.py:1569` a failed operation or fetch failure exits 3 instead of 1 | A failed operation or a fetch failure exits 1 (the failure edge) | EXIT-FAIL-MIRROR | `scripts/test_reconcile_units.py` | `JournalCapExitTests.test_failure_alone_exits_1`, `JournalCapExitTests.test_failure_with_cap_skip_exits_1` |
 | EXIT-FAIL-MIRROR | `scripts/reconcile-memory.py:1569` every run exits 1, a clean run included | A clean run does not exit 1 (the opposite edge: no failure, no exit 1) | EXIT-FAIL | `scripts/test_reconcile_units.py` | `JournalCapExitTests.test_no_cap_skips_exits_0`, `JournalCapExitTests.test_capped_mission_without_local_events_exits_0`, `PagedJournalExitTests.test_paged_service_over_http_exits_0_without_cap` |
+| EXIT-ORDER | `scripts/reconcile-memory.py:1569` the cap exit is checked before the failure exit, so a run with both a failure and a cap skip exits 3 | A failure outranks a cap skip: a run with both exits 1 (the precedence edge) | EXIT-ORDER-MIRROR | `scripts/test_reconcile_units.py` | `JournalCapExitTests.test_failure_with_cap_skip_exits_1` |
+| EXIT-ORDER-MIRROR | `scripts/reconcile-memory.py:1569` the failure exit also takes a cap skip, so a run whose only problem is a cap skip exits 1 | A cap skip with no failure is not taken by the failure exit (the opposite edge of EXIT-ORDER: the cap exit stays reachable) | EXIT-ORDER | `scripts/test_reconcile_units.py` | `JournalCapExitTests.test_cap_skips_only_exits_3_and_names_cap` |
 | DETAIL-DROP | `scripts/reconcile-memory.py:1147` the per-mission detail line is not printed | A mission with journal events has a detail line (the print edge) | DETAIL-EXTRA | `scripts/test_reconcile_units.py` | `JournalDetailLineTests.test_mission_with_events_has_a_detail_line`, `JournalDetailLineTests.test_journal_cap_is_named_on_the_detail_line`, `JournalDetailLineTests.test_fetch_failure_is_named_on_the_detail_line`, `JournalDetailLineTests.test_mission_without_events_has_no_detail_line` |
 | DETAIL-EXTRA | `scripts/reconcile-memory.py:1140` a mission with no journal events gets a zero detail line | A mission with no journal events has no detail line (the opposite edge) | DETAIL-DROP | `scripts/test_reconcile_units.py` | `JournalDetailLineTests.test_mission_without_events_has_no_detail_line` |
 | OOS-DROP | `scripts/reconcile-memory.py:1116` an event for a mission this run does not know is dropped without being counted | An event for a mission this run does not know is counted as out of scope (the out-of-scope edge) | OOS-ALL | `scripts/test_reconcile_units.py` | `JournalBucketTests.test_buckets_sum_to_parsed_in_every_case`, `OutOfScopeRunTests.test_out_of_scope_events_are_named_and_exit_0` |
@@ -196,6 +198,10 @@ INVALID, with the reason printed beside it. `mutate_one` and `run_killers` in
 the script decide each case. A killer that passes is listed as not failing.
 SHARED-TEXT is printed when a mutant and its mirror fail with the same message;
 the run then fails, because a shared kill is not two kills.
+The text compared is the first failing killer's, taken in the order the spec
+lists the killers, so that order matters: re-sorting a `killers` list can turn
+two distinct texts into one. `MUT-DIGITS2` and `MUT-DIGITS3` rely on it, as each
+lists a different test first.
 
 Each killer run is bounded by `--timeout SECONDS` (default 600). Python killers
 run as one `unittest -v` process per mutant, with `PYTHONDONTWRITEBYTECODE=1`

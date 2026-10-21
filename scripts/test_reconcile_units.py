@@ -47,6 +47,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -502,6 +503,10 @@ class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
         if url.path == "/v1/flight-recorder":
             query = urllib.parse.parse_qs(url.query)
             mission = query["mission_id"][0]
+            # A server's failing_journal names the missions whose flight-recorder GET answers 500.
+            if mission in getattr(self.server, "failing_journal", ()):
+                self.send_error(500, "simulated journal failure")
+                return
             rows = [{"mission_id": mission, "occurred_at": f"row {i}", "step": "", "event": "e", "note": "n"}
                     for i in range(self.server.capped.get(mission, 0))]
             if getattr(self.server, "paged", False):
@@ -524,18 +529,20 @@ class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _run_main(capped, paged=False, failing_steps=(), root=None):
+def _run_main(capped, paged=False, failing_steps=(), root=None, failing_journal=()):
     """
     Run the reconciler as a subprocess, dry-run with --include-journal, against a fake
     service. capped maps a mission id to the number of journal rows the fake returns for it.
     paged makes the fake page its journal GETs. failing_steps names the missions whose
-    existing-steps GET answers 500. root is the memory tree (default: the shipped fixture).
+    existing-steps GET answers 500. failing_journal names the missions whose flight-recorder
+    GET answers 500. root is the memory tree (default: the shipped fixture).
     Return the CompletedProcess.
     """
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ExitFakeHandler)
     server.capped = capped
     server.paged = paged
     server.failing_steps = set(failing_steps)
+    server.failing_journal = set(failing_journal)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -592,7 +599,6 @@ class JournalCapExitTests(unittest.TestCase):
                       msg="capped without local events: no WARN line names the mission")
         self.assertNotIn("skipped (journal cap)", _summary_line(proc),
                          msg="capped without local events: the summary names a journal cap skip")
-
 
     def test_failure_alone_exits_1(self):
         # The fixture's FIXTURE_MISSION has an existing-steps GET that answers 500: a fetch
@@ -738,6 +744,143 @@ class JournalDetailLineTests(unittest.TestCase):
         _, out, _ = _journal_output(JournalClient({"mission-20261009-02": 100}), [{"id": "mission-20261009-02"}])
         self.assertFalse(any(line.startswith("  [flight-recorder] mission-20261009-02:") for line in out.splitlines()),
                          msg=f"a mission with no journal events has a detail line: {out}")
+
+
+MIXED_KNOWN = ["mission-20261101-01", "mission-20261101-02", "mission-20261101-03"]
+MIXED_UNKNOWN = "mission-20261101-04"
+# (mission, event, note) rows of the mixed journal, in file order: three for the first
+# known mission, two for the second, one for the third, two for a mission the run does not know.
+MIXED_EVENTS = [
+    (MIXED_KNOWN[0], "step-sync", "held"),
+    (MIXED_KNOWN[0], "step-sync", "new"),
+    (MIXED_KNOWN[0], "step-sync", "refused"),
+    (MIXED_KNOWN[1], "step-sync", "capped one"),
+    (MIXED_KNOWN[1], "step-sync", "capped two"),
+    (MIXED_KNOWN[2], "step-sync", "fetch fails"),
+    (MIXED_UNKNOWN, "step-sync", "unknown one"),
+    (MIXED_UNKNOWN, "step-sync", "unknown two"),
+]
+
+
+def _write_mixed_tree(root, with_archive=True):
+    """
+    Write a memory tree into root whose journal holds MIXED_EVENTS, one row per event with a
+    distinct timestamp. With_archive also writes a MISSION-ARCHIVE.md naming MIXED_KNOWN, so
+    those three are the missions the run knows and MIXED_UNKNOWN is not.
+    """
+    state_dir = os.path.join(root, reconcile.BISHOP_LAYOUT.state_dir)
+    os.makedirs(state_dir)
+    rows = "".join(f"| 2026-11-01 10:{i:02d} UTC | {m} | {i} | @bishop | {e} | {n} |\n"
+                   for i, (m, e, n) in enumerate(MIXED_EVENTS))
+    with open(os.path.join(state_dir, reconcile.BISHOP_LAYOUT.flight_recorder), "w", encoding="utf-8") as handle:
+        handle.write("# Flight Recorder\n\n| Timestamp | Mission ID | Step | Agent | Event | Note |\n"
+                     "|---|---|---|---|---|---|\n" + rows)
+    if with_archive:
+        rows = "".join(f"| {m} | 2026-11-01 11:00 UTC | done | Mixed-run fixture. |\n" for m in MIXED_KNOWN)
+        with open(os.path.join(state_dir, reconcile.BISHOP_LAYOUT.mission_archive), "w", encoding="utf-8") as handle:
+            handle.write("# Mission Archive\n\n| Mission ID | Completed | Outcome | Summary |\n"
+                         "|---|---|---|---|\n" + rows)
+
+
+class _MixedJournalClient(MockClient):
+    """
+    A service for the mixed journal. The first known mission already holds its "held" event; the
+    second answers a full page (the cap); the third's flight-recorder GET raises. A write whose
+    note is "refused" fails. Every write attempted is kept in written.
+    """
+
+    def get(self, path):
+        if path.startswith("/v1/flight-recorder"):
+            mission = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["mission_id"][0]
+            if mission == MIXED_KNOWN[0]:
+                return 200, {"flight_recorder": [{"mission_id": mission, "occurred_at": "2026-11-01 10:00 UTC",
+                                                  "step": "0", "event": "step-sync", "note": "held"}]}
+            if mission == MIXED_KNOWN[1]:
+                return 200, {"flight_recorder": [{"mission_id": mission, "occurred_at": f"filler {i}", "step": "",
+                                                  "event": "e", "note": "n"} for i in range(reconcile.JOURNAL_PAGE_SIZE)]}
+            raise OSError("simulated network failure")
+        return super().get(path)
+
+    def write(self, method, path, payload, label):
+        super().write(method, path, payload, label)
+        return payload["note"] != "refused"
+
+
+class JournalMixedRunTests(unittest.TestCase):
+    """reconcile_journal() over a journal whose events split across every bucket and an out-of-scope mission."""
+
+    def test_events_split_across_buckets_and_sum_to_parsed(self):
+        # Control (DIR-026): the single-bucket cases in JournalBucketTests pass when a tally
+        # sends an event to the wrong bucket in a mixed run. This test fails then: with the
+        # capped branch's outcome set to "skipped_fetch_failed" the sum still reads 8 but the
+        # bucket values and detail lines differ; with an outcome left uncounted the sum reads 7.
+        # The writes are the positive control for the absent ones: two events are attempted,
+        # and none for the held, capped, fetch-failed or out-of-scope events.
+        with tempfile.TemporaryDirectory() as root:
+            _write_mixed_tree(root)
+            client = _MixedJournalClient()
+            missions = [{"id": m} for m in MIXED_KNOWN]
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                counts = reconcile.reconcile_journal(client, missions, root)
+        self.assertEqual(counts["parsed"], 8, msg=f"mixed run: expected 8 parsed events: {counts}")
+        summed = sum(counts[b] for b in reconcile.JOURNAL_SUMMED_BUCKETS)
+        self.assertEqual(summed, counts["parsed"], msg=f"mixed run: buckets sum to {summed}, parsed is {counts['parsed']}: {counts}")
+        self.assertEqual({b: counts[b] for b in reconcile.JOURNAL_SUMMED_BUCKETS},
+                         {"created": 1, "skipped": 1, "failed": 1, "skipped_fetch_failed": 1,
+                          "skipped_journal_cap": 2, "out_of_scope": 2},
+                         msg=f"mixed run: events are in the wrong buckets: {counts}")
+        self.assertEqual([w["payload"]["note"] for w in client.written], ["new", "refused"],
+                         msg=f"mixed run: wrong events were written: {client.written}")
+        self.assertEqual(out.getvalue().splitlines(), [
+            f"  [flight-recorder] {MIXED_KNOWN[0]}: 3 parsed, 1 created, 1 unchanged, 1 failed",
+            f"  [flight-recorder] {MIXED_KNOWN[1]}: 2 parsed, 0 created, 0 unchanged, 0 failed, 2 skipped (journal cap)",
+            f"  [flight-recorder] {MIXED_KNOWN[2]}: 1 parsed, 0 created, 0 unchanged, 0 failed, 1 skipped (fetch failed)",
+        ], msg=f"mixed run: per-mission lines are wrong, or one names the out-of-scope mission: {out.getvalue()}")
+
+
+def _summary_counts(line):
+    """
+    The counts a [flight-recorder] summary line prints, by name. A term the line does not
+    print is 0. "skipped" is the count the fetch note names, as in "(1 skipped — fetch failed ...)".
+    """
+    def count(pattern):
+        match = re.search(pattern, line)
+        return int(match.group(1)) if match else 0
+    return {
+        "parsed": count(r"\] (\d+) parsed"), "created": count(r"(\d+) created"),
+        "unchanged": count(r"(\d+) unchanged"), "failed": count(r"(\d+) failed"),
+        "cap": count(r"(\d+) skipped \(journal cap\)"), "out_of_scope": count(r"(\d+) out of scope"),
+        "fetch_skipped": count(r"\((\d+) skipped \u2014 fetch failed"),
+    }
+
+
+class JournalSummaryLineTests(unittest.TestCase):
+    """main(): the printed [flight-recorder] line's counts, with the fetch note's skipped count, sum to parsed."""
+
+    def test_summary_line_counts_sum_to_parsed(self):
+        # Control (DIR-026): with main() passing no skipped count to fetch_failure_note, the
+        # fetch note reads "(fetch failed - 1 request(s) ...)", fetch_skipped is 0 and the
+        # counts sum to 7, not 8. With the scope note dropped they sum to 6. The line is a
+        # subprocess's stdout (main(), not reconcile_journal() called directly). The run
+        # splits events across created, the cap, a journal fetch failure and out of scope.
+        with tempfile.TemporaryDirectory() as root:
+            _write_mixed_tree(root)
+            capped = _run_main({MIXED_KNOWN[1]: 100}, root=root, failing_journal={MIXED_KNOWN[2]})
+        line = _flight_recorder_line(capped)
+        self.assertNotEqual(line, "", msg=f"summary: no [flight-recorder] line: {capped.stdout.decode('utf-8', 'replace')}")
+        counts = _summary_counts(line)
+        self.assertEqual(counts, {"parsed": 8, "created": 3, "unchanged": 0, "failed": 0, "cap": 2,
+                                  "out_of_scope": 2, "fetch_skipped": 1},
+                         msg=f"summary: the line's counts are wrong: {line}")
+        total = sum(v for k, v in counts.items() if k != "parsed")
+        self.assertEqual(total, counts["parsed"], msg=f"summary: counts sum to {total}, parsed is {counts['parsed']}: {line}")
+        # Positive control for the fetch note: the same tree with no journal fetch failure has no
+        # fetch note, and its counts still sum to parsed.
+        clean = _summary_counts(_flight_recorder_line(_run_main({}, root=root)))
+        self.assertEqual(clean["fetch_skipped"], 0, msg=f"summary control: a fetch note without a fetch failure: {clean}")
+        self.assertEqual(sum(v for k, v in clean.items() if k != "parsed"), clean["parsed"],
+                         msg=f"summary control: counts do not sum to parsed: {clean}")
 
 
 class StepFetchWarningTests(unittest.TestCase):
