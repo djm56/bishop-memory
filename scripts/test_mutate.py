@@ -20,6 +20,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -97,6 +98,26 @@ def pid_gone(pid, seconds=5.0):
             return True
         if time.monotonic() >= deadline:
             return False
+        time.sleep(0.05)
+
+
+def wait_for_pids(path, count, seconds=15.0):
+    """
+    The `count` pids written to the file `path`, waiting up to `seconds` for them to
+    appear. A missing file, an empty one and a partly written one all mean "not yet".
+    Raises AssertionError, naming the file, when they never do.
+    """
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            with open(path, encoding="utf-8") as handle:
+                words = handle.read().split()
+            if len(words) == count and all(w.isdigit() for w in words):
+                return [int(w) for w in words]
+        except FileNotFoundError:
+            pass
+        if time.monotonic() >= deadline:
+            raise AssertionError(f"{path} did not hold {count} pid(s) within {seconds:g}s")
         time.sleep(0.05)
 
 
@@ -1011,8 +1032,7 @@ class GroupKillTests(unittest.TestCase):
         with open(os.path.join(self.logs, "x.log"), "w", encoding="utf-8") as log, patch:
             results = mutate.run_killers(ent, log, 2)
         self.assertEqual(results, [("Case.test_spawns", "TIMEOUT", "timed out after 2s")])
-        with open(pidfile, encoding="utf-8") as handle:
-            grandchild = int(handle.read())
+        (grandchild,) = wait_for_pids(pidfile, 1)
         self.addCleanup(kill_quietly, grandchild)
         return grandchild
 
@@ -1048,8 +1068,7 @@ class GoGroupKillTests(unittest.TestCase):
         with open(os.path.join(self.logs, "x.log"), "w", encoding="utf-8") as log, patch:
             results = mutate.run_killers(ent, log, 3)
         self.assertEqual(results, [("TestHang", "TIMEOUT", "timed out after 3s")])
-        with open(os.path.join(self.repo, "pids.txt"), encoding="utf-8") as handle:
-            test_pid, sleeper = (int(p) for p in handle.read().split())
+        test_pid, sleeper = wait_for_pids(os.path.join(self.repo, "pids.txt"), 2)
         self.addCleanup(kill_quietly, test_pid)
         self.addCleanup(kill_quietly, sleeper)
         return test_pid, sleeper
@@ -1117,6 +1136,34 @@ class HandlerDispositionTests(unittest.TestCase):
             self.assertIs(signal.getsignal(signal.SIGTERM), mutate._interrupt)  # positive control: routing happened
         finally:
             mutate.restore_handlers(installed)
+
+
+class WaitForPidsTests(unittest.TestCase):
+    """wait_for_pids(): the poll the group-kill tests rely on."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="mutate-test-pids-")
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.path = os.path.join(self.dir, "pids.txt")
+
+    def test_waits_for_a_file_that_appears_late_and_whole(self):
+        def late():
+            time.sleep(0.3)
+            with open(self.path, "w", encoding="utf-8") as handle:
+                handle.write("12 34\n")
+        thread = threading.Thread(target=late)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.assertEqual(wait_for_pids(self.path, 2, seconds=10), [12, 34])
+
+    def test_a_file_that_never_appears_or_never_fills_is_a_clear_failure(self):
+        with self.assertRaises(AssertionError) as ctx:
+            wait_for_pids(self.path, 1, seconds=0.2)
+        self.assertIn(self.path, str(ctx.exception))
+        with open(self.path, "w", encoding="utf-8") as handle:
+            handle.write("12\n")
+        with self.assertRaises(AssertionError):
+            wait_for_pids(self.path, 2, seconds=0.2)  # one pid where two are due
 
 
 class GitHelperTests(_RepoTest):
