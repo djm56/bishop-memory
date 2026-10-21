@@ -477,12 +477,15 @@ PY
 # closed: an unknown name must never reach a default agent that can edit files and
 # run shell commands.
 #
-# Reported for 2.0.32 and not verified by this change: `opencode debug agents`
-# does not read OPENCODE_CONFIG_CONTENT, so the layered config the run builds (the
-# OC_CONFIG block, which adds only external_directory allows) is not in the
-# listing. The allowlist accepts those allows, which holds either way; if the
-# report is wrong, the listing includes them and the guard still accepts it. The timeout uses the perl alarm the run uses. A
-# cold or empty listing is retried before the guard gives up.
+# Observed on 2.0.32: with OPENCODE_CONFIG_CONTENT set to a config that gave the
+# grader external_directory allows, the `opencode debug agents` listing from a
+# warm service was byte for byte the listing without it, and none of those
+# allows was in it. So the layered config the run builds (the OC_CONFIG block)
+# is not in the listing. The allowlist accepts the external_directory allows
+# that block adds, which holds either way: if a later OpenCode puts them in the
+# listing, the guard still accepts it.
+# The timeout uses the perl alarm the run uses. A cold or empty listing is
+# retried before the guard gives up.
 guard_agent() (
   def="$BISHOP_ROOT/.opencode/agents/$AGENT.md"
   gtmp="$(mktemp -d -t triage-guard-XXXXXX)"
@@ -768,9 +771,11 @@ run_agent() {
     # OpenCode v2 has no --pure (observed on 2.0.32: `opencode run --help` lists
     # none), so the operator's own OpenCode plugins load in this run.
     # --standalone starts a private server, which the layered config relies on
-    # for OPENCODE_CONFIG_CONTENT (reported on 2.0.32, not re-checked here). The
-    # background service does not read it for `debug agents` (observed on 2.0.32),
-    # which is why the guard's listing does not see the layered config.
+    # for OPENCODE_CONFIG_CONTENT. Observed on 2.0.32: `opencode api --standalone
+    # GET /api/config` lists that variable's config as a document, and the
+    # `debug agents` listing from the background service is the same with and
+    # without it, which is why the guard's listing does not see the layered
+    # config. Not observed: a live run of this script on the shape above.
     cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run --standalone
       --agent "$AGENT"
       --model "$MODEL"
