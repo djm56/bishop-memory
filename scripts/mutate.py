@@ -115,20 +115,24 @@ def parse_go(output, parent, sub):
     """
     The status of one Go selector from `go test -v` output. Returns
     (status, message): FAIL when a matching subtest failed, ok when one passed,
-    NOT-RUN when none matched; message is the first _test.go line before the
-    failing subtest's --- FAIL line.
+    NOT-RUN when none matched. The message is the first _test.go line printed
+    under that subtest's own === RUN header. The --- FAIL lines come after every
+    === RUN line, so the lines are keyed by subtest name, not by position.
     """
     run_header = re.compile(r"^\s*=== RUN\s+(\S+)")
     verdict = re.compile(r"^\s*--- (PASS|FAIL): (\S+) \(")
-    pending = []
+    current = None
+    printed = {}
     seen = []
     message = None
     for line in output.splitlines():
-        if run_header.match(line):
-            pending = []
+        run = run_header.match(line)
+        if run:
+            current = run.group(1)
+            printed.setdefault(current, [])
             continue
-        if "_test.go:" in line and re.search(r"_test\.go:\d+:", line):
-            pending.append(line.strip())
+        if current is not None and re.search(r"_test\.go:\d+:", line):
+            printed[current].append(line.strip())
             continue
         match = verdict.match(line)
         if not match:
@@ -143,7 +147,8 @@ def parse_go(output, parent, sub):
             continue
         seen.append(match.group(1))
         if match.group(1) == "FAIL" and message is None:
-            message = pending[0] if pending else "(failed with no _test.go line)"
+            lines = printed.get(name) or []
+            message = lines[0] if lines else "(failed with no _test.go line)"
     if "FAIL" in seen:
         return "FAIL", message
     if "PASS" in seen:
