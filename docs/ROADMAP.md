@@ -166,14 +166,9 @@ mission the run does not know. Each mission with journal events gets a
 skipped at the cap exits 3; a failed operation or fetch exits 1 and outranks it.
 The step WARN is printed only after that mission's existing-steps fetch
 succeeds. `JOURNAL_MAX_PAGES` stays 1000, and the known-id set is the ids
-`parse_missions` returns. Status: decided. The code is on branch
-`feat/mutation-harness-and-summary` and is not on `main` until that branch
-merges.
-
-**The `[flight-recorder]` summary does not add up to `parsed`.** Events for
-missions outside the parsed set were skipped with no counter. Behind the
-opt-in `--include-journal`. Status: open on `main`; fixed on branch
-`feat/mutation-harness-and-summary`, not yet merged.
+`parse_missions` returns. Status: decided, and shipped with the change that
+carries this record (`reconcile_journal` and `main()` in
+`scripts/reconcile-memory.py`).
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
 which needs it for Markdown tables; a value from the JSON API does not. It is
@@ -323,6 +318,7 @@ except the operational ones, which name their evidence instead.
 
 **Reconciler**
 
+- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped with the change that carries this entry (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
 - Operational, no commit (live system, 2026-10-21, operator-reported): memoryd
   was redeployed at 06:35 UTC with the flight-recorder paging from PR #9
   (`1c4def9`). A full journal reconcile of the live service was clean, with 13
@@ -330,10 +326,9 @@ except the operational ones, which name their evidence instead.
 - The journal's `warned` counter goes up once per capped mission, and the cap
   has its own summary category, `skipped (journal cap)`, apart from fetch
   failures. The run exits 1 only when events were skipped at the cap (PR #9,
-  `1c4def9`). **Superseded 2026-10-21**, on branch
-  `feat/mutation-harness-and-summary`, not yet on `main`: a run whose only
-  problem is events skipped at the cap exits 3, and a failed operation or fetch
-  exits 1.
+  `1c4def9`). **Superseded 2026-10-21** (see the Reconciler decision above):
+  a run whose only problem is events skipped at the cap exits 3, and a failed
+  operation or fetch exits 1.
 - The journal is read to the end when the server pages: the reconciler follows
   `has_more` up to `JOURNAL_MAX_PAGES`, and a read still reporting `has_more`
   at the ceiling is a fetch failure. `GET /v1/flight-recorder` takes `offset`

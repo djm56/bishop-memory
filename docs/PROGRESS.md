@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-21, against `main` at `fc38064`. Harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`). The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked.
+Last updated: 2026-10-21, against `main` at `fc38064`. Harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`), and the `[flight-recorder]` summary fix and the journal cap exit code ship with the change that carries this update. The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked.
 
 ## Summary
 
@@ -15,11 +15,11 @@ Last updated: 2026-10-21, against `main` at `fc38064`. Harness portability phase
 | Memory insight | 7 | 14 | 33% |
 | Mission HUD | 17 | 6 | 74% |
 | Triage & grading | 10 | 14 | 42% |
-| Reconciler | 4 | 11 | 27% |
+| Reconciler | 5 | 10 | 33% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 8 | 2 | 80% |
 | Harness portability | 1 | 7 | 13% |
-| **Total** | **60** | **74** | **45%** |
+| **Total** | **61** | **73** | **46%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -176,7 +176,7 @@ Plan: none. The items are in [ROADMAP](ROADMAP.md#reconciler) and
 [ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository).
 
 - [x] An unrecognised step status is warned and counted, not dropped: `parse_steps` in `scripts/reconcile-memory.py` sends the step without a status, names the raw value in a `[WARN]` line, and counts it as `warned` (`scripts/reconcile-memory.py:583, 908-911`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
-- [ ] The `[flight-recorder]` summary does not add up to `parsed` (partial: fixed on branch `feat/mutation-harness-and-summary`, not on `main` until that branch merges; not run against the live service) ([ROADMAP](ROADMAP.md#reconciler))
+- [x] The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` (`scripts/reconcile-memory.py`: `reconcile_journal`) add up to it, with an `out of scope` bucket and a detail line per mission; shipped with the change that carries this update, not run against the live service ([ROADMAP](ROADMAP.md#shipped))
 - [x] The journal's `warned` counter is incremented once per capped mission, and the cap has its own summary category, `skipped (journal cap)` (`scripts/reconcile-memory.py`: `reconcile_journal`, the cap branch at lines 1079-1081 on `main`; `main()`, the summary note at line 1465 on `main`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
 - [x] Flight-recorder paging is on the live memoryd: redeployed 2026-10-21 at 06:35 UTC (operator-reported; a live-system action, no commit; the paging code is PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#shipped))
 - [x] Full journal reconcile against the live service is clean, with 13 rows added on 2026-10-21 (operator-reported; a live-system action, no commit) ([ROADMAP](ROADMAP.md#shipped))
