@@ -19,7 +19,7 @@
 #      bishop-triage MCP server (mcpd in its triage profile) and the tools the
 #      agent definition names, on one of two engines:
 #        claude    Claude Code (`claude -p`); agents in .claude/agents/
-#        opencode  OpenCode v2 (`opencode run`; checked against 2.0.32); agents in
+#        opencode  OpenCode v2 (`opencode run`; observed on 2.0.32); agents in
 #                  .opencode/agents/, using the providers and keys in your own OpenCode config
 #      Both engines follow the same doctrine: .claude/skills/findings-triage/SKILL.md
 #      for classify and process, .claude/skills/mission-grading/SKILL.md for grade;
@@ -45,6 +45,8 @@
 #   TRIAGE_MAX_TURNS          default 60 (classify) / 120 (process) / 20 (grade); OpenCode calls them steps
 #   TRIAGE_MAX_BUDGET_USD     default 2 (classify) / 5 (process) / 2 (grade); claude only
 #   TRIAGE_TIMEOUT_MIN        stop a run still going after this many minutes (default 45, 20 for grade; 0 = never)
+#   TRIAGE_GUARD_TIMEOUT_SEC  seconds the opencode agent listing may take before the
+#                             guard gives up and exits 4 (default 30; a whole number, at least 1)
 #   TRIAGE_LOG_DIR            default ~/Library/Logs/bishop-memory
 #   TRIAGE_ADD_DIRS           colon-separated extra directories to open read-only for the
 #                             processor; by default every registered harness checkout
@@ -71,8 +73,11 @@
 # the environment wins.
 #
 # Exit codes: 0 ran or nothing to do; 1 the agent run failed or timed out; 2 a
-# precondition failed (service down, mcpd missing, CLI missing, agent not
-# resolvable, model id wrong for the engine); 64 usage error.
+# precondition failed (service down, mcpd missing, CLI missing, model id wrong
+# for the engine) or the guard refused the agent (it is not the definition in
+# .opencode/agents, or it can edit files or run commands); 4 the guard could not
+# check the agent (the agent listing failed, timed out, was unparseable, or stayed
+# empty after the retries), so nothing ran; 64 usage error.
 
 set -euo pipefail
 
@@ -142,6 +147,18 @@ LOG_DIR="${TRIAGE_LOG_DIR:-$HOME/Library/Logs/bishop-memory}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
 MCPD_BIN="$BISHOP_ROOT/bin/mcpd"
+GUARD_TIMEOUT_SEC="${TRIAGE_GUARD_TIMEOUT_SEC:-30}"
+GUARD_ATTEMPTS=3  # listings tried while the service is cold or empty, one second apart
+
+# print_help: the header comment, from line 2 down to its first blank line, with
+# the comment marks removed. Read from the file, so the header and --help agree.
+print_help() {
+  awk 'NR > 1 && /^$/ { exit } NR > 1 { print }' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  -h|--help) print_help; exit 0 ;;
+esac
 
 KIND="${1:-}"
 shift || true
@@ -170,7 +187,7 @@ while [[ $# -gt 0 ]]; do
     --mission=*) MISSIONS="${1#*=}"; shift ;;
     --regrade) REGRADE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,71p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) print_help; exit 0 ;;
     *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
@@ -196,6 +213,10 @@ if [[ ! "$TIMEOUT_MIN" =~ ^[0-9]+$ ]]; then
   echo "triage-run.sh: TRIAGE_TIMEOUT_MIN must be a whole number of minutes, got '$TIMEOUT_MIN'" >&2
   exit 64
 fi
+if [[ ! "$GUARD_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
+  echo "triage-run.sh: TRIAGE_GUARD_TIMEOUT_SEC must be a whole number of seconds, at least 1, got '$GUARD_TIMEOUT_SEC'" >&2
+  exit 64
+fi
 [[ -n "$LIMIT" ]] && ITEMS="$LIMIT"
 
 mkdir -p "$LOG_DIR"
@@ -208,6 +229,238 @@ else
 fi
 
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*" | tee -a "$LOG_FILE" >&2; }
+
+# flat FILE: the first 400 bytes of FILE on one line, without trailing blanks, for a log line.
+flat() { tr '\n' ' ' <"$1" | head -c 400 | sed 's/ *$//'; }
+
+# The agent guard's Python. It reads the agent listing on stdin and takes the
+# agent name and the definition path as arguments. Exit 0 accepts the agent;
+# EXIT_REFUSED refuses it, having checked it; EXIT_CANNOT_CHECK means the check
+# could not finish. The reason goes to stderr in either failing case.
+IFS= read -r -d '' GUARD_PY <<'PY' || true
+import json
+import re
+import sys
+
+# The actions an agent may hold past its final deny. Any other action must be
+# denied there. Action names under ALLOWED_PREFIX are allowed too.
+ALLOWED_ACTIONS = ("read", "glob", "grep", "list", "external_directory")
+ALLOWED_PREFIX = "bishop-triage_"
+EFFECTS = ("allow", "ask", "deny")
+EXIT_REFUSED = 2
+EXIT_CANNOT_CHECK = 4
+
+
+class Refused(Exception):
+    """The check ran and found something the guard must refuse."""
+
+
+class CannotCheck(Exception):
+    """The check could not finish, so it decides nothing."""
+
+
+def star_match(pattern, text):
+    """True when text matches pattern, where * is the only wildcard."""
+    regex = ".*".join(re.escape(part) for part in pattern.split("*"))
+    return re.fullmatch(regex, text, re.S) is not None
+
+
+def allowed_action(action):
+    """True when action is in ALLOWED_ACTIONS or matches ALLOWED_PREFIX followed by anything."""
+    return action in ALLOWED_ACTIONS or star_match(ALLOWED_PREFIX + "*", action)
+
+
+def check_rules(rules, who):
+    """
+    Refuses a rule list unless it denies every action on every resource, read
+    with last-match-wins. The last rule covering every action and every resource
+    must be a deny. Rules before it are overridden for every action, so they are
+    not read. Every rule after it must be a deny or name an allowed action.
+    A rule that is malformed, or has an effect that is not in EFFECTS, is
+    CannotCheck. `who` names the list in the message.
+    """
+    for i, rule in enumerate(rules):
+        if (not isinstance(rule, dict) or not isinstance(rule.get("action"), str)
+                or not isinstance(rule.get("resource"), str) or rule.get("effect") not in EFFECTS):
+            raise CannotCheck("%s: rule %d is malformed" % (who, i))
+    covering = [i for i, rule in enumerate(rules) if rule["action"] == "*" and rule["resource"] == "*"]
+    if not covering:
+        raise Refused("%s: no rule denies every action on every resource" % who)
+    last = covering[-1]
+    if rules[last]["effect"] != "deny":
+        raise Refused("%s: the last rule covering every action and resource (rule %d) is not a deny" % (who, last))
+    for i in range(last + 1, len(rules)):
+        rule = rules[i]
+        if rule["effect"] == "deny":
+            continue
+        if not allowed_action(rule["action"]):
+            raise Refused("%s: rule %d (%s on %s: %s) comes after the final deny and is not an allowed action"
+                          % (who, i, rule["action"], rule["resource"], rule["effect"]))
+
+
+PERMISSION_LINE = re.compile(r'^(\s*)("[^"]*"|[^\s:"]+)\s*:\s*(.*?)\s*$')
+
+
+def permission_rules(head, path):
+    """
+    The rules of the permission block in a definition's frontmatter lines, in
+    file order. A line `action: effect` is a rule on every resource. An
+    `action:` line followed by `resource: effect` lines gives one rule per
+    resource. Any other line in the block is CannotCheck.
+    """
+    rules, action, in_block = [], None, False
+    for line in head:
+        if not line.strip():
+            continue
+        if not line.startswith(" "):
+            in_block = line.rstrip() == "permission:"
+            action = None
+            continue
+        if not in_block:
+            continue
+        match = PERMISSION_LINE.match(line)
+        if not match:
+            raise CannotCheck("%s: cannot read permission line %r" % (path, line))
+        indent, key, value = len(match.group(1)), match.group(2).strip('"'), match.group(3).strip('"')
+        if indent == 2 and value == "":
+            action = key
+        elif indent == 2:
+            action = None
+            rules.append({"action": key, "resource": "*", "effect": value})
+        elif indent == 4 and action is not None and value != "":
+            rules.append({"action": action, "resource": key, "effect": value})
+        else:
+            raise CannotCheck("%s: cannot read permission line %r" % (path, line))
+    return rules
+
+
+def read_definition(path):
+    """
+    The description, mode, permission rules and body of the definition at path,
+    read from its frontmatter. The body is the text after the closing delimiter,
+    stripped. A definition missing any of these is CannotCheck.
+    """
+    with open(path, encoding="utf8") as fh:
+        lines = fh.read().split("\n")
+    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+        raise CannotCheck("no frontmatter in %s" % path)
+    end = lines.index("---", 1)
+    head = lines[1:end]
+    desc = mode = None
+    for line in head:
+        m = re.match(r'^description:\s*"(.*)"\s*$', line)
+        if m:
+            desc = m.group(1)
+        m = re.match(r"^mode:\s*(\S+)\s*$", line)
+        if m:
+            mode = m.group(1)
+    if desc is None:
+        raise CannotCheck("no quoted description in %s" % path)
+    if mode is None:
+        raise CannotCheck("no mode in %s" % path)
+    return desc, mode, permission_rules(head, path), "\n".join(lines[end + 1:]).strip()
+
+
+def check(agent, path, listing):
+    """
+    Raises Refused or CannotCheck unless the listing holds exactly one entry
+    whose name or id is `agent`, and that entry has the description, body and
+    mode of the definition at `path`, and its permissions pass check_rules.
+    The definition's own permission block must pass check_rules as well, so a
+    loosened file is refused while the listing is still stale.
+    """
+    try:
+        agents = json.loads(listing)
+    except ValueError as exc:
+        raise CannotCheck("the agent listing is not JSON (%s)" % exc)
+    if not isinstance(agents, list):
+        raise CannotCheck("the agent listing is not a list")
+    want_desc, want_mode, file_rules, body = read_definition(path)
+    named = [a for a in agents if isinstance(a, dict) and agent in (a.get("name"), a.get("id"))]
+    if len(named) != 1:
+        raise Refused("%d agents named %s" % (len(named), agent))
+    a = named[0]
+    if a.get("description") != want_desc:
+        raise Refused("agent %s description is not the one in %s" % (agent, path))
+    if str(a.get("system", "")).strip() != body:
+        raise Refused("agent %s system prompt is not the body of %s" % (agent, path))
+    if a.get("mode") != want_mode:
+        raise Refused("agent %s has mode %r, but %s declares mode %r" % (agent, a.get("mode"), path, want_mode))
+    rules = a.get("permissions")
+    if not isinstance(rules, list) or not rules:
+        raise Refused("agent %s lists no permission rules" % agent)
+    check_rules(rules, "agent " + agent)
+    check_rules(file_rules, "definition " + path)
+
+
+def main(argv, stdin):
+    """The guard's exit status. The reason for a failing status goes to stderr."""
+    try:
+        check(argv[1], argv[2], stdin.read())
+    except Refused as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_REFUSED
+    except CannotCheck as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    except Exception as exc:
+        print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    return 0
+
+
+sys.exit(main(sys.argv, sys.stdin))
+PY
+
+# guard_agent: the agent guard for the opencode engine. It runs in a subshell,
+# so the temporary directory it uses is removed on every exit. It returns 0 when
+# the one agent named $AGENT is ours and may run; 2 when the guard checked it and
+# refused; 4 when it could not check, so nothing runs. Each outcome logs its
+# reason. The guard does not trust --agent to fail closed: an unknown name must
+# never reach a default agent that can edit files and run shell commands.
+#
+# `opencode debug agents` reads the background service. As observed on 2.0.32
+# it does not read OPENCODE_CONFIG_CONTENT, so the layered config the run uses
+# is not in the listing. That config adds only external_directory allows to
+# this agent, which the allowlist accepts. The timeout uses the perl alarm the
+# run uses. A cold or empty listing is retried before the guard gives up.
+guard_agent() (
+  def="$BISHOP_ROOT/.opencode/agents/$AGENT.md"
+  gtmp="$(mktemp -d -t triage-guard-XXXXXX)"
+  trap 'rm -rf "$gtmp"' EXIT
+  if ! command -v perl >/dev/null 2>&1; then
+    log "[$KIND] could not check agent $AGENT: perl is not on PATH, so the listing cannot be bounded; nothing run"
+    return 4
+  fi
+  attempt=1
+  while :; do
+    rc=0
+    (cd "$BISHOP_ROOT" && perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$GUARD_TIMEOUT_SEC" "$OPENCODE_BIN" debug agents) </dev/null >"$gtmp/listing" 2>"$gtmp/err" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      if [[ $rc -eq 142 ]]; then why="timed out after ${GUARD_TIMEOUT_SEC}s"; else why="exited $rc"; fi
+      log "[$KIND] could not check agent $AGENT: opencode debug agents $why (stderr: $(flat "$gtmp/err")); nothing run"
+      return 4
+    fi
+    listing="$(cat "$gtmp/listing")"
+    stripped="${listing//[[:space:]]/}"
+    if [[ -n "$stripped" && "$stripped" != "[]" ]]; then break; fi
+    if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then
+      attempt=$((attempt + 1)); sleep 1; continue
+    fi
+    log "[$KIND] could not check agent $AGENT: opencode debug agents gave an empty listing on $attempt attempts (a cold service?); nothing run"
+    return 4
+  done
+  py_rc=0
+  printf '%s' "$listing" | python3 -I -c "$GUARD_PY" "$AGENT" "$def" >/dev/null 2>"$gtmp/reason" || py_rc=$?
+  reason="$(flat "$gtmp/reason")"
+  if [[ $py_rc -eq 0 ]]; then return 0; fi
+  if [[ $py_rc -eq 2 ]]; then
+    log "[$KIND] OpenCode resolved $AGENT to something other than .opencode/agents/$AGENT.md, or it can edit files or run commands: $reason; nothing run"
+    return 2
+  fi
+  log "[$KIND] could not check agent $AGENT: $reason (guard exit $py_rc); nothing run"
+  return 4
+)
 
 # --- Preconditions ----------------------------------------------------------
 
@@ -393,96 +646,11 @@ print(json.dumps({
 }))
 PY
 )"
-  # The guard does not trust --agent to fail closed: an unknown name must never
-  # reach a default agent that can edit files and run shell commands. Refuse to
-  # run unless the one agent of that name has the description and body of our
-  # definition, and no edit or shell permission. OpenCode v2 lists agents with
-  # `debug agents`. That listing comes from the background service, which
-  # ignores OPENCODE_CONFIG_CONTENT (checked on 2.0.32). The layered config sets
-  # this agent's step cap and external_directory allow; it never grants edit or
-  # shell, nor changes the agent's identity.
-  agent_json="$(cd "$BISHOP_ROOT" && "$OPENCODE_BIN" debug agents </dev/null 2>/dev/null)" || {
-    log "[$KIND] OpenCode cannot resolve agent $AGENT (.opencode/agents/$AGENT.md); nothing run"
-    exit 2
-  }
-  if ! AGENTS_JSON="$agent_json" python3 -I - "$AGENT" "$BISHOP_ROOT/.opencode/agents/$AGENT.md" <<'PY'
-import fnmatch
-import json
-import os
-import re
-import sys
-
-# Actions that edit files or run commands: the edit and shell names, plus write,
-# patch and task, which may or may not be names v2 uses. An action missing from
-# this list is not checked. Each listed action must end in a deny that covers
-# every resource.
-GUARDED = ("edit", "write", "patch", "bash", "shell", "task")
-
-
-def fail(why):
-    print(why, file=sys.stderr)
-    sys.exit(1)
-
-
-def definition(path):
-    # The description from the frontmatter, and the body after it, stripped.
-    with open(path, encoding="utf8") as fh:
-        lines = fh.read().split("\n")
-    if not lines or lines[0] != "---":
-        fail("no frontmatter in " + path)
-    end = lines.index("---", 1)
-    desc = None
-    for line in lines[1:end]:
-        m = re.match(r'^description:\s*"(.*)"\s*$', line)
-        if m:
-            desc = m.group(1)
-    if desc is None:
-        fail("no quoted description in " + path)
-    return desc, "\n".join(lines[end + 1:]).strip()
-
-
-def denied(rules, action):
-    # OpenCode takes the LAST rule matching the action and resource, and asks
-    # when no rule matches. So the last rule covering every resource for this
-    # action must deny, and no later rule for the action may allow or ask.
-    hits = [i for i, r in enumerate(rules) if fnmatch.fnmatchcase(action, str(r.get("action", "")))]
-    covering = [i for i in hits if rules[i].get("resource") == "*"]
-    if not covering:
-        return False
-    last = covering[-1]
-    if rules[last].get("effect") != "deny":
-        return False
-    return all(rules[i].get("effect") == "deny" for i in hits if i > last)
-
-
-def main():
-    agent, path = sys.argv[1], sys.argv[2]
-    agents = json.loads(os.environ.get("AGENTS_JSON", ""))
-    if not isinstance(agents, list):
-        fail("the agent listing is not a list")
-    want_desc, body = definition(path)
-    named = [a for a in agents if isinstance(a, dict) and a.get("name") == agent]
-    if len(named) != 1:
-        fail("%d agents named %s" % (len(named), agent))
-    a = named[0]
-    if a.get("description") != want_desc or str(a.get("system", "")).strip() != body:
-        fail("agent %s is not the definition in %s" % (agent, path))
-    for action in GUARDED:
-        if not denied(a.get("permissions") or [], action):
-            fail("agent %s is not denied %s" % (agent, action))
-
-
-try:
-    main()
-except SystemExit:
-    raise
-except Exception as exc:
-    fail("guard check failed: %s" % exc)
-PY
-  then
-    log "[$KIND] OpenCode resolved $AGENT to something other than .opencode/agents/$AGENT.md, or it can edit files or run commands; nothing run"
-    exit 2
-  fi
+  # The guard runs before anything else. Refused and could-not-check outcomes
+  # exit here, with their own codes, and nothing runs.
+  guard_rc=0
+  guard_agent || guard_rc=$?
+  if [[ $guard_rc -ne 0 ]]; then exit "$guard_rc"; fi
 fi
 
 run_agent() {
@@ -508,10 +676,12 @@ run_agent() {
       cmd+=("${ADD_DIR_ARGS[@]}")
     fi
   else
-    # OpenCode v2 has no --pure, so the operator's own OpenCode plugins load in
-    # this run. --standalone starts a private server, which reads
-    # OPENCODE_CONFIG_CONTENT (checked on 2.0.32). The background service did not
-    # pick it up for `debug` commands, which is why the guard lists agents without it.
+    # OpenCode v2 has no --pure (observed on 2.0.32: `opencode run --help` lists
+    # none), so the operator's own OpenCode plugins load in this run.
+    # --standalone starts a private server, which the layered config relies on
+    # for OPENCODE_CONFIG_CONTENT (reported on 2.0.32, not re-checked here). The
+    # background service does not read it for `debug agents` (observed on 2.0.32),
+    # which is why the guard's listing does not see the layered config.
     cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run --standalone
       --agent "$AGENT"
       --model "$MODEL"
