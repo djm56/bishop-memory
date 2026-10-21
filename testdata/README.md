@@ -197,10 +197,11 @@ run as one `unittest -v` process per mutant, with `PYTHONDONTWRITEBYTECODE=1`
 and `python3 -B -I`, so the timeout bounds that process. Go killers run the
 parent test with `go test -v -run`, one process per selector, and each selector
 picks the subtests it names. Logs go to a temporary directory unless
-`--log-dir` is given. Each run writes its log directory to a marker file in the
-temporary directory. A refused run names that directory when it still holds
-saved originals, so a file left mutated by an earlier run can be compared with
-its copy.
+`--log-dir` is given. Before a file is planted, its entry is written to
+`mutate-unrestored.json` in the git directory (`.git/` in a normal checkout), with the log directory and the saved original. The
+entry is removed when that file's restore is verified. A refused run that finds
+a dirty file names the saved original of the earlier run that left it planted,
+when that copy still exists, so the file can be compared with its copy.
 
 Exit status is listed under `--help` and here; `--help` prints `EXIT_DOC`. A test
 in `scripts/test_mutate.py` fails when the rows of this table and `EXIT_DOC` differ
@@ -213,10 +214,16 @@ in either direction: a row with no entry, an entry with no row, or a different m
 | 2 | refused before planting: usage error, malformed spec, not a git checkout, or uncommitted changes |
 | 3 | a required tool (git, or go for a Go mutant) is not installed or cannot answer |
 | 4 | every mutant KILLED, but a mutant and its mirror fail with the same message |
-| 5 | interrupted by a signal or Ctrl-C after planting began; the file was restored |
+| 5 | interrupted by a signal or Ctrl-C; the planted file, if any, was restored and verified |
+
+An interrupt by SIGINT, SIGTERM or SIGHUP stops the run. If a planted file is
+not restored and verified, the run prints `RESTORE FAILED` with the path of the
+saved original and exits 1 instead of 5, because the file may still hold the
+mutant. A signal that arrives during a restore is held until the restore is done.
 
 A SIGKILL or a power loss skips every restore. Nothing in the runner can
-handle those; the next run refuses on the dirty file and names the saved copy.
+handle those; the next run refuses on the dirty file and names the saved copy
+recorded in the git directory's `mutate-unrestored.json`.
 
 The runner and the record check are tooling, not product code. DIR-017 governs
 the product invariants the mutants target, so the tooling is not given mirrored
