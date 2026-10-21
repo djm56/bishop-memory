@@ -22,9 +22,17 @@ Nothing touches a real memory root or the live service.
   - reconcile_journal(): a mission at the 100-row journal cap is counted as
     skipped (journal cap), apart from a fetch failure; below the cap it is not;
     a capped mission with no local events is warned and skips nothing.
-  - main() exit status and summary for the journal cap: cap skips alone exit 1
-    and name the cap; no cap skips exit 0; a capped mission with no local events
-    exits 0.
+  - reconcile_journal() buckets: every parsed event lands in exactly one summed
+    bucket, so the buckets sum to parsed in each way an event can land, and an
+    event for a mission this run does not know is out_of_scope.
+  - reconcile_journal() detail lines: one line per mission with journal events,
+    naming that mission's counts; a mission with no events has none.
+  - reconcile_steps() warnings: an unknown step status is warned only after the
+    mission's existing-steps fetch succeeds; a fetch failure is not warned.
+  - main() exit status and summary for the journal cap: cap skips alone exit 3
+    and name the cap; a failure with a cap skip exits 1; no cap skips exit 0; a
+    capped mission with no local events exits 0. Out-of-scope events alone exit 0
+    and are named in the flight-recorder summary.
   - fetch_journal() and reconcile_journal() against a paging server: every page
     is read and no cap arises, an exact page is not capped, a failing page is a
     fetch failure with no partial pass, a page that reports more with no rows
@@ -39,13 +47,15 @@ import importlib.util
 import io
 import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import threading
 import unittest
 import urllib.parse
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -484,9 +494,19 @@ class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         url = urllib.parse.urlsplit(self.path)
+        if url.path.startswith("/v1/missions/") and url.path.endswith("/steps"):
+            # A server's failing_steps names the missions whose existing-steps GET answers 500.
+            mission = urllib.parse.unquote(url.path[len("/v1/missions/"):-len("/steps")])
+            if mission in getattr(self.server, "failing_steps", ()):
+                self.send_error(500, "simulated steps failure")
+                return
         if url.path == "/v1/flight-recorder":
             query = urllib.parse.parse_qs(url.query)
             mission = query["mission_id"][0]
+            # A server's failing_journal names the missions whose flight-recorder GET answers 500.
+            if mission in getattr(self.server, "failing_journal", ()):
+                self.send_error(500, "simulated journal failure")
+                return
             rows = [{"mission_id": mission, "occurred_at": f"row {i}", "step": "", "event": "e", "note": "n"}
                     for i in range(self.server.capped.get(mission, 0))]
             if getattr(self.server, "paged", False):
@@ -509,15 +529,20 @@ class _ExitFakeHandler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def _run_main(capped, paged=False):
+def _run_main(capped, paged=False, failing_steps=(), root=None, failing_journal=()):
     """
     Run the reconciler as a subprocess, dry-run with --include-journal, against a fake
     service. capped maps a mission id to the number of journal rows the fake returns for it.
-    paged makes the fake page its journal GETs. Return the CompletedProcess.
+    paged makes the fake page its journal GETs. failing_steps names the missions whose
+    existing-steps GET answers 500. failing_journal names the missions whose flight-recorder
+    GET answers 500. root is the memory tree (default: the shipped fixture).
+    Return the CompletedProcess.
     """
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _ExitFakeHandler)
     server.capped = capped
     server.paged = paged
+    server.failing_steps = set(failing_steps)
+    server.failing_journal = set(failing_journal)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -526,7 +551,7 @@ def _run_main(capped, paged=False):
             "PATH": os.environ.get("PATH", ""),
             "BISHOP_MEMORY_CLIENT_ENV": os.path.join(tempfile.gettempdir(), "bishop-memory-no-such-client.env"),
         }
-        cmd = [sys.executable, "-I", RECONCILER, "--root", FIXTURE_ROOT,
+        cmd = [sys.executable, "-I", RECONCILER, "--root", root or FIXTURE_ROOT,
                "--url", f"http://127.0.0.1:{server.server_address[1]}",
                "--harness", "fixture", "--dry-run", "--include-journal"]
         return subprocess.run(cmd, env=env, capture_output=True, timeout=120)
@@ -543,15 +568,15 @@ def _summary_line(proc):
 class JournalCapExitTests(unittest.TestCase):
     """main() exit status and summary for the journal cap, run as a subprocess against a fake service."""
 
-    def test_cap_skips_only_exits_1_and_names_cap(self):
+    def test_cap_skips_only_exits_3_and_names_cap(self):
         # The fixture's FIXTURE_MISSION has three journal events. At 100 rows the cap skips
-        # all three, and nothing else in the run is a problem: the run exits 1 and the
+        # all three, and nothing else in the run is a problem: the run exits 3 and the
         # summary names the cap.
         proc = _run_main({FIXTURE_MISSION: 100})
         summary = _summary_line(proc)
         err = proc.stderr.decode("utf-8", "replace")
-        self.assertEqual(proc.returncode, 1,
-                         msg=f"journal cap only: exit code is {proc.returncode}, expected 1; stderr: {err}")
+        self.assertEqual(proc.returncode, 3,
+                         msg=f"journal cap only: exit code is {proc.returncode}, expected 3; stderr: {err}")
         self.assertIn("3 skipped (journal cap)", summary,
                       msg="journal cap only: the summary does not name 3 skipped (journal cap)")
         self.assertNotIn("fetch failed", summary,
@@ -574,6 +599,328 @@ class JournalCapExitTests(unittest.TestCase):
                       msg="capped without local events: no WARN line names the mission")
         self.assertNotIn("skipped (journal cap)", _summary_line(proc),
                          msg="capped without local events: the summary names a journal cap skip")
+
+    def test_failure_alone_exits_1(self):
+        # The fixture's FIXTURE_MISSION has an existing-steps GET that answers 500: a fetch
+        # failure, and no cap. The run exits 1 and the summary names the fetch failure.
+        proc = _run_main({}, failing_steps={FIXTURE_MISSION})
+        summary = _summary_line(proc)
+        err = proc.stderr.decode("utf-8", "replace")
+        self.assertEqual(proc.returncode, 1,
+                         msg=f"failure alone: exit code is {proc.returncode}, expected 1; stderr: {err}")
+        self.assertIn("fetch failed", summary, msg="failure alone: the summary names no fetch failure")
+        self.assertNotIn("journal cap", summary, msg="failure alone: the summary names a journal cap skip")
+
+    def test_failure_with_cap_skip_exits_1(self):
+        # Precedence: the same fetch failure as above, and the cap skips the mission's
+        # three events. A failure outranks a cap skip, so the run exits 1, and the summary
+        # names both the fetch failure and the cap skip.
+        proc = _run_main({FIXTURE_MISSION: 100}, failing_steps={FIXTURE_MISSION})
+        summary = _summary_line(proc)
+        err = proc.stderr.decode("utf-8", "replace")
+        self.assertEqual(proc.returncode, 1,
+                         msg=f"failure with cap: exit code is {proc.returncode}, expected 1; stderr: {err}")
+        self.assertIn("fetch failed", summary, msg="failure with cap: the summary names no fetch failure")
+        self.assertIn("3 skipped (journal cap)", summary, msg="failure with cap: the summary does not name the cap skip")
+
+
+class OutOfScopeRunTests(unittest.TestCase):
+    """main() with journal events for a mission this run does not know: named as out of scope, and not a failure."""
+
+    def test_out_of_scope_events_are_named_and_exit_0(self):
+        # Positive control: the fixture's events all belong to a mission the fixture holds,
+        # so its flight-recorder line names no out-of-scope event.
+        fixture_line = _flight_recorder_line(_run_main({}))
+        self.assertNotIn("out of scope", fixture_line,
+                         msg=f"fixture: the flight-recorder line names out-of-scope events: {fixture_line}")
+        # A tree with only the journal: no mission is parsed, so all three events are out of scope.
+        with tempfile.TemporaryDirectory() as root:
+            state_dir = os.path.join(root, reconcile.BISHOP_LAYOUT.state_dir)
+            os.makedirs(state_dir)
+            shutil.copy(os.path.join(FIXTURE_ROOT, reconcile.BISHOP_LAYOUT.state_dir, reconcile.BISHOP_LAYOUT.flight_recorder),
+                        state_dir)
+            proc = _run_main({}, root=root)
+        err = proc.stderr.decode("utf-8", "replace")
+        line = _flight_recorder_line(proc)
+        self.assertEqual(proc.returncode, 0,
+                         msg=f"out of scope only: exit code is {proc.returncode}, expected 0; stderr: {err}")
+        self.assertIn("3 parsed", line, msg=f"out of scope only: the line does not read 3 parsed: {line}")
+        self.assertIn("3 out of scope", line, msg=f"out of scope only: the line does not name 3 out of scope: {line}")
+
+
+class _RefusingWrites(JournalClient):
+    """A journal client whose writes are refused, as a service answering 500 would refuse them."""
+
+    def write(self, method, path, payload, label):
+        return False
+
+
+class _StepsFetchFailClient(MockClient):
+    """A mock client whose existing-steps GET raises, as a network failure would."""
+
+    def get(self, path):
+        if path.endswith("/steps"):
+            raise OSError("simulated network failure")
+        return super().get(path)
+
+
+def _journal_output(client, missions):
+    """Run reconcile_journal() against the fixture journal; return (counts, stdout text, stderr text)."""
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        counts = reconcile.reconcile_journal(client, missions, FIXTURE_ROOT)
+    return counts, out.getvalue(), err.getvalue()
+
+
+def _flight_recorder_line(proc):
+    """The [flight-recorder] summary line of the reconciler's stdout, or '' when there is none."""
+    lines = [line for line in proc.stdout.decode("utf-8").splitlines() if line.startswith("[flight-recorder] ")]
+    return lines[0] if lines else ""
+
+
+class JournalBucketTests(unittest.TestCase):
+    """reconcile_journal(): the buckets sum to parsed, and each event lands in the bucket its case names."""
+
+    def _cases(self):
+        """(case name, bucket the three events must land in, client, parsed missions)."""
+        served = [_event_row(event) for event in FIXTURE_EVENTS]
+        known = [{"id": FIXTURE_MISSION}]
+        return [
+            ("created", "created", JournalClient({FIXTURE_MISSION: 99}), known),
+            ("unchanged", "skipped", PagedJournalClient(served, paged=False), known),
+            ("failed", "failed", _RefusingWrites({FIXTURE_MISSION: 99}), known),
+            ("journal cap", "skipped_journal_cap", JournalClient({FIXTURE_MISSION: 100}), known),
+            ("fetch failed", "skipped_fetch_failed", JournalClient(fail=True), known),
+            ("out of scope", "out_of_scope", JournalClient({FIXTURE_MISSION: 99}), []),
+        ]
+
+    def test_buckets_sum_to_parsed_in_every_case(self):
+        # Each case is a subTest, so a failure names its case. The positive control is the
+        # bucket check: the three fixture events must land in the bucket the case names.
+        for name, bucket, client, missions in self._cases():
+            with self.subTest(case=name):
+                counts, _, _ = _journal_output(client, missions)
+                self.assertEqual(counts["parsed"], 3, msg=f"{name}: fixture did not yield three events: {counts}")
+                summed = sum(counts[b] for b in reconcile.JOURNAL_SUMMED_BUCKETS)
+                self.assertEqual(summed, counts["parsed"],
+                                 msg=f"{name}: buckets sum to {summed}, parsed is {counts['parsed']}: {counts}")
+                self.assertEqual(counts[bucket], 3, msg=f"{name}: expected 3 events in {bucket}: {counts}")
+
+    def test_every_event_count_is_summed(self):
+        # A count added to reconcile_journal() but left out of JOURNAL_SUMMED_BUCKETS would
+        # let the sum read as complete while missing it. warned and fetch_failed count
+        # missions, not events, so they are not in the sum.
+        counts, _, _ = _journal_output(JournalClient({FIXTURE_MISSION: 99}), [{"id": FIXTURE_MISSION}])
+        self.assertEqual(set(counts) - {"parsed", "warned", "fetch_failed"}, set(reconcile.JOURNAL_SUMMED_BUCKETS),
+                         msg=f"a counted bucket is not summed into parsed: {sorted(counts)}")
+
+
+class JournalDetailLineTests(unittest.TestCase):
+    """reconcile_journal(): one detail line per mission with journal events, naming that mission's counts."""
+
+    def test_mission_with_events_has_a_detail_line(self):
+        _, out, _ = _journal_output(JournalClient({FIXTURE_MISSION: 99}), [{"id": FIXTURE_MISSION}])
+        self.assertIn("  [flight-recorder] mission-20260904-01: 3 parsed, 3 created, 0 unchanged, 0 failed",
+                      out.splitlines(), msg=f"created: no detail line names the mission's counts: {out}")
+
+    def test_journal_cap_is_named_on_the_detail_line(self):
+        _, out, _ = _journal_output(JournalClient({FIXTURE_MISSION: 100}), [{"id": FIXTURE_MISSION}])
+        self.assertIn("  [flight-recorder] mission-20260904-01: 3 parsed, 0 created, 0 unchanged, 0 failed, "
+                      "3 skipped (journal cap)", out.splitlines(),
+                      msg=f"journal cap: detail line does not name the cap skip: {out}")
+
+    def test_fetch_failure_is_named_on_the_detail_line(self):
+        _, out, _ = _journal_output(JournalClient(fail=True), [{"id": FIXTURE_MISSION}])
+        self.assertIn("  [flight-recorder] mission-20260904-01: 3 parsed, 0 created, 0 unchanged, 0 failed, "
+                      "3 skipped (fetch failed)", out.splitlines(),
+                      msg=f"fetch failure: detail line does not name the fetch skip: {out}")
+
+    def test_mission_without_events_has_no_detail_line(self):
+        # Positive control in the same test: the mission with events does have its line,
+        # and mission-20261009-02, which has no journal events, does not.
+        _, out, _ = _journal_output(JournalClient({FIXTURE_MISSION: 99}), [{"id": FIXTURE_MISSION}])
+        self.assertTrue(any(line.startswith("  [flight-recorder] mission-20260904-01:") for line in out.splitlines()),
+                        msg=f"positive control: the mission with events has no detail line: {out}")
+        _, out, _ = _journal_output(JournalClient({"mission-20261009-02": 100}), [{"id": "mission-20261009-02"}])
+        self.assertFalse(any(line.startswith("  [flight-recorder] mission-20261009-02:") for line in out.splitlines()),
+                         msg=f"a mission with no journal events has a detail line: {out}")
+
+
+MIXED_KNOWN = ["mission-20261101-01", "mission-20261101-02", "mission-20261101-03"]
+MIXED_UNKNOWN = "mission-20261101-04"
+# (mission, event, note) rows of the mixed journal, in file order: three for the first
+# known mission, two for the second, one for the third, two for a mission the run does not know.
+MIXED_EVENTS = [
+    (MIXED_KNOWN[0], "step-sync", "held"),
+    (MIXED_KNOWN[0], "step-sync", "new"),
+    (MIXED_KNOWN[0], "step-sync", "refused"),
+    (MIXED_KNOWN[1], "step-sync", "capped one"),
+    (MIXED_KNOWN[1], "step-sync", "capped two"),
+    (MIXED_KNOWN[2], "step-sync", "fetch fails"),
+    (MIXED_UNKNOWN, "step-sync", "unknown one"),
+    (MIXED_UNKNOWN, "step-sync", "unknown two"),
+]
+
+
+def _write_mixed_tree(root, with_archive=True):
+    """
+    Write a memory tree into root whose journal holds MIXED_EVENTS, one row per event with a
+    distinct timestamp. With_archive also writes a MISSION-ARCHIVE.md naming MIXED_KNOWN, so
+    those three are the missions the run knows and MIXED_UNKNOWN is not.
+    """
+    state_dir = os.path.join(root, reconcile.BISHOP_LAYOUT.state_dir)
+    os.makedirs(state_dir)
+    rows = "".join(f"| 2026-11-01 10:{i:02d} UTC | {m} | {i} | @bishop | {e} | {n} |\n"
+                   for i, (m, e, n) in enumerate(MIXED_EVENTS))
+    with open(os.path.join(state_dir, reconcile.BISHOP_LAYOUT.flight_recorder), "w", encoding="utf-8") as handle:
+        handle.write("# Flight Recorder\n\n| Timestamp | Mission ID | Step | Agent | Event | Note |\n"
+                     "|---|---|---|---|---|---|\n" + rows)
+    if with_archive:
+        rows = "".join(f"| {m} | 2026-11-01 11:00 UTC | done | Mixed-run fixture. |\n" for m in MIXED_KNOWN)
+        with open(os.path.join(state_dir, reconcile.BISHOP_LAYOUT.mission_archive), "w", encoding="utf-8") as handle:
+            handle.write("# Mission Archive\n\n| Mission ID | Completed | Outcome | Summary |\n"
+                         "|---|---|---|---|\n" + rows)
+
+
+class _MixedJournalClient(MockClient):
+    """
+    A service for the mixed journal. The first known mission already holds its "held" event; the
+    second answers a full page (the cap); the third's flight-recorder GET raises. A write whose
+    note is "refused" fails. Every write attempted is kept in written.
+    """
+
+    def get(self, path):
+        if path.startswith("/v1/flight-recorder"):
+            mission = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["mission_id"][0]
+            if mission == MIXED_KNOWN[0]:
+                return 200, {"flight_recorder": [{"mission_id": mission, "occurred_at": "2026-11-01 10:00 UTC",
+                                                  "step": "0", "event": "step-sync", "note": "held"}]}
+            if mission == MIXED_KNOWN[1]:
+                return 200, {"flight_recorder": [{"mission_id": mission, "occurred_at": f"filler {i}", "step": "",
+                                                  "event": "e", "note": "n"} for i in range(reconcile.JOURNAL_PAGE_SIZE)]}
+            raise OSError("simulated network failure")
+        return super().get(path)
+
+    def write(self, method, path, payload, label):
+        super().write(method, path, payload, label)
+        return payload["note"] != "refused"
+
+
+class JournalMixedRunTests(unittest.TestCase):
+    """reconcile_journal() over a journal whose events split across every bucket and an out-of-scope mission."""
+
+    def test_events_split_across_buckets_and_sum_to_parsed(self):
+        # Control (DIR-026): the single-bucket cases in JournalBucketTests pass when a tally
+        # sends an event to the wrong bucket in a mixed run. This test fails then: with the
+        # capped branch's outcome set to "skipped_fetch_failed" the sum still reads 8 but the
+        # bucket values and detail lines differ; with an outcome left uncounted the sum reads 7.
+        # The writes are the positive control for the absent ones: two events are attempted,
+        # and none for the held, capped, fetch-failed or out-of-scope events.
+        with tempfile.TemporaryDirectory() as root:
+            _write_mixed_tree(root)
+            client = _MixedJournalClient()
+            missions = [{"id": m} for m in MIXED_KNOWN]
+            out, err = io.StringIO(), io.StringIO()
+            with redirect_stdout(out), redirect_stderr(err):
+                counts = reconcile.reconcile_journal(client, missions, root)
+        self.assertEqual(counts["parsed"], 8, msg=f"mixed run: expected 8 parsed events: {counts}")
+        summed = sum(counts[b] for b in reconcile.JOURNAL_SUMMED_BUCKETS)
+        self.assertEqual(summed, counts["parsed"], msg=f"mixed run: buckets sum to {summed}, parsed is {counts['parsed']}: {counts}")
+        self.assertEqual({b: counts[b] for b in reconcile.JOURNAL_SUMMED_BUCKETS},
+                         {"created": 1, "skipped": 1, "failed": 1, "skipped_fetch_failed": 1,
+                          "skipped_journal_cap": 2, "out_of_scope": 2},
+                         msg=f"mixed run: events are in the wrong buckets: {counts}")
+        self.assertEqual([w["payload"]["note"] for w in client.written], ["new", "refused"],
+                         msg=f"mixed run: wrong events were written: {client.written}")
+        self.assertEqual(out.getvalue().splitlines(), [
+            f"  [flight-recorder] {MIXED_KNOWN[0]}: 3 parsed, 1 created, 1 unchanged, 1 failed",
+            f"  [flight-recorder] {MIXED_KNOWN[1]}: 2 parsed, 0 created, 0 unchanged, 0 failed, 2 skipped (journal cap)",
+            f"  [flight-recorder] {MIXED_KNOWN[2]}: 1 parsed, 0 created, 0 unchanged, 0 failed, 1 skipped (fetch failed)",
+        ], msg=f"mixed run: per-mission lines are wrong, or one names the out-of-scope mission: {out.getvalue()}")
+
+
+def _summary_counts(line):
+    """
+    The counts a [flight-recorder] summary line prints, by name. A term the line does not
+    print is 0. "skipped" is the count the fetch note names, as in "(1 skipped — fetch failed ...)".
+    """
+    def count(pattern):
+        match = re.search(pattern, line)
+        return int(match.group(1)) if match else 0
+    return {
+        "parsed": count(r"\] (\d+) parsed"), "created": count(r"(\d+) created"),
+        "unchanged": count(r"(\d+) unchanged"), "failed": count(r"(\d+) failed"),
+        "cap": count(r"(\d+) skipped \(journal cap\)"), "out_of_scope": count(r"(\d+) out of scope"),
+        "fetch_skipped": count(r"\((\d+) skipped \u2014 fetch failed"),
+    }
+
+
+class JournalSummaryLineTests(unittest.TestCase):
+    """main(): the printed [flight-recorder] line's counts, with the fetch note's skipped count, sum to parsed."""
+
+    def test_summary_line_counts_sum_to_parsed(self):
+        # Control (DIR-026): with main() passing no skipped count to fetch_failure_note, the
+        # fetch note reads "(fetch failed — 1 request(s) ...)", fetch_skipped is 0 and the
+        # counts sum to 7, not 8. With the scope note dropped they sum to 6. The line is a
+        # subprocess's stdout (main(), not reconcile_journal() called directly). The run
+        # splits events across created, the cap, a journal fetch failure and out of scope.
+        # Blind spot: both runs are dry runs and a dry run never fails a write, so "failed"
+        # is 0 here; JournalMixedRunTests covers the failed bucket.
+        with tempfile.TemporaryDirectory() as root:
+            _write_mixed_tree(root)
+            capped = _run_main({MIXED_KNOWN[1]: 100}, root=root, failing_journal={MIXED_KNOWN[2]})
+            # The control runs inside the with block, while root exists, so main() reads the journal.
+            control = _run_main({}, root=root)
+        line = _flight_recorder_line(capped)
+        self.assertNotEqual(line, "", msg=f"summary: no [flight-recorder] line: {capped.stdout.decode('utf-8', 'replace')}")
+        counts = _summary_counts(line)
+        self.assertEqual(counts, {"parsed": 8, "created": 3, "unchanged": 0, "failed": 0, "cap": 2,
+                                  "out_of_scope": 2, "fetch_skipped": 1},
+                         msg=f"summary: the line's counts are wrong: {line}")
+        total = sum(v for k, v in counts.items() if k != "parsed")
+        self.assertEqual(total, counts["parsed"], msg=f"summary: counts sum to {total}, parsed is {counts['parsed']}: {line}")
+        # Positive control for the fetch note: the same tree with no journal fetch failure has no
+        # fetch note, and its counts still sum to parsed. An empty line (a missing root, a run
+        # that exits before printing) fails the non-empty assertion, so it cannot read as zeros.
+        control_line = _flight_recorder_line(control)
+        self.assertNotEqual(control_line, "", msg=f"summary control: no [flight-recorder] line: "
+                            f"{control.stdout.decode('utf-8', 'replace')} {control.stderr.decode('utf-8', 'replace')}")
+        clean = _summary_counts(control_line)
+        self.assertEqual(clean, {"parsed": 8, "created": 6, "unchanged": 0, "failed": 0, "cap": 0,
+                                 "out_of_scope": 2, "fetch_skipped": 0},
+                         msg=f"summary control: the clean line's counts are wrong: {control_line}")
+        # The regex reads "(0 skipped — fetch failed ...)" as fetch_skipped 0, so the control
+        # also asserts the clean line carries no fetch note at all.
+        self.assertNotIn("fetch failed", control_line,
+                         msg=f"summary control: a fetch note on a line with no fetch failure: {control_line}")
+        self.assertEqual(sum(v for k, v in clean.items() if k != "parsed"), clean["parsed"],
+                         msg=f"summary control: counts do not sum to parsed: {clean}")
+
+
+class StepFetchWarningTests(unittest.TestCase):
+    """reconcile_steps(): an unknown status is warned only once the mission's existing-steps fetch has succeeded."""
+
+    def _run(self, client):
+        """Run reconcile_steps() for the fixture's mission; return (counts, stderr text)."""
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            counts = reconcile.reconcile_steps(client, [{"id": FIXTURE_MISSION}], FIXTURE_ROOT)
+        return counts, stderr.getvalue()
+
+    def test_fetch_failure_is_not_warned_and_success_is(self):
+        # Absent case: the fetch fails, so the fetch failure is counted, and step 3 gets no
+        # WARN line and no warned count. Positive control, same method: with a fetch that
+        # succeeds, the same step 3 is warned.
+        counts, stderr = self._run(_StepsFetchFailClient())
+        self.assertEqual(counts["fetch_failed"], 1, msg=f"fetch failure: expected 1 fetch failure: {counts}")
+        self.assertEqual(counts["skipped_fetch_failed"], 3,
+                         msg=f"fetch failure: expected 3 steps skipped for the fetch failure: {counts}")
+        self.assertEqual(counts["warned"], 0, msg=f"fetch failure: a step was warned after the fetch failed: {counts}")
+        self.assertNotIn("[WARN]", stderr, msg="fetch failure: a WARN line was printed for a step that was not sent")
+        counts, stderr = self._run(MockClient())
+        self.assertEqual(counts["warned"], 1, msg=f"successful fetch: expected 1 warned step, got counts {counts}")
+        self.assertIn("[WARN] mission-20260904-01 step 3: status 'blocked' is not a step status", stderr,
+                      msg="successful fetch: no WARN line names step 3")
 
 
 def _filler_row(i):

@@ -14,7 +14,9 @@ it; a run or a harness-side check is needed), **accepted** (decided as it
 stands, with no fix planned).
 
 Last checked against the code: 2026-10-20 (status audit of `main` at
-`1c4def9` and the live database).
+`1c4def9` and the live database). Statuses changed on 2026-10-21 by the live
+redeploy and by operator decisions; they are recorded under Reconciler,
+Harness portability and Shipped.
 
 ## Planned work
 
@@ -157,16 +159,16 @@ side; not checkable from this repository.
 
 ## Reconciler
 
-**Flight-recorder paging is not on the live service.** The reconciler follows
-`has_more` only against a memoryd built from PR #9 (`1c4def9`), which added
-`offset` and `has_more` to `GET /v1/flight-recorder`. The running service has
-not been redeployed, so it answers one page per mission and the reconciler's
-journal cap applies to it. Status: open; needs memoryd redeploy (operator
-action).
-
-**The `[flight-recorder]` summary does not add up to `parsed`.** Events for
-missions outside the parsed set are skipped with no counter. Behind the
-opt-in `--include-journal`. Status: open; code reading only, not run.
+**Reconcile behaviour (operator decision, 2026-10-21).** The journal
+summary's buckets sum to `parsed`, with an `out of scope` bucket for events of a
+mission the run does not know. Each mission with journal events gets a
+`[flight-recorder] <id>:` line. A run whose only problem is journal events
+skipped at the cap exits 3; a failed operation or fetch exits 1 and outranks it.
+The step WARN is printed only after that mission's existing-steps fetch
+succeeds. `JOURNAL_MAX_PAGES` stays 1000, and the known-id set is the ids
+`parse_missions` returns. Status: decided, and shipped with the change that
+carries this record (`reconcile_journal` and `main()` in
+`scripts/reconcile-memory.py`).
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
 which needs it for Markdown tables; a value from the JSON API does not. It is
@@ -268,11 +270,12 @@ per phase are in [PROGRESS.md](PROGRESS.md#harness-portability).
 - Phase 5, OpenCode adapter. Status: planned.
 - Phase 6, pi adapter (pi is now maintained by Earendil and its MCP stance has
   reversed; see the plan's §3.3). Status: planned.
-- Phase 7, Kirsch adapter, which waits on the operator's answers (plan §11,
-  the K-questions). Status: planned.
+- Phase 7, Kirsch adapter. Status: deferred by the operator on 2026-10-21
+  (plan §9); the K-questions in plan §11 wait with it.
 - Phase 8, packaging and distribution. Status: planned.
 
-The decisions in plan §9 are open for the operator.
+On 2026-10-21 the operator adopted the recommendations in plan §9 for Claude
+Code, OpenCode and pi, and deferred Kirsch.
 
 ## Docs and README
 
@@ -315,15 +318,22 @@ except the operational ones, which name their evidence instead.
 
 **Reconciler**
 
+- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped with the change that carries this entry (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
+- Operational, no commit (live system, 2026-10-21, operator-reported): memoryd
+  was redeployed at 06:35 UTC with the flight-recorder paging from PR #9
+  (`1c4def9`). A full journal reconcile of the live service was clean, with 13
+  rows added.
 - The journal's `warned` counter goes up once per capped mission, and the cap
   has its own summary category, `skipped (journal cap)`, apart from fetch
   failures. The run exits 1 only when events were skipped at the cap (PR #9,
-  `1c4def9`).
+  `1c4def9`). **Superseded 2026-10-21** (see the Reconciler decision above):
+  a run whose only problem is events skipped at the cap exits 3, and a failed
+  operation or fetch exits 1.
 - The journal is read to the end when the server pages: the reconciler follows
   `has_more` up to `JOURNAL_MAX_PAGES`, and a read still reporting `has_more`
   at the ceiling is a fetch failure. `GET /v1/flight-recorder` takes `offset`
-  and returns `has_more` (PR #9, `1c4def9`). The live service needs a
-  redeploy before this applies; see Reconciler, open.
+  and returns `has_more` (PR #9, `1c4def9`). The live service was redeployed
+  on 2026-10-21, as recorded above.
 
 **Docs and README**
 

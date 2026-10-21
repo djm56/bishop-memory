@@ -885,10 +885,12 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     # failure quietly removes its steps from every bucket after "parsed",
     # and the summary line looks like a clean, fully-examined run even
     # though some steps were never even compared.
-    # "warned" counts parsed steps whose status is outside the step set. Those
-    # steps are still sent, without a status, and sit inside the "parsed" total
-    # like any other; "warned" is not a term in the sum above. Under skip_steps
-    # nothing is warned or counted: no step is sent, so there is nothing to warn about.
+    # "warned" counts parsed steps whose status is outside the step set, in a
+    # mission whose existing-steps fetch succeeded. Those steps are still sent,
+    # without a status, and sit inside the "parsed" total like any other; "warned"
+    # is not a term in the sum above. A mission whose fetch failed is counted as a
+    # fetch failure only: its steps are not sent, so they are not warned. Under
+    # skip_steps nothing is warned or counted, for the same reason.
     status_counts = {"parsed": 0, "created": 0, "updated": 0, "unchanged": 0, "failed": 0,
                       "fetch_failed": 0, "skipped_fetch_failed": 0, "warned": 0}
 
@@ -902,13 +904,6 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
     # If skipping, we're done — report parsed count only, no warnings, fetches or writes
     if skip_steps:
         return status_counts
-
-    for mission in parsed_missions:
-        for step in all_parsed_steps[mission["id"]]:
-            if step["_status_raw"] and step["_status_raw"] not in STEP_STATUSES:
-                print(f"  [WARN] {mission['id']} step {step['step']}: status {step['_status_raw']!r} "
-                      f"is not a step status; step sent without a status", file=sys.stderr)
-                status_counts["warned"] += 1
 
     # Fetch all existing steps (keyed by (mission_id, step))
     # Track which missions had successful fetches so we can skip writes for failed ones
@@ -932,6 +927,19 @@ def reconcile_steps(client, parsed_missions, root, skip_steps=False):
             print(f"     {exc}", file=sys.stderr)
             missions_fetch_failed.add(mission["id"])
             status_counts["fetch_failed"] += 1
+
+    # Warn on each step whose status is outside the step set. This runs only after
+    # the mission's existing-steps fetch has succeeded: a mission whose fetch failed
+    # is already counted as a fetch failure, and its steps are not sent, so it gets
+    # no WARN line and no "warned" count.
+    for mission in parsed_missions:
+        if mission["id"] in missions_fetch_failed:
+            continue
+        for step in all_parsed_steps[mission["id"]]:
+            if step["_status_raw"] and step["_status_raw"] not in STEP_STATUSES:
+                print(f"  [WARN] {mission['id']} step {step['step']}: status {step['_status_raw']!r} "
+                      f"is not a step status; step sent without a status", file=sys.stderr)
+                status_counts["warned"] += 1
 
     # Helper: compare parsed step payload against stored step, handling normalization.
     # The three key normalisation traps:
@@ -1003,6 +1011,12 @@ JOURNAL_PAGE_SIZE = 100
 # reports has_more on non-empty pages cannot hold the read open.
 JOURNAL_MAX_PAGES = 1000
 
+# The buckets reconcile_journal() splits "parsed" into. Each parsed event lands in
+# exactly one of them, so their sum is "parsed". "skipped" is the count of events
+# the service already holds (unchanged). reconcile_journal() and the tests read it.
+JOURNAL_SUMMED_BUCKETS = ("created", "skipped", "failed", "skipped_fetch_failed",
+                          "skipped_journal_cap", "out_of_scope")
+
 
 def journal_page_path(mission_id, offset):
     """The GET path for the page of a mission's journal that starts at offset."""
@@ -1061,12 +1075,13 @@ def reconcile_journal(client, parsed_missions, root):
     # A capped mission with no events in the local journal is still warned
     # once, but skipped_journal_cap stays 0, so it does not set the exit
     # status: only events actually skipped at the cap do.
-    # Note: "parsed" here also excludes events for missions this run never
-    # heard of at all (see the `not any(...)` filter below) — that's a
-    # separate, deliberate scope filter, not a fetch failure, and is not
-    # counted here.
+    # "parsed" is every event read from the local journal. Each one lands in
+    # exactly one of JOURNAL_SUMMED_BUCKETS. An event whose mission is not among
+    # parsed_missions is counted as "out_of_scope" and is not sent: this run has
+    # no mission to attach it to, so it is neither a fetch failure nor a failure.
     status_counts = {"parsed": 0, "created": 0, "failed": 0, "skipped": 0, "warned": 0,
-                      "fetch_failed": 0, "skipped_fetch_failed": 0, "skipped_journal_cap": 0}
+                      "fetch_failed": 0, "skipped_fetch_failed": 0, "skipped_journal_cap": 0,
+                      "out_of_scope": 0}
 
     # Fetch all existing journal rows (per-mission, with cap check)
     existing_journal = {}
@@ -1093,26 +1108,44 @@ def reconcile_journal(client, parsed_missions, root):
     # Parse and create missing events
     events = parse_journal(root)
     status_counts["parsed"] = len(events)
+    known_ids = {m["id"] for m in parsed_missions}
+    # Per-mission tallies, over the same buckets, for the detail lines printed below.
+    per_mission = {}
     for event in events:
-        # Only process events for missions we know about and whose fetch succeeded
-        if not any(m["id"] == event["mission_id"] for m in parsed_missions):
-            continue
-        if event["mission_id"] in missions_journal_capped:
-            status_counts["skipped_journal_cap"] += 1
-            continue
-        if event["mission_id"] in missions_journal_fetch_failed:
-            status_counts["skipped_fetch_failed"] += 1
-            continue
-
-        key = (event["mission_id"], event["occurred_at"], event["step"], event["event"], event["note"])
-        if key in existing_journal:
-            status_counts["skipped"] += 1
+        mission_id = event["mission_id"]
+        if mission_id not in known_ids:
+            outcome = "out_of_scope"
+        elif mission_id in missions_journal_capped:
+            outcome = "skipped_journal_cap"
+        elif mission_id in missions_journal_fetch_failed:
+            outcome = "skipped_fetch_failed"
         else:
-            if not client.write("POST", "/v1/flight-recorder", prune(event),
-                                f"{event['occurred_at']} {event['event']}"):
-                status_counts["failed"] += 1
+            key = (mission_id, event["occurred_at"], event["step"], event["event"], event["note"])
+            if key in existing_journal:
+                outcome = "skipped"
+            elif not client.write("POST", "/v1/flight-recorder", prune(event),
+                                  f"{event['occurred_at']} {event['event']}"):
+                outcome = "failed"
             else:
-                status_counts["created"] += 1
+                outcome = "created"
+        status_counts[outcome] += 1
+        if mission_id in known_ids:
+            tally = per_mission.setdefault(mission_id, {bucket: 0 for bucket in JOURNAL_SUMMED_BUCKETS})
+            tally[outcome] += 1
+
+    # One detail line per mission with events in the journal, in the order the
+    # missions were parsed, so each mission's counts can be read on their own.
+    for mission in parsed_missions:
+        tally = per_mission.get(mission["id"])
+        if tally is None:
+            continue
+        notes = ""
+        if tally["skipped_journal_cap"] > 0:
+            notes += f", {tally['skipped_journal_cap']} skipped (journal cap)"
+        if tally["skipped_fetch_failed"] > 0:
+            notes += f", {tally['skipped_fetch_failed']} skipped (fetch failed)"
+        print(f"  [flight-recorder] {mission['id']}: {sum(tally.values())} parsed, "
+              f"{tally['created']} created, {tally['skipped']} unchanged, {tally['failed']} failed{notes}")
 
     return status_counts
 
@@ -1463,8 +1496,10 @@ def main():
         fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))
         warned_note = f", {counts['warned']} warned" if counts['warned'] > 0 else ""
         cap_note = f", {counts['skipped_journal_cap']} skipped (journal cap)" if counts['skipped_journal_cap'] > 0 else ""
+        scope_note = f", {counts['out_of_scope']} out of scope" if counts['out_of_scope'] > 0 else ""
+        # The buckets named here, with the fetch note's skipped count, sum to parsed (JOURNAL_SUMMED_BUCKETS).
         print(f"[flight-recorder] {counts['parsed']} parsed, {counts['created']} created, " +
-              f"{counts['skipped']} unchanged, {counts['failed']} failed{warned_note}{cap_note}{fetch_status}")
+              f"{counts['skipped']} unchanged, {counts['failed']} failed{warned_note}{cap_note}{scope_note}{fetch_status}")
         total_failed_operations += counts['failed']
         total_fetch_failures += counts.get('fetch_failed', 0)
         total_journal_cap_skips += counts['skipped_journal_cap']
@@ -1528,8 +1563,13 @@ def main():
             error_parts.append(f"{total_journal_cap_skips} skipped (journal cap)")
         error_detail = f", {', '.join(error_parts)}"
     print(f"[reconcile] {verb} {client.sent} requests, {total_entities} entities created/updated{error_detail}")
-    if total_failed_operations > 0 or total_fetch_failures > 0 or total_journal_cap_skips > 0:
+    # Exit status. 1 when any operation or fetch failed. 3 when the run had no failure
+    # but journal events were skipped at the journal cap. 0 otherwise. A failure
+    # outranks a cap skip, so a run with both exits 1.
+    if total_failed_operations > 0 or total_fetch_failures > 0:
         sys.exit(1)
+    if total_journal_cap_skips > 0:
+        sys.exit(3)
     sys.exit(0)
 
 
