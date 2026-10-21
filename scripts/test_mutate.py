@@ -795,6 +795,94 @@ class MainTests(_RepoTest):
         self.assertNotIn("interrupted by", out)
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
 
+    def run_double_signal(self, retry):
+        """
+        A real killer sends SIGTERM while f.py is planted; then a second SIGTERM lands at the start of the
+        restore, before restore_and_verify has begun deferring signals (the unwinding window). With `retry`
+        False, restore_until_done is replaced by a single call, which is the behaviour the retry exists to fix.
+        Returns (status, stdout, restore_and_verify call count).
+        """
+        items = self.pair_with_signal_killer(SIGNAL_SUITE.format(target=self.path()))
+        real = mutate.restore_and_verify
+        calls = []
+
+        def second_signal_first(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                os.kill(os.getpid(), signal.SIGTERM)  # the handler raises Interrupted here: nothing is deferred yet
+            return real(*args, **kwargs)
+        patches = [mock.patch.object(mutate, "restore_and_verify", side_effect=second_signal_first)]
+        if not retry:
+            patches.append(mock.patch.object(mutate, "restore_until_done",
+                                             side_effect=lambda *a: mutate.restore_and_verify(*a)))
+        with contextlib.ExitStack() as stack:
+            for patch in patches:
+                stack.enter_context(patch)
+            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs], items=items)
+        return status, out, len(calls)
+
+    def test_a_second_signal_during_the_unwinding_still_restores_and_verifies(self):
+        status, out, calls = self.run_double_signal(retry=True)
+        self.assertEqual(calls, 2, "the restore must have run again after the second signal")
+        self.assertEqual(status, mutate.EXIT_INTERRUPTED, out)
+        self.assertIn("every restore is verified; no planted file is left mutated", out)
+        self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
+        self.assertNotIn("f.py", self.marker_entries())
+
+    def test_a_restore_that_never_ran_is_reported_failed_never_verified(self):
+        # The control for the test above: the same two signals with no retry leave f.py mutated.
+        # The run must say RESTORE FAILED, and must not print the "verified" line.
+        status, out, calls = self.run_double_signal(retry=False)
+        saved = os.path.join(self.logs, "A.orig")
+        self.assertEqual(calls, 1)
+        self.assertIn("return 3", read(self.path()).decode("utf-8"), "the control must leave the file mutated")
+        self.assertEqual(status, mutate.EXIT_FAILED, out)
+        self.assertNotIn("every restore is verified", out)
+        self.assertIn(f"mutate: RESTORE FAILED for f.py; the original is saved at {saved}", out)
+        self.assertEqual(self.marker_entries()["f.py"]["orig"], saved, "the marker still points at the saved original")
+
+    def test_unparseable_marker_refuses_the_run_before_anything_is_planted(self):
+        with open(self.marker_path(), "w", encoding="utf-8") as handle:
+            handle.write("")
+        with mock.patch.object(mutate, "run_killers") as runner:
+            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
+        self.assertEqual(status, mutate.EXIT_REFUSED, out)
+        self.assertIn(self.marker_path(), out)
+        self.assertIn("git checkout -- <file>", out)
+        runner.assert_not_called()
+        self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
+
+    def test_a_second_run_is_refused_while_another_holds_the_lock_and_runs_once_it_is_released(self):
+        lock = mutate.acquire_run_lock(os.path.join(self.repo, ".git", mutate.LOCK_NAME))
+        try:
+            with mock.patch.object(mutate, "run_killers") as runner:
+                status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
+            self.assertEqual(status, mutate.EXIT_REFUSED, out)
+            self.assertIn("another mutate run holds", out)
+            runner.assert_not_called()
+            self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
+        finally:
+            os.close(lock)
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]):
+            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
+        self.assertEqual(status, mutate.EXIT_OK, out)
+
+    def test_a_finished_run_releases_the_lock(self):
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]):
+            first = self.run_main(["--ids", "A", "--log-dir", self.logs])
+            second = self.run_main(["--ids", "A", "--log-dir", self.logs])
+        self.assertEqual((first[0], second[0]), (mutate.EXIT_OK, mutate.EXIT_OK), (first[1], second[1]))
+
+    def test_a_platform_without_posix_is_refused_with_a_message(self):
+        with mock.patch.object(mutate, "POSIX", False), mock.patch.object(mutate, "run_killers") as runner:
+            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
+        self.assertEqual(status, mutate.EXIT_REFUSED, out)
+        self.assertIn("POSIX only", out)
+        runner.assert_not_called()
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]):
+            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
+        self.assertEqual(status, mutate.EXIT_OK, "positive control: the same run on this platform proceeds: " + out)
+
     def test_tool_error_during_run_exits_no_tool(self):
         # mutate_one itself is replaced here, so this checks only how a ToolError maps to an exit status.
         with mock.patch.object(mutate, "mutate_one", side_effect=mutate.ToolError("git status failed")):
@@ -901,12 +989,49 @@ class MarkerTests(_RepoTest):
             mutate.record_plant(self.marker(), "f.py", "A", self.logs, "x")
         self.assertEqual(read(victim), b"keep me\n")
 
-    def test_unparseable_marker_is_not_overwritten(self):
-        with open(self.marker(), "w", encoding="utf-8") as handle:
-            handle.write("not json")
-        with self.assertRaises(ValueError):
-            mutate.record_plant(self.marker(), "f.py", "A", self.logs, "x")
-        self.assertEqual(read(self.marker()), b"not json")
+    def test_unparseable_marker_is_not_overwritten_and_the_refusal_says_what_to_do(self):
+        # "" is what a kill between truncate and write used to leave; the others are partial or wrong-shaped text.
+        for text in ("", '{"f.py": {"id": ', "not json", "[]"):
+            with self.subTest(text=text):
+                with open(self.marker(), "w", encoding="utf-8") as handle:
+                    handle.write(text)
+                with self.assertRaises(ValueError) as ctx:
+                    mutate.record_plant(self.marker(), "f.py", "A", self.logs, "x")
+                self.assertIn(self.marker(), str(ctx.exception))
+                self.assertIn("git checkout -- <file>", str(ctx.exception))
+                self.assertIn(f"delete {self.marker()}", str(ctx.exception))
+                self.assertEqual(read(self.marker()), text.encode("utf-8"))
+
+    def test_write_is_atomic_leaves_no_temporary_file_and_is_private(self):
+        mutate.write_marker(self.marker(), {"old": {}})
+        names = os.listdir(os.path.dirname(self.marker()))
+        self.assertEqual([n for n in names if n.startswith(mutate.MARKER_NAME)], [mutate.MARKER_NAME])
+        self.assertEqual(os.stat(self.marker()).st_mode & 0o777, 0o600)
+        self.assertEqual(mutate.read_marker(self.marker()), {"old": {}})
+
+    def test_a_write_that_fails_part_way_keeps_the_old_marker_and_removes_its_temporary_file(self):
+        mutate.write_marker(self.marker(), {"old": {}})
+        before = os.listdir(os.path.dirname(self.marker()))
+        for name in ("replace", "dump"):
+            with self.subTest(failing=name):
+                target = (mock.patch.object(mutate.os, "replace", side_effect=OSError("disk gone")) if name == "replace"
+                          else mock.patch.object(mutate.json, "dump", side_effect=OSError("disk full")))
+                with target, self.assertRaises(OSError):
+                    mutate.write_marker(self.marker(), {"new": {}})
+                self.assertEqual(mutate.read_marker(self.marker()), {"old": {}})
+                self.assertEqual(os.listdir(os.path.dirname(self.marker())), before)
+        mutate.write_marker(self.marker(), {"new": {}})  # control: the same call without a failure replaces it
+        self.assertEqual(mutate.read_marker(self.marker()), {"new": {}})
+
+    def test_write_over_a_symlink_replaces_the_link_and_leaves_its_target_alone(self):
+        victim = os.path.join(self.logs, "victim.txt")
+        with open(victim, "w", encoding="utf-8") as handle:
+            handle.write("keep me\n")
+        os.symlink(victim, self.marker())
+        mutate.write_marker(self.marker(), {"a": {}})
+        self.assertEqual(read(victim), b"keep me\n")
+        self.assertFalse(os.path.islink(self.marker()))
+        self.assertEqual(mutate.read_marker(self.marker()), {"a": {}})
 
     def test_mutate_one_refuses_to_plant_when_the_plant_cannot_be_recorded(self):
         victim = os.path.join(self.logs, "victim.txt")
@@ -916,6 +1041,7 @@ class MarkerTests(_RepoTest):
         with mock.patch.object(mutate, "run_killers") as runner:
             out = mutate.mutate_one(entry(), self.logs, 5)
         self.assertFalse(out.planted)
+        self.assertTrue(out.restore_ok, "a refused plant wrote nothing, so there is nothing unrestored")
         self.assertTrue(any(p.startswith("cannot record the plant") for p in out.problems), out.problems)
         runner.assert_not_called()
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
@@ -966,10 +1092,12 @@ class RestoreTests(_RepoTest):
             handle.write(TARGET.replace("return 1", "return 3").encode("utf-8"))
         out = mutate.Outcome("A")
         out.planted = True
+        out.restore_ok = False  # as mutate_one leaves it: unverified until restore_and_verify says otherwise
         return out, original, saved, marker
 
     def test_verified_restore_clears_the_marker_entry(self):
         out, original, saved, marker = self.planted()
+        self.assertFalse(out.restore_ok, "positive control: a planted file reads as unrestored until the restore runs")
         mutate.restore_and_verify(out, self.path(), "f.py", original, saved, marker)
         self.assertTrue(out.restore_ok, out.problems)
         self.assertNotIn("f.py", mutate.read_marker(marker))
@@ -1002,6 +1130,97 @@ class RestoreTests(_RepoTest):
                 os.kill(os.getpid(), signal.SIGTERM)
         finally:
             mutate.restore_handlers(installed)
+
+
+class PlantWindowTests(_RepoTest):
+    """mutate_one() between the moment a plant is recorded and the moment its restore is verified."""
+
+    def setUp(self):
+        super().setUp()
+        self.installed = {}
+        mutate.install_handlers(self.installed)
+        self.addCleanup(mutate.restore_handlers, self.installed)
+
+    def marker(self):
+        """The marker path in the temporary repository's git directory."""
+        return os.path.join(self.repo, ".git", mutate.MARKER_NAME)
+
+    def test_a_signal_right_after_the_plant_is_recorded_still_restores_and_clears_the_entry(self):
+        # The signal lands after record_plant returns and before the file is written, where the
+        # old code had no try yet. The entry must not be left behind for a file nobody mutated.
+        real = mutate.record_plant
+
+        def record_then_signal(*args):
+            real(*args)
+            os.kill(os.getpid(), signal.SIGTERM)
+        out = mutate.Outcome("M1")
+        with mock.patch.object(mutate, "record_plant", side_effect=record_then_signal), \
+                mock.patch.object(mutate, "run_killers") as runner:
+            with self.assertRaises(mutate.Interrupted):
+                mutate.mutate_one(entry(), self.logs, 5, out)
+        runner.assert_not_called()
+        self.assertTrue(out.planted)
+        self.assertTrue(out.restore_ok, out.problems)
+        self.assertNotIn("f.py", mutate.read_marker(self.marker()))
+        self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
+
+    def test_a_restore_that_never_ran_leaves_the_outcome_unrestored(self):
+        # restore_until_done is replaced by a function that fails before restoring anything. The Outcome
+        # must read planted and not restored, and finish_early must report it, whatever the status.
+        out = mutate.Outcome("M1")
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]), \
+                mock.patch.object(mutate, "restore_until_done", side_effect=RuntimeError("never ran")):
+            with self.assertRaises(RuntimeError):
+                mutate.mutate_one(entry(), self.logs, 5, out)
+        self.assertTrue(out.planted)
+        self.assertFalse(out.restore_ok)
+        self.assertIn("return 3", read(self.path()).decode("utf-8"))
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            status = mutate.finish_early([], out, mutate.EXIT_INTERRUPTED)
+        self.assertEqual(status, mutate.EXIT_FAILED)
+        self.assertIn("RESTORE FAILED", printed.getvalue())
+        self.assertNotIn("every restore is verified", printed.getvalue())
+
+    def test_a_restore_that_runs_leaves_the_outcome_restored(self):
+        # Positive control for the test above: the same run with the real restore ends restore_ok True.
+        out = mutate.Outcome("M1")
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]):
+            mutate.mutate_one(entry(), self.logs, 5, out)
+        self.assertTrue(out.planted)
+        self.assertTrue(out.restore_ok, out.problems)
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            status = mutate.finish_early([], out, mutate.EXIT_INTERRUPTED)
+        self.assertEqual(status, mutate.EXIT_INTERRUPTED)
+
+
+class RunLockTests(_RepoTest):
+    """acquire_run_lock() on a real file."""
+
+    def lock_path(self):
+        """The run lock path in the temporary repository's git directory."""
+        return os.path.join(self.repo, ".git", mutate.LOCK_NAME)
+
+    def test_second_holder_is_refused_and_a_released_lock_can_be_taken_again(self):
+        first = mutate.acquire_run_lock(self.lock_path())
+        with self.assertRaises(mutate.RunLocked) as ctx:
+            mutate.acquire_run_lock(self.lock_path())
+        self.assertIn(self.lock_path(), str(ctx.exception))
+        os.close(first)
+        os.close(mutate.acquire_run_lock(self.lock_path()))  # control: the refusal came from the held lock
+
+    def test_lock_file_is_private_and_a_symlink_is_not_followed(self):
+        os.close(mutate.acquire_run_lock(self.lock_path()))
+        self.assertEqual(os.stat(self.lock_path()).st_mode & 0o777, 0o600)
+        os.unlink(self.lock_path())
+        victim = os.path.join(self.logs, "victim.txt")
+        with open(victim, "w", encoding="utf-8") as handle:
+            handle.write("keep me\n")
+        os.symlink(victim, self.lock_path())
+        with self.assertRaises(mutate.RunLocked):
+            mutate.acquire_run_lock(self.lock_path())
+        self.assertEqual(read(victim), b"keep me\n")
 
 
 class GroupKillTests(unittest.TestCase):
@@ -1138,6 +1357,35 @@ class HandlerDispositionTests(unittest.TestCase):
             mutate.restore_handlers(installed)
 
 
+class RestoreHandlersTests(unittest.TestCase):
+    """restore_handlers() with a signal arriving while the dispositions go back."""
+
+    def test_a_signal_during_the_restore_is_held_then_delivered_to_the_restored_handler(self):
+        hits = []
+
+        def recorder(signum, _frame):
+            hits.append(signum)
+        saved = {sig: signal.getsignal(sig) for sig in mutate.HANDLED_SIGNALS}
+        for sig in mutate.HANDLED_SIGNALS:
+            self.addCleanup(signal.signal, sig, signal.SIG_DFL if saved[sig] is None else saved[sig])
+            signal.signal(sig, recorder)
+        installed = {}
+        mutate.install_handlers(installed)
+        self.assertIs(signal.getsignal(signal.SIGTERM), mutate._interrupt, "control: the runner's handler is in place")
+        real_signal = signal.signal
+        sent = []
+
+        def signal_then_set(sig, handler):
+            if not sent:
+                sent.append(sig)
+                os.kill(os.getpid(), signal.SIGTERM)  # unmasked, the runner's handler would raise Interrupted here
+            return real_signal(sig, handler)
+        with mock.patch.object(mutate.signal, "signal", side_effect=signal_then_set):
+            mutate.restore_handlers(installed)  # must not raise
+        self.assertEqual(sent and hits, [signal.SIGTERM])
+        self.assertTrue(all(signal.getsignal(sig) is recorder for sig in mutate.HANDLED_SIGNALS))
+
+
 class WaitForPidsTests(unittest.TestCase):
     """wait_for_pids(): the poll the group-kill tests rely on."""
 
@@ -1164,6 +1412,38 @@ class WaitForPidsTests(unittest.TestCase):
             handle.write("12\n")
         with self.assertRaises(AssertionError):
             wait_for_pids(self.path, 2, seconds=0.2)  # one pid where two are due
+
+
+def signal_names(text):
+    """The signal names (SIGxxx words) that appear in `text`."""
+    return set(re.findall(r"\bSIG[A-Z0-9]+\b", text))
+
+
+def mutation_section(readme):
+    """The README text from '## Mutation testing' up to the next '## ' heading."""
+    start = readme.index("\n## Mutation testing\n")
+    end = readme.index("\n## ", start + 1)
+    return readme[start:end]
+
+
+class SignalProseTests(unittest.TestCase):
+    """The prose points at HANDLED_SIGNALS instead of naming its members, so it cannot go stale (DIR-014)."""
+
+    def setUp(self):
+        with open(os.path.join(HERE, "..", "testdata", "README.md"), encoding="utf-8") as handle:
+            self.section = mutation_section(handle.read())
+        self.handled = {signal.Signals(sig).name for sig in mutate.HANDLED_SIGNALS}
+
+    def test_neither_the_module_docstring_nor_the_readme_names_a_handled_signal(self):
+        self.assertEqual(signal_names(mutate.__doc__) & self.handled, set())
+        self.assertEqual(signal_names(self.section) & self.handled, set())
+
+    def test_control_the_scan_reads_both_texts_and_flags_a_handled_name(self):
+        self.assertIn("HANDLED_SIGNALS", mutate.__doc__)
+        self.assertIn("HANDLED_SIGNALS", self.section)
+        self.assertIn("SIGKILL", signal_names(self.section), "the scan must see names in the README section")
+        self.assertEqual(signal_names(mutate.__doc__ + " SIGTERM") & self.handled, {"SIGTERM"})
+        self.assertEqual(signal_names(self.section + " SIGHUP") & self.handled, {"SIGHUP"})
 
 
 class GitHelperTests(_RepoTest):

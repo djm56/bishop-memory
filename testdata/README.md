@@ -177,9 +177,10 @@ For each mutant it refuses unless the file is clean against HEAD: `git status
 --porcelain --ignored` for the file must print nothing, so a staged edit, an
 unstaged edit, an untracked file and an ignored file all refuse. It then plants
 the edit alone, runs the mutant's killers, and restores the file. The restore is
-verified three ways: the bytes equal the original, `cmp` matches a copy saved
-before planting, and the file is clean against HEAD again. Each killer's full
-output goes to a per-mutant log.
+verified: the bytes equal the original, `cmp` matches a copy saved before
+planting, and the file is clean against HEAD again. Each killer's full output goes
+to a per-mutant log. The runner is POSIX only (process groups, `flock`,
+`O_NOFOLLOW`) and refuses elsewhere.
 
     make mutate                    # every active mutant
     make mutate ID='GO-KEY M2'     # selected ids only
@@ -201,7 +202,17 @@ picks the subtests it names. Logs go to a temporary directory unless
 `mutate-unrestored.json` in the git directory (`.git/` in a normal checkout), with the log directory and the saved original. The
 entry is removed when that file's restore is verified. A refused run that finds
 a dirty file names the saved original of the earlier run that left it planted,
-when that copy still exists, so the file can be compared with its copy.
+when that copy still exists, so the file can be compared with its copy. The
+marker is replaced atomically, so a kill cannot leave it half-written. A marker
+that does not parse refuses the run before anything is planted; the message names
+the file and the recovery step (`git checkout -- <file>` for any modified file,
+then delete the marker).
+
+One run at a time. A run holds an exclusive lock on `mutate.lock` in the git
+directory, and a second run refuses. Two runs on one working tree would plant over
+each other's files and read each other's mutants, so this is a correctness rule
+and not only a guard for the marker. The operating system releases the lock when
+the process ends, however it ends.
 
 Exit status is listed under `--help` and here; `--help` prints `EXIT_DOC`. A test
 in `scripts/test_mutate.py` fails when the rows of this table and `EXIT_DOC` differ
@@ -211,15 +222,19 @@ in either direction: a row with no entry, an entry with no row, or a different m
 |--------|---------|
 | 0 | every selected mutant KILLED, every restore verified, tree unchanged, no SHARED-TEXT |
 | 1 | a mutant SURVIVED or was INVALID, a restore failed, or the tree changed |
-| 2 | refused before planting: usage error, malformed spec, not a git checkout, or uncommitted changes |
+| 2 | refused before anything was planted; the message names the cause |
 | 3 | a required tool (git, or go for a Go mutant) is not installed or cannot answer |
 | 4 | every mutant KILLED, but a mutant and its mirror fail with the same message |
 | 5 | interrupted by a signal or Ctrl-C; the planted file, if any, was restored and verified |
 
-An interrupt by SIGINT, SIGTERM or SIGHUP stops the run. If a planted file is
-not restored and verified, the run prints `RESTORE FAILED` with the path of the
-saved original and exits 1 instead of 5, because the file may still hold the
-mutant. A signal that arrives during a restore is held until the restore is done.
+An interrupt by a signal in `HANDLED_SIGNALS` (`scripts/mutate.py`) stops the run.
+Each killer runs in its own process group, and a timeout or an interrupt kills
+that group; a process that leaves the group (`setsid`, a double fork) is not
+reached. If a planted file is not restored and verified, the run prints
+`RESTORE FAILED` with the path of the saved original and exits 1 instead of 5,
+because the file may still hold the mutant. A restore that never ran counts as
+not verified. A signal that arrives during a restore is held until the restore is
+done.
 
 A SIGKILL or a power loss skips every restore. Nothing in the runner can
 handle those; the next run refuses on the dirty file and names the saved copy

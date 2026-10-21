@@ -10,20 +10,34 @@ For each active mutant, or each one named with --ids:
   2. locate `before` exactly as scripts/check_mutants.py does, and stop if it is not there;
   3. save a copy of the file, plant the edit alone, and run the mutant's killers,
      each run bounded by --timeout;
-  4. restore the original bytes in a finally block, then verify the restore
-     three ways: the bytes equal the original, cmp matches the saved copy, and
-     the file is clean against HEAD.
+  4. restore the original bytes in a finally block, then verify the restore:
+     the bytes equal the original, cmp matches the saved copy, and the file is
+     clean against HEAD.
 
 A planted file is recorded in mutate-unrestored.json in the git directory before it is planted.
 The entry is removed only when its restore is verified, so a refusal on a dirty
-file can name the directory that holds that file's saved original.
+file can name the directory that holds that file's saved original. The marker is
+replaced atomically (a temporary file in the git directory, fsynced, then renamed),
+so a kill cannot leave it half-written. A marker that does not parse refuses the
+run, and the message names the file and the recovery step.
 
-SIGINT, SIGTERM and SIGHUP are handled while the run lasts. The first one raises
-Interrupted where the run is, and the finally block restores the file. A signal
-that arrives during a restore is recorded and acted on once the restore is done.
-A signal the parent set to ignore, such as SIGHUP under nohup, stays ignored.
-Each killer runs in its own process group; a timeout or an interrupt kills the
-whole group, so nothing the killer started keeps running on the mutated file.
+One run at a time: a run holds an exclusive lock on mutate.lock in the git
+directory, and a second run refuses. Two runs on one working tree would plant over
+each other's files and read each other's mutants, so the lock is a correctness
+rule and not only a guard for the marker. The lock is released when the process
+ends, however it ends.
+
+POSIX only: the runner needs process groups, flock and O_NOFOLLOW, and main()
+refuses on a platform without them.
+
+The signals in HANDLED_SIGNALS are handled while the run lasts. The first one
+raises Interrupted where the run is, and the finally block restores the file. A
+signal that arrives during a restore is recorded and acted on once the restore is
+done. A handled signal the parent set to ignore, as nohup does, stays ignored.
+Each killer runs in its own process group, and a timeout or an interrupt SIGKILLs
+that group. A process the killer started that stays in the group stops with it. A
+process that leaves the group (setsid, a double fork) is not reached, and the
+group is not killed when the killer exits normally.
 
 Each killer's full, untruncated output goes to a per-mutant log. The summary
 prints one line per mutant: its verdict, how many killers failed, and the first
@@ -61,6 +75,11 @@ import subprocess
 import sys
 import tempfile
 
+try:
+    import fcntl
+except ImportError:  # not POSIX: the import is guarded only so main() can refuse with a message
+    fcntl = None
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import check_mutants as cm  # noqa: E402  (must follow the sys.path insert)
@@ -69,8 +88,11 @@ ROOT = cm.ROOT
 RULE = "=" * 70
 DEFAULT_TIMEOUT = 600.0  # seconds per killer run; matches go test's own default of ten minutes
 MARKER_NAME = "mutate-unrestored.json"  # in the git directory: one entry per planted file not yet verified restored
+LOCK_NAME = "mutate.lock"  # in the git directory: held, exclusively, for the length of a run
+POSIX = os.name == "posix" and fcntl is not None
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
-# The signals that stop a run. Each is routed to _interrupt while the run lasts.
+# The signals that stop a run. Each is routed to _interrupt while the run lasts. The
+# names are looked up so the module still imports off POSIX, where main() refuses.
 HANDLED_SIGNALS = tuple(getattr(signal, name) for name in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, name))
 # The traceback Python prints for a suite that does not compile: a File line with
 # no ", in <name>" suffix (a runtime traceback frame has one), then the
@@ -86,7 +108,7 @@ EXIT_INTERRUPTED = 5
 EXIT_DOC = {
     EXIT_OK: "every selected mutant KILLED, every restore verified, tree unchanged, no SHARED-TEXT",
     EXIT_FAILED: "a mutant SURVIVED or was INVALID, a restore failed, or the tree changed",
-    EXIT_REFUSED: "refused before planting: usage error, malformed spec, not a git checkout, or uncommitted changes",
+    EXIT_REFUSED: "refused before anything was planted; the message names the cause",
     EXIT_NO_TOOL: "a required tool (git, or go for a Go mutant) is not installed or cannot answer",
     EXIT_SHARED: "every mutant KILLED, but a mutant and its mirror fail with the same message",
     EXIT_INTERRUPTED: "interrupted by a signal or Ctrl-C; the planted file, if any, was restored and verified",
@@ -102,8 +124,8 @@ class Outcome:
         self.killers = []                 # (selector, status, message) per killer
         self.first_failure = None         # (selector, message) of the first failing killer
         self.problems = []                # reasons a verdict is INVALID or a restore failed
-        self.restore_ok = True            # False once a restore is not verified; only meaningful when planted
-        self.planted = False              # True once the mutated bytes are about to be written
+        self.restore_ok = True            # while planted: False until the restore is verified and its marker entry cleared
+        self.planted = False              # True from just before the plant is recorded; reset if recording is refused
         self.relpath = None               # the file this mutant edits, relative to the repository
         self.saved = None                 # the saved copy of that file's original bytes
         self.log = None
@@ -112,6 +134,10 @@ class Outcome:
 
 class ToolError(Exception):
     """git or go could not run, or git could not answer. The run cannot be trusted."""
+
+
+class RunLocked(Exception):
+    """Another run holds the lock, or the lock cannot be taken. Nothing has been planted."""
 
 
 class Interrupted(Exception):
@@ -150,30 +176,86 @@ def read_marker(path):
     """
     The unrestored plants recorded at `path`: a dict keyed by repository-relative
     file path, each value {"id", "log_dir", "orig"}. A missing marker is empty.
-    Refuses to follow a symlink. Raises OSError or ValueError when the marker
-    cannot be read or does not parse, so a caller never overwrites what it cannot read.
+    Refuses to follow a symlink. Raises OSError when the marker cannot be opened
+    and ValueError when it does not parse, so a caller never overwrites what it
+    cannot read. The ValueError names the file and the recovery step.
     """
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError:
         return {}
     with os.fdopen(fd, encoding="utf-8") as handle:
-        data = json.load(handle)
+        try:
+            data = json.load(handle)
+        except ValueError as exc:  # JSONDecodeError and UnicodeDecodeError are both ValueErrors
+            raise ValueError(_unreadable_marker(path, str(exc))) from exc
     if not isinstance(data, dict):
-        raise ValueError(f"{path} does not hold a JSON object")
+        raise ValueError(_unreadable_marker(path, "it does not hold a JSON object"))
     return data
+
+
+def _unreadable_marker(path, reason):
+    """The refusal text for a marker that cannot be parsed: the file, why, and what to do."""
+    return (f"the marker {path} cannot be parsed ({reason}). A run that was killed may have left a file "
+            f"planted: run `git status`, restore any modified file with `git checkout -- <file>`, "
+            f"then delete {path} and run again")
 
 
 def write_marker(path, data):
     """
-    Replace the marker at `path` with `data`. A new marker is created 0600. The
-    write never follows a symlink (O_NOFOLLOW), so a planted link cannot redirect it.
-    Raises OSError on failure.
+    Replace the marker at `path` with `data`, atomically: the text goes to a new
+    temporary file in the same directory (created 0600, O_EXCL and O_NOFOLLOW),
+    is fsynced, and is renamed over `path`. A kill leaves the old marker or the new
+    one, never a partial file. The rename replaces a symlink at `path` rather than
+    following it, so a planted link cannot redirect the write. A kill can leave the
+    temporary file behind; it is not read. Raises OSError on failure.
     """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    tmp = f"{path}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:  # make the rename itself durable; the marker is already in place if this fails
+        dir_fd = os.open(os.path.dirname(path) or ".", os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+    except OSError:
+        pass
+
+
+def acquire_run_lock(path):
+    """
+    Take the exclusive run lock: flock on `path`, created 0600, never following a
+    symlink, non-blocking. Returns the open descriptor; closing it releases the lock,
+    and so does the process ending. Raises RunLocked when another run holds it or
+    the lock cannot be taken.
+    """
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    except OSError as exc:
+        raise RunLocked(f"cannot open the run lock {path}: {exc}") from exc
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        os.close(fd)
+        raise RunLocked(f"another mutate run holds {path}; two runs on one working tree would "
+                        f"plant over each other") from exc
+    except OSError as exc:
+        os.close(fd)
+        raise RunLocked(f"cannot take the run lock {path}: {exc}") from exc
+    return fd
 
 
 def record_plant(path, relpath, ident, log_dir, saved):
@@ -300,9 +382,10 @@ def parse_go(output, parent, sub):
 
 def _kill_group(proc):
     """
-    SIGKILL the process group that `proc` leads, so its children and grandchildren
-    die with it. Called only while `proc` is not yet reaped, so its group id cannot
-    have been reused. A group that has already gone is not an error.
+    SIGKILL the process group that `proc` leads: every process still in that group
+    dies with it. A process that left the group is not reached. Called only while
+    `proc` is not yet reaped, so its group id cannot have been reused. A group that
+    has already gone is not an error.
     """
     try:
         os.killpg(proc.pid, signal.SIGKILL)
@@ -312,10 +395,10 @@ def _kill_group(proc):
 
 def _run_group(cmd, cwd, env, timeout):
     """
-    subprocess.run() for one killer. The killer leads its own session, so a timeout
-    or an interrupt kills the whole group. Returns a CompletedProcess. On a timeout
-    or an interrupt the group is killed, the leader is reaped, and the exception is
-    re-raised. The pipes are not read after the kill, because a grandchild that
+    subprocess.run() for one killer. The killer leads its own session and process
+    group. Returns a CompletedProcess. On a timeout or an interrupt the group is
+    killed (see _kill_group), the leader is reaped, and the exception is re-raised.
+    A normal exit does not kill the group. The pipes are not read after the kill, because a grandchild that
     outlived the group could hold them open.
     """
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -393,12 +476,14 @@ def _interrupt(signum, _frame):
 
 def restore_and_verify(out, path, relpath, original, saved, marker):
     """
-    Write the original bytes back, verify the restore three ways (bytes, cmp
-    against the saved copy, clean against HEAD), and remove the file's entry from
-    the marker only when all three hold. The verdict goes on `out`: restore_ok,
-    and a RESTORE FAILED problem naming the saved copy when a check fails. Never
-    raises. While it runs, signals are recorded in out.late_signals rather than
-    raised, so a second signal cannot skip the restore.
+    Write the original bytes back, verify the restore (bytes, cmp against the
+    saved copy, clean against HEAD), and remove the file's entry from the marker
+    only when all three hold. The verdict goes on `out`: restore_ok becomes True
+    only after the entry is cleared, and stays False with a RESTORE FAILED problem
+    naming the saved copy when a check fails. OSError, ValueError and ToolError are
+    caught. Once it has set _DEFERRED, signals are recorded in out.late_signals
+    rather than raised; a signal that lands before that raises Interrupted out of
+    this function, and restore_until_done() runs it again.
     """
     global _DEFERRED
     _DEFERRED = out.late_signals
@@ -417,6 +502,7 @@ def restore_and_verify(out, path, relpath, original, saved, marker):
                     f"cmp-equal={same_copy} git-clean={clean}; original saved at {saved}")
                 return
             clear_plant(marker, relpath)
+            out.restore_ok = True
         except (OSError, ValueError, ToolError) as exc:
             out.restore_ok = False
             out.problems.append(f"RESTORE FAILED for {relpath}: {exc}; original saved at {saved}")
@@ -424,13 +510,31 @@ def restore_and_verify(out, path, relpath, original, saved, marker):
         _DEFERRED = None
 
 
+def restore_until_done(out, path, relpath, original, saved, marker):
+    """
+    restore_and_verify(), run again when a signal lands before it has started
+    deferring signals. It is safe to repeat: it writes the same bytes and clearing an
+    absent marker entry changes nothing. The signal is recorded in out.late_signals.
+    """
+    while True:
+        try:
+            restore_and_verify(out, path, relpath, original, saved, marker)
+            return
+        except Interrupted as exc:
+            out.late_signals.append(str(exc))
+
+
 def mutate_one(entry, log_dir, timeout, out=None):
     """
     Plant one mutant, run its killers, restore, and verify the restore.
     Returns an Outcome. `out`, when given, is the Outcome to fill in, so a caller
-    that catches an interrupt still holds the restore verdict. The file is restored
-    in a finally block whatever happens. Raises ToolError when git cannot answer
-    the clean-tree check, and Interrupted when a signal lands during the run.
+    that catches an interrupt still holds the restore verdict. From just before
+    the plant is recorded, out.planted is True and out.restore_ok is False until
+    the restore is verified, so a restore that never ran reads as a failed one. The
+    restore runs in a finally block that covers the recording, the write and the
+    killers; it is skipped only when recording the plant was refused, and then
+    nothing was written. Raises ToolError when git cannot answer the clean-tree
+    check, and Interrupted when a signal lands during the run.
     """
     if out is None:
         out = Outcome(entry["id"])
@@ -458,21 +562,28 @@ def mutate_one(entry, log_dir, timeout, out=None):
         handle.write(original)
     mutated = text[:pos] + entry["after"] + text[pos + len(entry["before"]):]
     marker = os.path.join(git_dir(), MARKER_NAME)
+    out.planted = True      # before the marker is written: from here an exit that skips the restore reads as unrestored
+    out.restore_ok = False
+    refused = False
     try:
-        record_plant(marker, relpath, entry["id"], log_dir, saved)
-    except (OSError, ValueError) as exc:
-        out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
-        return out
-    with open(out.log, "w", encoding="utf-8") as log:
-        log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
-        log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
-        out.planted = True
         try:
+            record_plant(marker, relpath, entry["id"], log_dir, saved)
+        except (OSError, ValueError) as exc:
+            refused = True
+            out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
+            return out
+        with open(out.log, "w", encoding="utf-8") as log:
+            log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
+            log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
             with open(path, "wb") as handle:
                 handle.write(mutated.encode("utf-8"))
             out.killers = run_killers(entry, log, timeout)
-        finally:
-            restore_and_verify(out, path, relpath, original, saved, marker)
+    finally:
+        if refused:  # nothing was recorded and nothing was written
+            out.planted = False
+            out.restore_ok = True
+        else:
+            restore_until_done(out, path, relpath, original, saved, marker)
     failing = [(sel, msg) for sel, st, msg in out.killers if st in ("FAIL", "ERROR")]
     not_run = [sel for sel, st, _ in out.killers if st == "NOT-RUN"]
     timed_out = [sel for sel, st, _ in out.killers if st == "TIMEOUT"]
@@ -526,10 +637,17 @@ def restore_handlers(installed):
     """
     Put back the dispositions install_handlers() replaced. getsignal() returns None
     for a handler that was not set from Python, and signal() cannot take None back,
-    so that one is restored to SIG_DFL.
+    so that one is restored to SIG_DFL. The handled signals are blocked while the
+    dispositions go back, so a signal in that window is held and then delivered to
+    the restored disposition, instead of raising Interrupted out of main() with the
+    rest not yet put back.
     """
-    for sig, prior in installed.items():
-        signal.signal(sig, signal.SIG_DFL if prior is None else prior)
+    old_mask = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
+    try:
+        for sig, prior in installed.items():
+            signal.signal(sig, signal.SIG_DFL if prior is None else prior)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, old_mask)
 
 
 def finish_early(outcomes, current, exit_status):
@@ -574,6 +692,10 @@ def main(argv=None):
     parser.add_argument("--timeout", type=_positive_timeout, default=DEFAULT_TIMEOUT,
                         help=f"seconds allowed for each killer run (default {DEFAULT_TIMEOUT:g})")
     args = parser.parse_args(argv)
+    if not POSIX:
+        print("mutate: POSIX only; the runner needs process groups, flock and O_NOFOLLOW, "
+              "and this platform has none of them. Nothing was planted")
+        return EXIT_REFUSED
     try:
         spec = cm.load_spec()
     except (OSError, ValueError) as exc:
@@ -608,7 +730,33 @@ def main(argv=None):
         if git(["rev-parse", "--git-dir"]).returncode != 0:
             print("mutate: not a git checkout; the clean-tree guard cannot run")
             return EXIT_REFUSED
-        marker = os.path.join(git_dir(), MARKER_NAME)
+        git_directory = git_dir()
+    except ToolError as exc:
+        print(f"mutate: {exc}")
+        return EXIT_NO_TOOL
+    # The lock comes before any read of the tree or the marker, so another run's planted file
+    # is never mistaken for a leftover of an earlier one.
+    try:
+        lock = acquire_run_lock(os.path.join(git_directory, LOCK_NAME))
+    except RunLocked as exc:
+        print(f"mutate: {exc}")
+        return EXIT_REFUSED
+    try:
+        return run_locked(args, chosen, os.path.join(git_directory, MARKER_NAME))
+    finally:
+        os.close(lock)
+
+
+def run_locked(args, chosen, marker):
+    """The part of a run that holds the run lock: the clean-tree check, the loop, and the verdict. Returns the exit status."""
+    try:
+        try:
+            read_marker(marker)
+        except ValueError as exc:  # unparseable: refuse before planting anything, with its recovery step
+            print(f"mutate: {exc}")
+            return EXIT_REFUSED
+        except OSError:
+            pass  # an unopenable marker is reported by the refusal below or by the plant, with its cause
         dirty = sorted({e["file"] for e in chosen if not tree_clean(e["file"])})
         notes = {relpath: saved_original_note(relpath, marker) for relpath in dirty}
     except ToolError as exc:
