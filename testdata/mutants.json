@@ -2318,7 +2318,7 @@
       "line": 529,
       "before": "stripped=\"$(tr -d '[:space:]' <\"$gtmp/listing\")\"",
       "after": "stripped=\"$(cat \"$gtmp/listing\")\"; stripped=\"${stripped//[[:space:]]/}\"",
-      "property": "The listing is stripped of whitespace with tr; the mutant strips it with a bash pattern substitution, which is quadratic in the listing's length",
+      "property": "The listing is stripped of whitespace with tr; the mutant strips it with a bash pattern substitution, which took about 5 s on a 10.6 KB listing and did not finish in 60 s on a 32 KB one",
       "mirror": "GUARD-STRIP-NONE",
       "suite": "scripts/test_triage_run.py",
       "killers": [
