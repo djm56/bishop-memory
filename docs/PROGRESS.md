@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase 1 is on `feat/portability-phase1` at `718cb7a`, not yet on `main`. The reconciler items marked done on `fix/reconciler-integrity` are on that branch, not on `main`.
+Last updated: 2026-10-20, against `main` at `1c4def9`. Harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`). The live memoryd has not been redeployed, so items about its live behaviour stay unticked.
 
 ## Summary
 
@@ -15,11 +15,11 @@ Last updated: 2026-10-20, against `main` at `250202c`. Harness portability phase
 | Memory insight | 7 | 14 | 33% |
 | Mission HUD | 17 | 6 | 74% |
 | Triage & grading | 10 | 14 | 42% |
-| Reconciler | 0 | 13 | 0% |
+| Reconciler | 2 | 11 | 15% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 8 | 2 | 80% |
-| Harness portability | 0 | 8 | 0% |
-| **Total** | **55** | **77** | **42%** |
+| Harness portability | 1 | 7 | 13% |
+| **Total** | **58** | **74** | **44%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -136,7 +136,7 @@ Plan: [plans/MISSION-HUD-PLAN.md](plans/MISSION-HUD-PLAN.md)
 - [ ] Triage category rail is mouse-only, with no keyboard access ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [ ] Pager focus edge cases on the HUD pages ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
 - [x] Stray `bin/memoryd.new` (about 36 MB, gitignored) removed. Evidence: removed 2026-10-20, mission-20261020-02 step 1; identical rollback kept at `~/.local/libexec/bishop-memory/memoryd.pre-mission-20261018-03`. Rollback identity verified: the removed file's sha1 was recorded at step 1 as `1f9e921b143981614691705920ce60e44d2490c5`, and the rollback's `shasum` is the same. Operational action on the live system, not code, so there is no commit. ([§8](plans/MISSION-HUD-PLAN.md#8-outstanding))
-- [ ] Live memoryd matches the plan's `b15baa93` (partial: the binary's hash matches; the running process has not been inspected) ([header](plans/MISSION-HUD-PLAN.md))
+- [ ] Live memoryd matches the plan's `b15baa93` (partial: the binary's hash matches; the running process has not been inspected; needs memoryd redeploy to carry the flight-recorder paging on `main` through PR #9, `1c4def9`) ([header](plans/MISSION-HUD-PLAN.md))
 - [x] `mission-20261009-02` closed complete/failed (abandoned by operator) 2026-10-20 via PATCH. Evidence: a live read of `GET /v1/missions/mission-20261009-02` on 2026-10-20 returns `status` complete, `outcome` failed, `closed_at` 2026-10-20 08:18:34 and `next_action` "Abandoned by operator 2026-10-20 (mission-20261020-02); not run." The read shows the state only; the PATCH method is operator-reported. Operational action on the live system, not code, so there is no commit. ([ROADMAP](ROADMAP.md#planned-work))
 
 ## Triage & grading
@@ -175,9 +175,9 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 Plan: none. The items are in [ROADMAP](ROADMAP.md#reconciler) and
 [ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository).
 
-- [ ] An unrecognised step status is dropped silently by `parse_steps` in `scripts/reconcile-memory.py` (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler)) (done on fix/reconciler-integrity; ticks when on main)
+- [x] An unrecognised step status is warned and counted, not dropped: `parse_steps` in `scripts/reconcile-memory.py` sends the step without a status, names the raw value in a `[WARN]` line, and counts it as `warned` (`scripts/reconcile-memory.py:583, 908-911`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] The `[flight-recorder]` summary does not add up to `parsed` (open; code reading only) ([ROADMAP](ROADMAP.md#reconciler))
-- [ ] The journal's `warned` counter is never incremented (open, confirmed) ([ROADMAP](ROADMAP.md#reconciler)) (done on fix/reconciler-integrity; ticks when on main)
+- [x] The journal's `warned` counter is incremented once per capped mission, and the cap has its own summary category, `skipped (journal cap)` (`scripts/reconcile-memory.py:1079-1081, 1464-1465`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] `normalize_empty` unescapes `\|` without a reason (open, low) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] A malformed non-string `next_action` triggers a corrective PATCH (unverified; watch only) ([ROADMAP](ROADMAP.md#reconciler))
 - [ ] Replaying FINDINGS.md into an empty database fails some status changes (open; not reproduced on 2026-10-20) ([ROADMAP](ROADMAP.md#reconciler))
@@ -216,10 +216,10 @@ Plan: [plans/NETWORK-DEPLOYMENT-PLAN.md](plans/NETWORK-DEPLOYMENT-PLAN.md) §3.4
 ## Harness portability
 
 Plan: [plans/HARNESS-PORTABILITY-PLAN.md](plans/HARNESS-PORTABILITY-PLAN.md).
-Research and the coupling inventory are done. Phase 1 is built on `feat/portability-phase1` and is not on `main`. The reconciler-bug part of phase 2 is built on `fix/reconciler-integrity`; no other later phase is started.
+Research and the coupling inventory are done. Phase 1 is on `main` through PR #8 (`8437f32`). The reconciler-bug part of phase 2 is on `main` through PR #9 (`1c4def9`). The layout profile and every later phase are not started.
 
-- [ ] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values (done on feat/portability-phase1, 260bb7c^..718cb7a; ticks when on main) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
-- [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (layout profile: not started; reconciler-bug part: done on fix/reconciler-integrity; ticks when on main) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
+- [x] Phase 1: compatibility guard, golden tests on `testdata/memory`, and a seam for the Bishop values — `testdata/golden/`, `internal/importer/golden_test.go`, `internal/profile/profile.go` (PR #8, `8437f32`; commits `260bb7c^..718cb7a`) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-1--compatibility-guard-and-seams-no-behaviour-change))
+- [ ] Phase 2: memory layout profile, and the mission-ID and unknown-status fixes in the reconciler (partial: the mission-ID and unknown-status fixes are on `main` through PR #9, `1c4def9`; the layout profile is not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-2--layout-profile-and-the-reconciler-bugs))
 - [ ] Phase 3: neutral integration contract, generic names and the conformance fixture (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-3--the-integration-contract-and-generic-names))
 - [ ] Phase 4: plain Claude Code adapter (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-4--plain-claude-code-adapter))
 - [ ] Phase 5: OpenCode adapter, including the `AGENTS.md` loading test (not started) ([§7](plans/HARNESS-PORTABILITY-PLAN.md#phase-5--opencode-adapter))

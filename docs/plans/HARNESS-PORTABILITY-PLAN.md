@@ -1,7 +1,9 @@
 # Harness Portability — Plan
 
-**Status as of 2026-10-20: phase 1 built on branch `feat/portability-phase1`
-(commits `260bb7c^..718cb7a`), not on `main`; later phases not started.**
+**Status as of 2026-10-20: phase 1 shipped on `main` through PR #8 (`8437f32`,
+commits `260bb7c^..718cb7a`); the reconciler-bug part of phase 2 shipped on
+`main` through PR #9 (`1c4def9`); the layout profile and later phases not
+started.**
 Phase 1 adds golden tests for the importer and the reconciler's dry-run output,
 the `internal/profile` seam for the Go values, the `BISHOP_LAYOUT` and
 `APPROVER_DEFAULT` seam in the reconciler, and a CI step that runs the Python
@@ -96,7 +98,7 @@ route, the harness registry) is generic. Coupling sits at these edges:
 | Review role is `apone` | `internal/api/crew.go:205` — `importer.CrewName(agentStr) == "apone"` | The reviewer agent is named `apone` in Bishop's crew | Hard-coupled |
 | Crew name normalising | `internal/importer/agents.go:77-84` (`CrewName` strips `@`, lower-cases and strips a `harness:` prefix); example at `:78` ("bishopharnessopencode:hicks") | `@agent` and `harness:agent` forms | Core-generic idea, Bishop-flavoured example |
 | Role from description | `internal/importer/agents.go:117-126` (`roleFrom`) | Bishop's description pattern "Code reviewer (apone). …" | Bishop-specific-but-configurable (degrades to the whole description) |
-| Default harness | `cmd/mcpd/main.go:63-69` (`defaultHarness = "claude-code"`) | A default identity of `claude-code` when unset | Core-generic value, but a silent default that hides a missing registration |
+| Default harness | at `250202c`, `cmd/mcpd/main.go:63-69` (`defaultHarness = "claude-code"`); on `main`, `internal/profile/profile.go:61` (`DefaultHarness`), read at `cmd/mcpd/main.go:98` | A default identity of `claude-code` when unset | Core-generic value, but a silent default that hides a missing registration |
 | Identity composition | `cmd/mcpd/main.go:1460` (`composeAgent`, `<harness>:<agent>`); `:928-947` and `:987-1000` (`flight_recorder_append`, `mission_step_record` require `agent`) | Actor is `<harness>:<agent>` | Core-generic (the pattern is good for any harness) |
 | Sub-agent argument descriptions | `cmd/mcpd/main.go:327` and `:351` ("e.g. \"bishop\", \"hicks\"") | Examples name Bishop crew | Bishop-specific-but-configurable (text only) |
 | Step agent value | `internal/model/mission_step.go:18` (comment: `@bishop`, `@hicks`); `internal/debrief/parser.go:13,19` | `@name` in the Agent cell | Bishop-specific-but-configurable |
@@ -137,17 +139,17 @@ belong in phase 2.
   more, which is the convention, not what the regex enforces. The comment at
   `:48-55` says that a harness-qualified id, whose trailing number
   is not a global sequence number, must not fold into the sequence. The
-  reconciler matches `mission-\d{8}-\d{2}` with no end anchor
+  reconciler matched `mission-\d{8}-\d{2}` with no end anchor at `250202c`
   (`reconcile-memory.py:110`, used at `:561`). A finding that names
   `mission-20261009-100` is linked to `mission-20261009-10`, and a finding that
   names a harness-qualified id such as `mission-20260907-anom-01` is not linked
-  at all. The first is a wrong link. The second is a missed link. On `main` the
-  reconciler reports no warning for these. Built on `fix/reconciler-integrity`,
-  not yet on `main`: see §7 phase 2.
+  at all. The first is a wrong link. The second is a missed link. At `250202c`
+  the reconciler reported no warning for these. Fixed on `main` by PR #9
+  (`1c4def9`): see §7 phase 2.
 - **The reconciler drops unknown step statuses silently**, as ROADMAP already
-  records (`reconcile-memory.py:522` on `main`). Built on `fix/reconciler-integrity`,
-  not yet on `main`: see §7 phase 2.
-- **`defaultHarness` silently substitutes `claude-code`** (`cmd/mcpd/main.go:69`).
+  records (`reconcile-memory.py:522` at `250202c`). Fixed on `main` by PR #9
+  (`1c4def9`): see §7 phase 2.
+- **`defaultHarness` silently substitutes `claude-code`** (`cmd/mcpd/main.go:69` at `250202c`; on `main`, `DefaultHarness` in `internal/profile/profile.go:61`).
   A harness that forgets to set `BISHOP_HARNESS` writes its audit rows under the
   wrong identity. For any harness other than Claude Code this is a trap.
 
@@ -564,14 +566,14 @@ added, with no change to the output. A reviewer can diff the dry-run output.
 
 ### Phase 2 — Layout profile and the reconciler bugs
 
-**Status.** The reconciler-bug part (the mission-ID extraction rule and the unknown-status warning, below) is built on `fix/reconciler-integrity` and is not on `main`. The layout profile is not started.
+**Status.** The reconciler-bug part (the mission-ID extraction rule and the unknown-status warning, below) shipped on `main` through PR #9 (`1c4def9`). The layout profile is not started.
 
 **Work.** Move the layout (§2.2) into a profile with the Bishop profile as the
 default. Settle the profile format (H4). Fix the mission-ID mismatch (§2.7) in
 the reconciler with the extraction rule below (H6), and make unknown step statuses a counted warning, not a silent drop.
 Make DEBRIEF headings and the verdict line profile-driven.
 
-The extraction rule runs on the free-text `**Mission**` value in `mission_candidate` (`scripts/reconcile-memory.py:613`, called from `parse_findings` at `:639`), and replaces the two-digit `MISSION_ID` pattern that §2.3 records on `main` at `:110`. On `fix/reconciler-integrity` the pattern is `MISSION_CANDIDATE` at `:155`, and the exact-match link is at `:645`. The candidate is
+The extraction rule runs on the free-text `**Mission**` value in `mission_candidate` (`scripts/reconcile-memory.py:613`, called from `parse_findings` at `:639`), and replaces the two-digit `MISSION_ID` pattern that §2.3 records at `250202c`, `:110`. On `main` (`1c4def9`) the pattern is `MISSION_CANDIDATE` at `:155`, and the exact-match link is at `:645`. The candidate is
 `(?<![A-Za-z0-9-])mission-\d{8}-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`, matched greedily,
 so it runs to the end of the id and never stops at a hyphen. A finding is linked
 only when the candidate equals a known mission id exactly. A candidate that equals
@@ -610,7 +612,7 @@ trailing-text case.
 `task_*` aliases (if H2 says yes), and neutral environment names with the
 `BISHOP_*` names still accepted (H3). Remove `.claude/bishop-memory.conf` from
 tool descriptions and error text in favour of "the harness's registration".
-Make the `defaultHarness` silent fallback warn on stderr while the
+Make the default harness identity (`DefaultHarness`, `internal/profile/profile.go:61`) warn on stderr while the
 non-Bishop profile test is false, and refuse while it is true (§4.5, H5). Publish a conformance fixture that a harness author can run.
 
 **Exit.** A fixture harness with no Bishop files can register, write a task, a
