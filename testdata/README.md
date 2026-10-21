@@ -289,29 +289,90 @@ Retired rows are not applied; their targets are no longer in the tree:
 
 ### Guard mutants: not recorded, and why
 
-The guard's tests in `scripts/test_triage_run.py` cover invariants that have no row above. Each one is either recorded with its mirror, or listed here with the reason it is not.
+The rule for the tests in `scripts/test_triage_run.py`: an invariant a test pins has a row above with its mirror, or an entry here with the reason it has none. This sweep, run from the repository root, prints every test that is no row's killer. Each name it prints is named in an entry below, and a name it prints that is not named below is a gap in this record.
 
-- **Last covering rule (`covering[-1]` read as `covering[0]`).** Not recorded. The grader's listing has two covering rules, an allow at rule 0 and the deny at rule 4, so the wrong choice fails the accept test and the refusal test for the last covering rule. Both were run by hand against a scratch copy. The choice has no distinct opposite edge to pair with, so it has no row.
-- **A refusal mapped to exit 4 (the 2-to-4 mutant).** Not recorded. Its opposite edge is GUARD-PY-REFUSE, which is already paired with GUARD-PY-ACCEPT. Recording it would re-pair an existing row, which this record does not do.
-- **The positive control read one rule early (`range(last - 1, ...)`).** Not recorded. The first-rule pair is GUARD-FIRST-SKIP and GUARD-FIRST-DENY-REFUSE; the early read has no unused partner.
-- **Permission-block parse shapes with no row** (a tab-indented rule, single-quoted keys, an empty nested effect, an unreadable line). Their tests state the path they take. No row is recorded for them, and their docstrings claim no kill.
+    import json, re
+    spec = json.load(open("testdata/mutants.json"))["mutants"]
+    killers = {k for m in spec if m["status"] == "active" and m.get("suite") == "scripts/test_triage_run.py" for k in m["killers"]}
+    cls = None
+    for line in open("scripts/test_triage_run.py", encoding="utf8"):
+        c = re.match(r"class (\w+)\(", line)
+        cls = c.group(1) if c else cls
+        t = re.match(r"    def (test_\w+)\(", line)
+        if t and "%s.%s" % (cls, t.group(1)) not in killers:
+            print("%s.%s" % (cls, t.group(1)))
+
+It printed, when this section was written:
+
+    GuardAccepts.test_guard_accepts_a_definition_with_single_quoted_keys_and_values
+    GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_fails
+    GuardCannotCheck.test_guard_cannot_check_an_unmatched_quote_in_a_rule
+    GuardCannotCheck.test_guard_cannot_check_a_tab_indented_rule_in_the_permission_block
+    GuardCannotCheck.test_guard_cannot_check_an_odd_indent_in_the_permission_block
+    GuardCannotCheck.test_guard_cannot_check_a_nested_permission_line_with_no_value
+    GuardCannotCheck.test_guard_cannot_check_a_nested_permission_line_with_no_action
+    GuardPositiveControl.test_guard_accepts_an_edit_allow_directly_before_the_final_deny
+    GuardPositiveControl.test_guard_accepts_an_edit_allow_that_a_later_deny_overrides
+    RunReportsErrors.test_run_error_event_message_reaches_the_log
+    RunReportsErrors.test_run_nonzero_exit_points_at_the_result_file
+
+Entries for those names, and for invariants a row does not pin on its own:
+
+- **Last covering rule (`covering[-1]` read as `covering[0]`).** Not recorded. The grader's listing has two covering rules, an allow at rule 0 and the deny at rule 4, so the wrong choice fails the accept test and the refusal test for the last covering rule. Both were reported as run by hand against a scratch copy in an earlier round; they were not re-run for this record. The choice has no distinct opposite edge to pair with, so it has no row. The line is `scripts/triage-run.sh:298`.
+- **A refusal mapped to exit 4 (the 2-to-4 mutant).** Not recorded. Its opposite edge is GUARD-PY-REFUSE, which is already paired with GUARD-PY-ACCEPT. Recording it would re-pair an existing row, which this record does not do. The lines are `scripts/triage-run.sh:458` and `:461`.
+- **The positive control read one rule early (`range(last - 1, ...)`).** Not recorded. The two tests `GuardPositiveControl.test_guard_accepts_an_edit_allow_directly_before_the_final_deny` and `GuardPositiveControl.test_guard_accepts_an_edit_allow_that_a_later_deny_overrides` are the controls that would catch it, and no row names them. The first-rule pair is GUARD-FIRST-SKIP and GUARD-FIRST-DENY-REFUSE; the early read has no unused partner.
+- **Permission-block parse shapes with no row**: `test_guard_accepts_a_definition_with_single_quoted_keys_and_values`, `test_guard_cannot_check_an_unmatched_quote_in_a_rule`, `test_guard_cannot_check_a_tab_indented_rule_in_the_permission_block`, `test_guard_cannot_check_an_odd_indent_in_the_permission_block`, `test_guard_cannot_check_a_nested_permission_line_with_no_value` and `test_guard_cannot_check_a_nested_permission_line_with_no_action`. The reason is that the edit each would need is the removal of one `raise CannotCheck("... cannot read permission line ...")` (`scripts/triage-run.sh:347`, `:355`, `:365`) or of the pattern that feeds it, and the opposite edge of that is a shape read as a rule, which GUARD-NEST-DROP and GUARD-COMMENT-INDENT already pair elsewhere. A row would re-pair them. Their docstrings state the path they take and claim no kill.
+- **`GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_fails`.** Not recorded on its own: `GuardCannotCheck.test_guard_cannot_check_when_opencode_debug_fails_even_with_a_listing` is the killer of GUARD-DEBUG-ACCEPT, and this test differs only in printing no listing. It adds no edge.
+- **`RunReportsErrors.test_run_error_event_message_reaches_the_log` and `RunReportsErrors.test_run_nonzero_exit_points_at_the_result_file`.** Not recorded, and there is no better reason than that: they test how `run_agent` reports a failed run (the error event, the non-zero exit), not the guard, they came with the OpenCode port (cdd0ad8), and no mutant was planted against them in this change. This is a gap in the record, named so that it is not read as covered.
+- **The layered config's contents.** `test_run_is_started_standalone_without_pure_and_with_the_layered_config` checks the config only for the text `bishop-triage`. GUARD-RUN-STANDALONE-OFF and GUARD-RUN-PURE-ADD pin its two flag assertions; no row pins the config's other keys, which no test asserts.
+- **Pairs that are not opposite edges.** Each is two faults in one area, and the property of each row says what it removes. GUARD-DEF-OS-OFF (the error branch removed) and GUARD-READ-ASCII (the decode changed) are both on the definition read. GUARD-STRIP-BASH (tr replaced by a slow substitution) and GUARD-STRIP-NONE (no stripping) are both on the emptiness check of the listing. GUARD-DEF-UTF8-OFF (the decode error clause removed) and GUARD-DEF-UTF8-LAX (bad bytes replaced) are both on a definition that is not UTF-8; the opposite edge of both, a valid non-ASCII definition read as UTF-8, is GUARD-READ-ASCII, which is already paired. GUARD-COVER-OR (a rule covers by either star) and GUARD-COVER-DENY-ONLY (only a deny covers) widen the covering rule by shape and narrow it by effect. The four GUARD-PREC rows are the ends of the order flag, then environment, then file: GUARD-PREC-FILE-OVER-FLAG and GUARD-PREC-FILE-IGNORED, GUARD-PREC-FILE-OVER-ENV and GUARD-PREC-ENV-OVER-FLAG.
 - **The timeout pair.** GUARD-TIMEOUT-OFF removes the bound and GUARD-TIMEOUT-CODE changes the status the reason is keyed on. Both act on the timeout path: two faults on one side, not opposite edges. They stay paired as recorded, and their properties say what each removes. The bound's opposite edges are GUARD-TIMEOUT-SHORT and GUARD-TIMEOUT-LONG.
-- **GUARD-STRIP-BASH and GUARD-TIMEOUT-LONG** are killed by the run's 30-second limit, not by the 3-second bound in the live-size test. The bound is a backstop.
+- **Kills by the run's time limit.** In the final run, GUARD-STRIP-BASH, GUARD-TIMEOUT-LONG, GUARD-TIMEOUT-OFF and GUARD-RETRY-UNBOUNDED fail with `triage-run.sh did not finish within 30 seconds; the run was killed`, which is `run_script`'s limit and not an assertion about time. The 10-second bound in the live-size test is a backstop that these mutants do not reach.
+- **GUARD-STRIP-BASH depends on the host's bash.** The kill rests on `/bin/bash` being slow on a pattern substitution. On the bash 3.2.57 of this macOS host it is. On a bash 5 it may not be; that was not tried here. The runner is POSIX only, and the script targets macOS bash 3.2. Timed with this command, in an environment with no `LANG` or `LC_*`, as the tests run it:
+
+      import json, os, subprocess, tempfile, time
+
+      SUBST = 'stripped="$(cat "$1")"; stripped="${stripped//[[:space:]]/}"; echo "${#stripped}"'
+      TR = 'stripped="$(tr -d \'[:space:]\' <"$1")"; echo "${#stripped}"'
+      env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"]}  # as the tests run it: no LANG, no LC_*
+      for rules in (100, 300):
+          listing = [{"id": "Build", "permissions": [
+              {"action": "read", "resource": "/some/path/%d" % i, "effect": "allow"} for i in range(rules)]}]
+          with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+              json.dump(listing, fh, indent=2)
+          for name, code in (("substitution", SUBST), ("tr", TR)):
+              started = time.monotonic()
+              try:
+                  out = subprocess.run(["/bin/bash", "-c", code, "_", fh.name], env=env, capture_output=True,
+                                       text=True, timeout=60).stdout.strip()
+              except subprocess.TimeoutExpired:
+                  out = "no answer in 60 s"
+              print("%6d bytes  %-12s %5.2f s  %s" % (os.path.getsize(fh.name), name, time.monotonic() - started, out))
+          os.unlink(fh.name)
+
+  Output:
+
+          10646 bytes  substitution  4.96 s  6222
+          10646 bytes  tr            0.01 s  6222
+          32046 bytes  substitution 60.00 s  no answer in 60 s
+          32046 bytes  tr            0.01 s  18822
+
+  The live-size test's listing is 36932 bytes (measured with the test's own construction). The live listing was reported as about 30 KB; that figure was not re-measured. At 10646 bytes the substitution already takes about 5 s here, so any listing near the reported size is far past the runner's 30-second limit.
 
 ### Python subtests and the runner
 
-`scripts/mutate.py` runs each Python killer as a `Class.method` selector. It cannot select a subtest, and `parse_python` keeps only the first failing block of each method. A verdict line therefore names one subtest. Where a killer has subtests, its per-subtest outcome was taken by hand. The mutant was planted in a scratch copy of `scripts/` and `.opencode/agents/`, the repository was not touched, and the single test was run with `-v`:
+`scripts/mutate.py` runs each Python killer as a `Class.method` selector. It cannot select a subtest, and `parse_python` keeps only the first failing block of each method, so a verdict line names one subtest. The unittest process itself runs every subtest, and each mutant's log holds a `FAIL:` block for each one that fails. The table below was generated from the logs of the full run (`make mutate ID=...` over every GUARD row), for the five tests that have subtests; the first assertion is the last `AssertionError` line of each block, cut where it quotes the log. Reproduce it by running the same `make mutate` and reading `grep '^FAIL:'` in each mutant's log, in the log directory the run's first line names. A killer without subtests has one outcome and is not listed.
 
-| Mutant | Test | Subtest | First assertion |
+| Test | Subtests that fail, with the first assertion | Subtests that do not fail | Mutants |
 |---|---|---|---|
-| GUARD-NOCOVER-OFF | `GuardRefuses.test_guard_refuses_a_listing_with_no_rule_covering_every_action` | `action='**'` | `0 != 2` |
-| GUARD-NOCOVER-OFF | (as above) | `action='*/*'` | `0 != 2` |
-| GUARD-EMPTY-OFF | `GuardRefuses.test_guard_refuses_a_listing_with_missing_or_empty_permissions` | `permissions='missing'` | `4 != 2` (TypeError) |
-| GUARD-EMPTY-OFF | (as above) | `permissions='empty'` | `'agent mission-grader lists no permission rules' not found` |
-| GUARD-LIST-OFF | `GuardCannotCheck.test_guard_cannot_check_a_listing_that_is_not_a_list` | `listing='object'` | `2 != 4` |
-| GUARD-LIST-OFF | (as above) | `listing='scalar'` | `'the agent listing is not a list' not found` |
-| GUARD-TMO-LOOSE | `GuardTimeoutValue.test_guard_timeout_that_is_not_a_whole_number_of_seconds_exits_64` | `value='0'` | `0 != 64` (`'1.5'`, `'abc'`, `'30x'` and `'-1'` pass) |
-| GUARD-DEF-DESC-FLIP | `GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it` | each of the three agents | `4 != 0` |
+| `GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it` | `agent=findings-classifier`: `2 != 0`; `agent=findings-processor`: `2 != 0`; `agent=mission-grader`: `2 != 0` | none | GUARD-DESC-FLIP, GUARD-BODY-FLIP, GUARD-MODE-FLIP, GUARD-COVER-FLIP, GUARD-CLAST-FLIP, GUARD-ACTION-FLIP, GUARD-DENY-STAR, GUARD-PREFIX-OFF, GUARD-EMPTY-FLIP, GUARD-FILE-EMPTY, GUARD-INBLOCK-ALWAYS |
+| `GuardRefuses.test_guard_refuses_a_listing_with_no_rule_covering_every_action` | `action=**`: `0 != 2`; `action=*/*`: `0 != 2` | none | GUARD-NOCOVER-OFF |
+| `GuardRefuses.test_guard_refuses_a_listing_with_missing_or_empty_permissions` | `permissions=missing`: `4 != 2`; `permissions=empty`: `'agent mission-grader lists no permission rules' not found` | none | GUARD-EMPTY-OFF |
+| `GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it` | `agent=findings-classifier`: `4 != 0`; `agent=findings-processor`: `4 != 0`; `agent=mission-grader`: `4 != 0` | none | GUARD-DEBUG-OK-FAIL, GUARD-PERL-FLIP, GUARD-SHAPE-DENY-REFUSE, GUARD-LIST-FLIP, GUARD-DEF-DESC-FLIP, GUARD-DEF-MODE-FLIP, GUARD-DEF-FIRST-FLIP, GUARD-DEF-CLOSE-FLIP, GUARD-PY3-FLIP, GUARD-DESC-RE-STRICT, GUARD-MODE-RE-STRICT |
+| `GuardCannotCheck.test_guard_cannot_check_a_listing_that_is_not_a_list` | `listing=object`: `2 != 4`; `listing=scalar`: `'the agent listing is not a list' not found` | none | GUARD-LIST-OFF |
+| `GuardTimeoutValue.test_guard_timeout_that_is_not_a_whole_number_of_seconds_exits_64` | `value=0`: `0 != 64` | `1.5`, `abc`, `30x`, `-1` | GUARD-TMO-LOOSE |
+| `GuardAccepts.test_guard_accepts_each_triage_agent_definition_and_runs_it` | `agent=findings-classifier`: `False is not true`; `agent=findings-processor`: `False is not true`; `agent=mission-grader`: `False is not true` | none | GUARD-PROPAGATE-FLIP, GUARD-HELP-ANY |
+| `GuardRefuses.test_guard_refuses_a_listing_with_missing_or_empty_permissions` | `permissions=empty`: `'agent mission-grader lists no permission rules' not found` | `missing` | GUARD-RULES-EMPTY-OFF |
 
 ## Mutation testing
 
