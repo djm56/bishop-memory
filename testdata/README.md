@@ -232,14 +232,17 @@ because the file may still hold the mutant. A restore that never ran counts as
 not verified. A signal during a restore does not cut it short: it is retried or
 recorded, and the run stops once the restore is verified.
 
-Known limitation: signals are not blocked between a plant and its restore. Three
-windows are not covered. A signal that lands just before the restore call, in the
-runner's `finally` block, leaves the file planted, and the run reports
-`RESTORE FAILED` and exits 1. A signal that lands after the runner marks the plant
-and before its restore block begins is reported the same way, though nothing was
-written. A signal that lands in a killer's process-group cleanup, before the group
-is killed, leaves that group running; the restore still runs and is verified, and
-the run does not report the group.
+Known limitation: signals are not blocked between a plant and its restore, so a
+handled signal can land at a point the restore does not protect. Examples, not a
+complete list. A signal in the runner's `finally` block before the restore call, or
+in the handling of an earlier interrupt during the restore, leaves the file planted,
+and the run reports `RESTORE FAILED` and exits 1. A signal after the runner marks
+the plant and before the protected block begins is reported the same way, though
+nothing was written, so that report is a false alarm. A signal that lands in a
+killer's process-group start-up before its protected block is entered, or in its
+cleanup before the group is killed, leaves that group running; the restore still
+runs and is verified, and the run prints that every restore is verified and exits 5
+without reporting the group.
 
 Anything that ends the process without letting the runner's code run skips every
 restore. Nothing in the runner can handle that; the next run refuses on the dirty

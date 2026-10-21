@@ -35,12 +35,16 @@ that is recorded and acted on once the restore is verified. A handled signal the
 parent set to ignore, as nohup does, stays ignored.
 
 Known limitation: nothing blocks these signals between the plant and the restore,
-so three windows are not covered. A signal that lands in mutate_one's finally
-block, just before the restore call, leaves the file planted; the run reports
-RESTORE FAILED and exits 1. A signal after out.planted is set and before the try
-is reported the same way, though nothing was written. A signal in a killer's
-group cleanup, before the group is killed, leaves that group running; the restore
-still runs and is verified, and the run does not report the group.
+so a handled signal can land at a point that the restore does not protect. Examples,
+not a complete list. A signal in mutate_one's finally block before the restore call,
+or in restore_until_done's handling of an earlier interrupt, leaves the file planted;
+the run reports RESTORE FAILED and exits 1. A signal after out.planted is set and
+before the try is reported the same way, though nothing was written, so that report
+is a false alarm. A signal that lands in _run_group before its try block is entered
+(including while Popen is still starting the killer), or before the group is killed
+in its cleanup, leaves that group running; the restore still runs and is verified,
+and the run prints that every restore is verified and exits 5 without reporting the
+group.
 
 Each killer runs in its own process group, and a timeout or an interrupt SIGKILLs
 that group. A process the killer started that stays in the group stops with it. A
@@ -407,7 +411,10 @@ def _run_group(cmd, cwd, env, timeout):
     subprocess.run() for one killer. The killer leads its own session and process
     group. Returns a CompletedProcess. On a timeout or an interrupt the group is
     killed (see _kill_group), the leader is reaped, and the exception is
-    re-raised. A normal exit does not kill the group. The pipes are not read
+    re-raised. A signal that lands before that kill can leave the group running:
+    this includes a signal that arrives before Popen returns or before the try
+    block is entered, and one that arrives while the exception is being handled,
+    before the kill. A normal exit does not kill the group. The pipes are not read
     after the kill, because a grandchild that outlived the group could hold
     them open.
     """

@@ -1146,7 +1146,7 @@ class PlantWindowTests(_RepoTest):
 
     def test_a_signal_right_after_the_plant_is_recorded_still_restores_and_clears_the_entry(self):
         # The signal lands after record_plant returns and before the file is written. The restore still runs
-        # inside the try, and the entry must not be left behind for a file nobody mutated.
+        # in the finally block, and the entry must not be left behind for a file nobody mutated.
         real = mutate.record_plant
 
         def record_then_signal(*args):
