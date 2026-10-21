@@ -1028,6 +1028,103 @@
       ]
     },
     {
+      "id": "MIX-CAPLABEL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1118,
+      "before": "        elif mission_id in missions_journal_capped:\n            outcome = \"skipped_journal_cap\"\n",
+      "after": "        elif mission_id in missions_journal_capped:\n            outcome = \"skipped_fetch_failed\"\n",
+      "summary": "the events of a capped mission are counted as fetch-failure skips; the sum to parsed still holds",
+      "property": "In a mixed run an event of a capped mission lands in the cap bucket, not the fetch-failure bucket (the bucket-label edge, where the sum to parsed cannot see it)",
+      "mirror": "MIX-FETCHLABEL",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalMixedRunTests.test_events_split_across_buckets_and_sum_to_parsed"
+      ]
+    },
+    {
+      "id": "MIX-FETCHLABEL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1120,
+      "before": "        elif mission_id in missions_journal_fetch_failed:\n            outcome = \"skipped_fetch_failed\"\n",
+      "after": "        elif mission_id in missions_journal_fetch_failed:\n            outcome = \"skipped_journal_cap\"\n",
+      "summary": "the events of a mission whose journal fetch failed are counted as cap skips; the sum to parsed still holds",
+      "property": "In a mixed run an event of a mission whose journal fetch failed lands in the fetch-failure bucket, not the cap bucket (the opposite label of MIX-CAPLABEL)",
+      "mirror": "MIX-CAPLABEL",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalMixedRunTests.test_events_split_across_buckets_and_sum_to_parsed"
+      ]
+    },
+    {
+      "id": "SUM-NOSKIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1496,
+      "before": "        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))\n        warned_note = f\", {counts['warned']} warned\" if counts['warned'] > 0 else \"\"\n        cap_note",
+      "after": "        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0))\n        warned_note = f\", {counts['warned']} warned\" if counts['warned'] > 0 else \"\"\n        cap_note",
+      "summary": "main() prints the journal fetch note without its skipped count, so the printed counts sum to less than parsed",
+      "property": "The flight-recorder line's fetch note prints the skipped count when a fetch failed (the print edge of the sum to parsed)",
+      "mirror": "SUM-NOTEALWAYS",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalSummaryLineTests.test_summary_line_counts_sum_to_parsed"
+      ]
+    },
+    {
+      "id": "SUM-NOTEALWAYS",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1496,
+      "before": "        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0), counts.get('skipped_fetch_failed', 0))\n        warned_note = f\", {counts['warned']} warned\" if counts['warned'] > 0 else \"\"\n        cap_note",
+      "after": "        fetch_status = fetch_failure_note(counts.get('fetch_failed', 0) or 1, counts.get('skipped_fetch_failed', 0))\n        warned_note = f\", {counts['warned']} warned\" if counts['warned'] > 0 else \"\"\n        cap_note",
+      "summary": "main() prints a journal fetch note on a run where no fetch failed",
+      "property": "A flight-recorder line with no fetch failure carries no fetch note (the opposite edge of SUM-NOSKIP: a note where none is due)",
+      "mirror": "SUM-NOSKIP",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalSummaryLineTests.test_summary_line_counts_sum_to_parsed"
+      ]
+    },
+    {
+      "id": "SUM-NOSCOPE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1499,
+      "before": "        scope_note = f\", {counts['out_of_scope']} out of scope\" if counts['out_of_scope'] > 0 else \"\"\n",
+      "after": "        scope_note = \"\"\n",
+      "summary": "main() never prints the out-of-scope count, so the printed counts sum to less than parsed",
+      "property": "The flight-recorder line prints the out-of-scope count when events are out of scope (the print edge of the sum to parsed)",
+      "mirror": "SUM-SCOPEALWAYS",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "JournalSummaryLineTests.test_summary_line_counts_sum_to_parsed",
+        "OutOfScopeRunTests.test_out_of_scope_events_are_named_and_exit_0"
+      ]
+    },
+    {
+      "id": "SUM-SCOPEALWAYS",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/reconcile-memory.py",
+      "line": 1499,
+      "before": "        scope_note = f\", {counts['out_of_scope']} out of scope\" if counts['out_of_scope'] > 0 else \"\"\n",
+      "after": "        scope_note = f\", {counts['out_of_scope']} out of scope\" if counts['out_of_scope'] >= 0 else \"\"\n",
+      "summary": "main() prints an out-of-scope count of 0 when no event is out of scope",
+      "property": "A flight-recorder line with no out-of-scope event does not name out of scope (the opposite edge of SUM-NOSCOPE)",
+      "mirror": "SUM-NOSCOPE",
+      "suite": "scripts/test_reconcile_units.py",
+      "killers": [
+        "OutOfScopeRunTests.test_out_of_scope_events_are_named_and_exit_0"
+      ]
+    },
+    {
       "id": "WARN-FETCHED",
       "status": "active",
       "language": "py",

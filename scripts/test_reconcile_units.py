@@ -860,13 +860,17 @@ class JournalSummaryLineTests(unittest.TestCase):
 
     def test_summary_line_counts_sum_to_parsed(self):
         # Control (DIR-026): with main() passing no skipped count to fetch_failure_note, the
-        # fetch note reads "(fetch failed - 1 request(s) ...)", fetch_skipped is 0 and the
+        # fetch note reads "(fetch failed — 1 request(s) ...)", fetch_skipped is 0 and the
         # counts sum to 7, not 8. With the scope note dropped they sum to 6. The line is a
         # subprocess's stdout (main(), not reconcile_journal() called directly). The run
         # splits events across created, the cap, a journal fetch failure and out of scope.
+        # Blind spot: both runs are dry runs and a dry run never fails a write, so "failed"
+        # is 0 here; JournalMixedRunTests covers the failed bucket.
         with tempfile.TemporaryDirectory() as root:
             _write_mixed_tree(root)
             capped = _run_main({MIXED_KNOWN[1]: 100}, root=root, failing_journal={MIXED_KNOWN[2]})
+            # The control runs inside the with block, while root exists, so main() reads the journal.
+            control = _run_main({}, root=root)
         line = _flight_recorder_line(capped)
         self.assertNotEqual(line, "", msg=f"summary: no [flight-recorder] line: {capped.stdout.decode('utf-8', 'replace')}")
         counts = _summary_counts(line)
@@ -876,9 +880,19 @@ class JournalSummaryLineTests(unittest.TestCase):
         total = sum(v for k, v in counts.items() if k != "parsed")
         self.assertEqual(total, counts["parsed"], msg=f"summary: counts sum to {total}, parsed is {counts['parsed']}: {line}")
         # Positive control for the fetch note: the same tree with no journal fetch failure has no
-        # fetch note, and its counts still sum to parsed.
-        clean = _summary_counts(_flight_recorder_line(_run_main({}, root=root)))
-        self.assertEqual(clean["fetch_skipped"], 0, msg=f"summary control: a fetch note without a fetch failure: {clean}")
+        # fetch note, and its counts still sum to parsed. An empty line (a missing root, a run
+        # that exits before printing) fails the non-empty assertion, so it cannot read as zeros.
+        control_line = _flight_recorder_line(control)
+        self.assertNotEqual(control_line, "", msg=f"summary control: no [flight-recorder] line: "
+                            f"{control.stdout.decode('utf-8', 'replace')} {control.stderr.decode('utf-8', 'replace')}")
+        clean = _summary_counts(control_line)
+        self.assertEqual(clean, {"parsed": 8, "created": 6, "unchanged": 0, "failed": 0, "cap": 0,
+                                 "out_of_scope": 2, "fetch_skipped": 0},
+                         msg=f"summary control: the clean line's counts are wrong: {control_line}")
+        # The regex reads "(0 skipped — fetch failed ...)" as fetch_skipped 0, so the control
+        # also asserts the clean line carries no fetch note at all.
+        self.assertNotIn("fetch failed", control_line,
+                         msg=f"summary control: a fetch note on a line with no fetch failure: {control_line}")
         self.assertEqual(sum(v for k, v in clean.items() if k != "parsed"), clean["parsed"],
                          msg=f"summary control: counts do not sum to parsed: {clean}")
 
