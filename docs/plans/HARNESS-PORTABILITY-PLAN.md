@@ -3,7 +3,7 @@
 **Status as of 2026-10-20: phase 1 shipped on `main` through PR #8 (`8437f32`,
 commits `260bb7c^..718cb7a`); the reconciler-bug part of phase 2 shipped on
 `main` through PR #9 (`1c4def9`); the layout profile and later phases not
-started.**
+started. The operator's decisions of 2026-10-21 are in §9.**
 Phase 1 adds golden tests for the importer and the reconciler's dry-run output,
 the `internal/profile` seam for the Go values, the `BISHOP_LAYOUT` and
 `APPROVER_DEFAULT` seam in the reconciler, and a CI step that runs the Python
@@ -655,6 +655,8 @@ install output. The Earendil identity correction (§3.3) is confirmed against th
 
 ### Phase 7 — Kirsch adapter
 
+*Deferred by the operator on 2026-10-21 (§9); not started.*
+
 **Work.** Build against the operator's answers to the K-questions. Run the conformance
 fixture (phase 3) against Kirsch.
 
@@ -697,8 +699,10 @@ The Bishop harness must not break. These rules hold for every phase:
 
 ## 9. Decisions
 
-Recorded for the operator's ratification. Each has a recommendation; none is
-ratified.
+Each decision has a recommendation. On 2026-10-21 the operator adopted every
+H-numbered recommendation below, for Claude Code, OpenCode and pi, and deferred
+Kirsch (the last bullet). The *Recommended* labels record what was recommended;
+the adoption is the decision.
 
 - **H1. The product name stays `bishop-memory`.** Generic vocabulary is added
   in documentation and at the MCP edge. The product is not renamed. *Recommended.*
@@ -714,7 +718,7 @@ ratified.
   settled in phase 2. *Recommended: TOML, to match the Go service.*
 - **H5. Identity is per project.** Harness is set by the project's registration,
   never a user-scope value shared across projects. The silent `claude-code`
-  default is the open point. *Recommended, operator to ratify:* the switch between
+  default is the open point. *Adopted 2026-10-21.* The switch between
   warning and refusal is one test, the **non-Bishop profile test**. A non-Bishop
   profile is in use when `BISHOP_MEMORY_PROFILE` (neutral alias `MEMORY_PROFILE`,
   H3) is set to a non-empty path in the `mcpd` environment, which a harness's
@@ -736,6 +740,8 @@ ratified.
   *Recommended.*
 - **H9. pi uses `exposure: "direct"` for the memory tools.** The `codemode`
   default would hide them. *Recommended, subject to phase 6.*
+- **Kirsch is deferred (operator decision, 2026-10-21).** Phase 7 (§7) and the
+  K-questions (§11) are not being worked until the operator reopens Kirsch.
 
 ## 10. Risks
 
@@ -766,6 +772,10 @@ ratified.
   `.claude/` and `.opencode/` folders. Mitigation: H8.
 
 ## 11. Open questions for the operator
+
+The K-questions are deferred with Kirsch (2026-10-21, §9). The Q-questions are
+not answered by this record; the operator should say whether the §9 adoption
+answers any of them.
 
 - **K1 (Kirsch memory layout).** Does Kirsch write the Bishop tree
   (`state/`, `missions/`, `findings/`, `reference/`), or another? The live

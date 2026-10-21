@@ -145,7 +145,7 @@ make mission-links                                     # one-off: link existing 
 make scratch-clean                                     # list workspace scratch older than 30 days (APPLY=1 to move to the Trash)
 ```
 
-Guide: [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md). Plan, with the deferred phase 2: [docs/plans/MISSION-HUD-PLAN.md](docs/plans/MISSION-HUD-PLAN.md).
+Guide: [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md). Plan: [docs/plans/MISSION-HUD-PLAN.md](docs/plans/MISSION-HUD-PLAN.md). Phases 1 and 3 are done; phase 2 (the structured debrief) shipped under [docs/plans/MEMORY-INSIGHT-PLAN.md](docs/plans/MEMORY-INSIGHT-PLAN.md) §3.
 
 ## Configuration
 
