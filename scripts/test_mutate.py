@@ -104,7 +104,7 @@ def pid_gone(pid, seconds=5.0):
 def wait_for_pids(path, count, seconds=15.0):
     """
     The `count` pids written to the file `path`, waiting up to `seconds` for them to
-    appear. Anything short of `count` whole pids means "not yet". Raises
+    appear. Anything other than `count` whole pids means "not yet". Raises
     AssertionError, naming the file, when they never do.
     """
     deadline = time.monotonic() + seconds
@@ -127,28 +127,6 @@ def kill_quietly(pid):
         os.kill(pid, signal.SIGKILL)
     except OSError:
         pass
-
-
-def blocked_handled():
-    """The members of mutate.HANDLED_SIGNALS the calling thread currently has blocked."""
-    return set(signal.pthread_sigmask(signal.SIG_BLOCK, [])) & set(mutate.HANDLED_SIGNALS)
-
-
-def unmasked_variant():
-    """
-    A patch that turns the signal mask into a no-op: every pthread_sigmask call reports an empty mask and
-    changes nothing. What a control runs under to show the real mask is what makes a test pass.
-    """
-    return mock.patch.object(mutate.signal, "pthread_sigmask", side_effect=lambda how, sigs: set())
-
-
-def keep_mask(case):
-    """
-    Put the signal mask back when `case` ends. A killer that times out leaves the handled signals blocked
-    on purpose (see _run_group), so a test that calls run_killers() or _run_group() directly, without
-    mutate_one()'s release, would hand the blocked mask to every later test.
-    """
-    case.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
 
 
 # A killer that tells the runner's process to stop. It runs after the mutant is planted, and checks the
@@ -315,7 +293,6 @@ class RealPythonRunTests(unittest.TestCase):
     """run_killers() and mutate_one() against a real unittest suite in a temporary directory."""
 
     def setUp(self):
-        keep_mask(self)
         self.repo = make_repo({"f.py": TARGET})
         self.tmp = tempfile.mkdtemp(prefix="mutate-test-suite-")
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
@@ -817,11 +794,11 @@ class MainTests(_RepoTest):
         self.assertNotIn("interrupted by", out)
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
 
-    def run_double_signal(self, masked):
+    def run_double_signal(self, retry):
         """
         A real killer sends SIGTERM while f.py is planted; then a second SIGTERM lands at the start of the
-        restore, the point where the handler used to raise out of the unwinding. With `masked` False the
-        signal mask is a no-op (unmasked_variant), which is the behaviour the mask exists to prevent.
+        restore, before restore_and_verify has begun deferring signals (the unwinding window). With `retry`
+        False, restore_until_done is replaced by a single call, which is the behaviour the retry exists to fix.
         Returns (status, stdout, restore_and_verify call count).
         """
         items = self.pair_with_signal_killer(SIGNAL_SUITE.format(target=self.path()))
@@ -831,28 +808,30 @@ class MainTests(_RepoTest):
         def second_signal_first(*args, **kwargs):
             calls.append(1)
             if len(calls) == 1:
-                os.kill(os.getpid(), signal.SIGTERM)  # held when masked; unmasked, the handler raises here
+                os.kill(os.getpid(), signal.SIGTERM)  # the handler raises Interrupted here: nothing is deferred yet
             return real(*args, **kwargs)
+        patches = [mock.patch.object(mutate, "restore_and_verify", side_effect=second_signal_first)]
+        if not retry:
+            patches.append(mock.patch.object(mutate, "restore_until_done",
+                                             side_effect=lambda *a: mutate.restore_and_verify(*a)))
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(mutate, "restore_and_verify", side_effect=second_signal_first))
-            if not masked:
-                stack.enter_context(unmasked_variant())
+            for patch in patches:
+                stack.enter_context(patch)
             status, out = self.run_main(["--ids", "A", "--log-dir", self.logs], items=items)
         return status, out, len(calls)
 
-    def test_a_second_signal_during_the_unwinding_is_held_and_the_restore_runs_once_and_verifies(self):
-        status, out, calls = self.run_double_signal(masked=True)
-        self.assertEqual(calls, 1, "the restore runs once; the second signal waited for it")
+    def test_a_second_signal_during_the_unwinding_still_restores_and_verifies(self):
+        status, out, calls = self.run_double_signal(retry=True)
+        self.assertEqual(calls, 2, "the restore must have run again after the second signal")
         self.assertEqual(status, mutate.EXIT_INTERRUPTED, out)
         self.assertIn("every restore is verified; no planted file is left mutated", out)
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
         self.assertNotIn("f.py", self.marker_entries())
 
     def test_a_restore_that_never_ran_is_reported_failed_never_verified(self):
-        # The control for the test above: the same two signals with the mask patched to a no-op leave f.py
-        # mutated, because the second signal raises out of the restore before it writes anything.
+        # The control for the test above: the same two signals with no retry leave f.py mutated.
         # The run must say RESTORE FAILED, and must not print the "verified" line.
-        status, out, calls = self.run_double_signal(masked=False)
+        status, out, calls = self.run_double_signal(retry=False)
         saved = os.path.join(self.logs, "A.orig")
         self.assertEqual(calls, 1)
         self.assertIn("return 3", read(self.path()).decode("utf-8"), "the control must leave the file mutated")
@@ -860,19 +839,6 @@ class MainTests(_RepoTest):
         self.assertNotIn("every restore is verified", out)
         self.assertIn(f"mutate: RESTORE FAILED for f.py; the original is saved at {saved}", out)
         self.assertEqual(self.marker_entries()["f.py"]["orig"], saved, "the marker still points at the saved original")
-
-    def test_a_mask_left_blocked_by_an_interrupted_mutant_is_put_back_by_the_run(self):
-        # mutate_one is replaced by a function that blocks the handled signals and then raises, as a handler
-        # that blocked and raised before mutate_one held its entry mask would. The run must not leave them blocked.
-        def blocks_then_raises(*_args, **_kwargs):
-            signal.pthread_sigmask(signal.SIG_BLOCK, mutate.HANDLED_SIGNALS)
-            raise mutate.Interrupted("SIGTERM")
-        self.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
-        self.assertEqual(blocked_handled(), set(), "control: the run starts with the handled signals unblocked")
-        with mock.patch.object(mutate, "mutate_one", side_effect=blocks_then_raises):
-            status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
-        self.assertEqual(status, mutate.EXIT_INTERRUPTED, out)
-        self.assertEqual(blocked_handled(), set())
 
     def test_unparseable_marker_refuses_the_run_before_anything_is_planted(self):
         with open(self.marker_path(), "w", encoding="utf-8") as handle:
@@ -1179,8 +1145,8 @@ class PlantWindowTests(_RepoTest):
         return os.path.join(self.repo, ".git", mutate.MARKER_NAME)
 
     def test_a_signal_right_after_the_plant_is_recorded_still_restores_and_clears_the_entry(self):
-        # The signal lands after record_plant returns and before the file is written. It is held, then
-        # raised when the killers are due, so the killers never run. The entry must not be left behind.
+        # The signal lands after record_plant returns and before the file is written. The restore still runs
+        # inside the try, and the entry must not be left behind for a file nobody mutated.
         real = mutate.record_plant
 
         def record_then_signal(*args):
@@ -1198,11 +1164,11 @@ class PlantWindowTests(_RepoTest):
         self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
 
     def test_a_restore_that_never_ran_leaves_the_outcome_unrestored(self):
-        # restore_blocked is replaced by a function that fails before restoring anything. The Outcome
+        # restore_until_done is replaced by a function that fails before restoring anything. The Outcome
         # must read planted and not restored, and finish_early must report it, whatever the status.
         out = mutate.Outcome("M1")
         with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]), \
-                mock.patch.object(mutate, "restore_blocked", side_effect=RuntimeError("never ran")):
+                mock.patch.object(mutate, "restore_until_done", side_effect=RuntimeError("never ran")):
             with self.assertRaises(RuntimeError):
                 mutate.mutate_one(entry(), self.logs, 5, out)
         self.assertTrue(out.planted)
@@ -1226,145 +1192,6 @@ class PlantWindowTests(_RepoTest):
         with contextlib.redirect_stdout(printed):
             status = mutate.finish_early([], out, mutate.EXIT_INTERRUPTED)
         self.assertEqual(status, mutate.EXIT_INTERRUPTED)
-
-
-class SignalAfterUnrestoredOutcome(mutate.Outcome):
-    """
-    An Outcome that sends SIGTERM straight after `restore_ok` is set to False. mutate_one makes that
-    assignment as the last statement before its try, which is the window the mask exists to close.
-    """
-
-    def __setattr__(self, name, value):
-        object.__setattr__(self, name, value)
-        if name == "restore_ok" and value is False and not self.__dict__.get("fired"):
-            object.__setattr__(self, "fired", True)
-            os.kill(os.getpid(), signal.SIGTERM)
-
-
-class SignalWindowTests(_RepoTest):
-    """
-    mutate_one() with a real SIGTERM sent into the windows between planting and a verified restore that no
-    killer run covers. Each test has a control under unmasked_variant(), which shows the failure the mask prevents.
-    """
-
-    def setUp(self):
-        super().setUp()
-        self.installed = {}
-        mutate.install_handlers(self.installed)
-        self.addCleanup(mutate.restore_handlers, self.installed)
-        self.killers = [("T.test_x", "FAIL", "AssertionError: x")]
-
-    def marker(self):
-        """The marker path in the temporary repository's git directory."""
-        return os.path.join(self.repo, ".git", mutate.MARKER_NAME)
-
-    def spy_on_restore(self):
-        """Patch restore_and_verify with a wrapper that counts calls and calls the real one. Returns the count list."""
-        real = mutate.restore_and_verify
-        calls = []
-
-        def counting(*args, **kwargs):
-            calls.append(1)
-            return real(*args, **kwargs)
-        patch = mock.patch.object(mutate, "restore_and_verify", side_effect=counting)
-        patch.start()
-        self.addCleanup(patch.stop)
-        return calls
-
-    def run_signal_before_the_try(self):
-        """
-        mutate_one with the signal sent right after restore_ok is set False, before its try. Returns
-        (out, raised, restore_calls), `raised` being the Interrupted that came out, or None.
-        """
-        calls = self.spy_on_restore()
-        out = SignalAfterUnrestoredOutcome("M1")
-        raised = None
-        with mock.patch.object(mutate, "run_killers", return_value=self.killers) as runner:
-            try:
-                mutate.mutate_one(entry(), self.logs, 5, out)
-            except mutate.Interrupted as exc:
-                raised = exc
-        self.runner_calls = runner.call_count
-        return out, raised, len(calls)
-
-    def test_a_signal_between_restore_ok_false_and_the_try_still_restores_and_clears_the_entry(self):
-        out, raised, restore_calls = self.run_signal_before_the_try()
-        self.assertIsNotNone(raised, "the held signal is delivered when the killers are due, and stops the mutant")
-        self.assertEqual(self.runner_calls, 0, "the killers never started")
-        self.assertEqual(restore_calls, 1)
-        self.assertTrue(out.planted)
-        self.assertTrue(out.restore_ok, out.problems)
-        self.assertNotIn("f.py", mutate.read_marker(self.marker()))
-        self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
-        self.assertEqual(blocked_handled(), set(), "the mask is back to what it was on entry")
-
-    def test_control_unmasked_the_same_signal_skips_the_restore_and_reads_as_unrestored(self):
-        with unmasked_variant():
-            out, raised, restore_calls = self.run_signal_before_the_try()
-        self.assertIsNotNone(raised)
-        self.assertEqual(restore_calls, 0, "the signal raised before the try, so no restore ran")
-        self.assertTrue(out.planted)
-        self.assertFalse(out.restore_ok)
-        printed = io.StringIO()
-        with contextlib.redirect_stdout(printed):
-            status = mutate.finish_early([], out, mutate.EXIT_INTERRUPTED)
-        self.assertEqual(status, mutate.EXIT_FAILED, "the run reports RESTORE FAILED for a file nobody changed")
-
-    def run_signal_at_the_start_of_the_restore(self):
-        """
-        mutate_one whose killers return normally, with a SIGTERM sent just before restore_blocked runs, which is
-        where the retry loop's except body used to be. Returns (out, restore_calls, blocked while the restore ran).
-        """
-        calls = self.spy_on_restore()
-        real_blocked = mutate.restore_blocked
-        during = []
-
-        def signal_then_restore(*args, **kwargs):
-            os.kill(os.getpid(), signal.SIGTERM)
-            during.append(blocked_handled())
-            return real_blocked(*args, **kwargs)
-        out = mutate.Outcome("M1")
-        with mock.patch.object(mutate, "run_killers", return_value=self.killers), \
-                mock.patch.object(mutate, "restore_blocked", side_effect=signal_then_restore):
-            mutate.mutate_one(entry(), self.logs, 5, out)
-        return out, len(calls), during
-
-    def test_a_signal_at_the_start_of_the_restore_is_held_and_recorded_after_the_verified_restore(self):
-        out, restore_calls, during = self.run_signal_at_the_start_of_the_restore()
-        self.assertEqual(restore_calls, 1)
-        self.assertEqual(during, [set(mutate.HANDLED_SIGNALS)], "the handled signals are blocked when the restore starts")
-        self.assertTrue(out.restore_ok, out.problems)
-        self.assertEqual(out.late_signals, ["SIGTERM"], "held, then recorded when the mask went back")
-        self.assertNotIn("f.py", mutate.read_marker(self.marker()))
-        self.assertEqual(read(self.path()).decode("utf-8"), TARGET)
-
-    def test_control_unmasked_a_signal_at_the_start_of_the_restore_leaves_the_file_mutated(self):
-        with unmasked_variant():
-            calls = self.spy_on_restore()
-            real_blocked = mutate.restore_blocked
-
-            def signal_then_restore(*args, **kwargs):
-                os.kill(os.getpid(), signal.SIGTERM)  # unmasked, the handler raises here
-                return real_blocked(*args, **kwargs)
-            out = mutate.Outcome("M1")
-            with mock.patch.object(mutate, "run_killers", return_value=self.killers), \
-                    mock.patch.object(mutate, "restore_blocked", side_effect=signal_then_restore):
-                with self.assertRaises(mutate.Interrupted):
-                    mutate.mutate_one(entry(), self.logs, 5, out)
-        self.assertEqual(len(calls), 0, "the restore never started")
-        self.assertFalse(out.restore_ok)
-        self.assertIn("return 3", read(self.path()).decode("utf-8"))
-
-    def test_the_killers_run_with_the_signals_unblocked_and_the_mask_is_back_afterwards(self):
-        seen = []
-
-        def killers(*_args):
-            seen.append(blocked_handled())
-            return self.killers
-        with mock.patch.object(mutate, "run_killers", side_effect=killers):
-            mutate.mutate_one(entry(), self.logs, 5)
-        self.assertEqual(seen, [set()], "a signal can interrupt a killer run")
-        self.assertEqual(blocked_handled(), set())
 
 
 class RunLockTests(_RepoTest):
@@ -1399,7 +1226,6 @@ class GroupKillTests(unittest.TestCase):
     """A killer that times out takes its whole process group with it, grandchildren included."""
 
     def setUp(self):
-        keep_mask(self)
         self.repo = make_repo({"f.py": TARGET})
         self.tmp = tempfile.mkdtemp(prefix="mutate-test-group-")
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
@@ -1437,60 +1263,11 @@ class GroupKillTests(unittest.TestCase):
         self.assertFalse(pid_gone(grandchild, 1.0), "the grandchild should survive a leader-only kill")
 
 
-class GroupCleanupSignalTests(unittest.TestCase):
-    """
-    _run_group() with a real SIGTERM delivered at the start of its cleanup, after a timeout. The
-    process group is real (a `sleep`); only the signal is sent by a wrapper around _kill_group.
-    """
-
-    def setUp(self):
-        self.installed = {}
-        mutate.install_handlers(self.installed)
-        self.addCleanup(mutate.restore_handlers, self.installed)
-        self.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
-        self.pids = []
-        self.addCleanup(lambda: [kill_quietly(pid) for pid in self.pids])
-
-    def run_with_signal_in_cleanup(self):
-        """
-        Run `sleep 30` with a 0.5-second timeout; the signal is sent as _kill_group starts. Returns the
-        exception _run_group raised, or None, and records the killer's pid in self.pids.
-        """
-        real = mutate._kill_group
-
-        def signal_then_kill(proc):
-            self.pids.append(proc.pid)
-            os.kill(os.getpid(), signal.SIGTERM)
-            real(proc)
-        with mock.patch.object(mutate, "_kill_group", side_effect=signal_then_kill):
-            try:
-                mutate._run_group(["sleep", "30"], "/", None, 0.5)
-            except BaseException as exc:  # TimeoutExpired when masked, Interrupted when not
-                return exc
-        return None
-
-    def test_a_signal_in_the_cleanup_is_held_and_the_group_is_still_killed(self):
-        raised = self.run_with_signal_in_cleanup()
-        self.assertIsInstance(raised, subprocess.TimeoutExpired)
-        self.assertTrue(pid_gone(self.pids[0]), "the group must be killed and reaped")
-        self.assertIn(signal.SIGTERM, signal.sigpending(), "the signal is held, not lost")
-        out = mutate.Outcome("M1")
-        mutate.release_signals(out, [])  # the held signal is delivered here
-        self.assertEqual(out.late_signals, ["SIGTERM"])
-
-    def test_control_unmasked_the_signal_skips_the_kill(self):
-        with unmasked_variant():
-            raised = self.run_with_signal_in_cleanup()
-        self.assertIsInstance(raised, mutate.Interrupted)
-        self.assertFalse(pid_gone(self.pids[0], 1.0), "unmasked, the interrupt skips _kill_group")
-
-
 @unittest.skipUnless(shutil.which("go"), "go is not installed")
 class GoGroupKillTests(unittest.TestCase):
     """The Go branch: `go test` leads a group whose test binary and sleep child must die with it."""
 
     def setUp(self):
-        keep_mask(self)
         self.repo = make_repo({"go.mod": "module hang\n\ngo 1.18\n", "hang_test.go": GO_HANG_TEST})
         self.logs = tempfile.mkdtemp(prefix="mutate-test-logs-")
         patcher = mock.patch.object(mutate, "ROOT", self.repo)
@@ -1582,11 +1359,7 @@ class HandlerDispositionTests(unittest.TestCase):
 class RestoreHandlersTests(unittest.TestCase):
     """restore_handlers() with a signal arriving while the dispositions go back."""
 
-    def run_restore_with_a_signal(self, mask):
-        """
-        Install the runner's handlers over a recording handler, then restore them with a SIGTERM sent as the
-        first disposition goes back. `mask` False runs it under unmasked_variant(). Returns (sent, hits, raised).
-        """
+    def test_a_signal_during_the_restore_is_held_then_delivered_to_the_restored_handler(self):
         hits = []
 
         def recorder(signum, _frame):
@@ -1604,60 +1377,12 @@ class RestoreHandlersTests(unittest.TestCase):
         def signal_then_set(sig, handler):
             if not sent:
                 sent.append(sig)
-                os.kill(os.getpid(), signal.SIGTERM)  # unmasked, the runner's handler raises Interrupted here
+                os.kill(os.getpid(), signal.SIGTERM)  # unmasked, the runner's handler would raise Interrupted here
             return real_signal(sig, handler)
-        raised = None
-        with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch.object(mutate.signal, "signal", side_effect=signal_then_set))
-            if not mask:
-                stack.enter_context(unmasked_variant())
-            try:
-                mutate.restore_handlers(installed)
-            except mutate.Interrupted as exc:
-                raised = exc
-        return sent, hits, raised
-
-    def test_a_signal_during_the_restore_is_held_then_delivered_to_the_restored_handler(self):
-        sent, hits, raised = self.run_restore_with_a_signal(mask=True)
-        self.assertIsNone(raised)
-        self.assertEqual(len(sent), 1, "the signal was sent while the dispositions went back")
-        self.assertEqual(hits, [signal.SIGTERM], "the restored handler received it")
-        self.assertTrue(all(signal.getsignal(sig) is not mutate._interrupt for sig in mutate.HANDLED_SIGNALS))
-
-    def test_control_without_the_mask_the_runner_handler_raises_out_of_the_restore(self):
-        # Run once with pthread_sigmask patched to a no-op: Interrupted comes out of restore_handlers, the
-        # restored handler is never reached, and the dispositions are left half put back.
-        sent, hits, raised = self.run_restore_with_a_signal(mask=False)
-        self.assertEqual(len(sent), 1)
-        self.assertIsInstance(raised, mutate.Interrupted)
-        self.assertEqual(hits, [])
-
-
-class InterruptHandlerTests(unittest.TestCase):
-    """_interrupt() called directly, so each branch is seen without a real signal."""
-
-    def setUp(self):
-        self.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
-
-    def test_inside_run_interruptibly_it_blocks_the_handled_signals_before_it_raises(self):
-        self.assertEqual(blocked_handled(), set(), "control: nothing is blocked before the call")
-        with mock.patch.object(mutate, "_INTERRUPTIBLE", True):
-            with self.assertRaises(mutate.Interrupted):
-                mutate._interrupt(signal.SIGTERM, None)
-        self.assertEqual(blocked_handled(), set(mutate.HANDLED_SIGNALS))
-
-    def test_outside_run_interruptibly_it_raises_and_blocks_nothing(self):
-        with mock.patch.object(mutate, "_INTERRUPTIBLE", False):
-            with self.assertRaises(mutate.Interrupted):
-                mutate._interrupt(signal.SIGTERM, None)
-        self.assertEqual(blocked_handled(), set())
-
-    def test_with_a_record_to_fill_it_records_and_neither_raises_nor_blocks(self):
-        record = []
-        with mock.patch.object(mutate, "_INTERRUPTIBLE", True), mock.patch.object(mutate, "_DEFERRED", record):
-            mutate._interrupt(signal.SIGTERM, None)
-        self.assertEqual(record, ["SIGTERM"])
-        self.assertEqual(blocked_handled(), set())
+        with mock.patch.object(mutate.signal, "signal", side_effect=signal_then_set):
+            mutate.restore_handlers(installed)  # must not raise
+        self.assertEqual(sent and hits, [signal.SIGTERM])
+        self.assertTrue(all(signal.getsignal(sig) is recorder for sig in mutate.HANDLED_SIGNALS))
 
 
 class WaitForPidsTests(unittest.TestCase):

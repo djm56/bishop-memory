@@ -27,20 +27,21 @@ ends, however it ends.
 
 POSIX only: main() refuses elsewhere, by the POSIX constant.
 
-The signals in HANDLED_SIGNALS are handled while the run lasts. Once a file is
-planted they are blocked, except while its killers run (run_interruptibly), so
-the only place one raises Interrupted is there, and the finally block restores
-the file. A signal held from the plant until the killers are due is delivered
-when run_interruptibly unmasks, before any killer starts: it raises Interrupted,
-the killers do not run, and the restore runs and is verified. A signal that
-arrives after the killers have ended, or during the restore, is held and
-recorded in out.late_signals when the mask goes back; the run stops once the
-restore is verified. A signal that arrives after mutate_one returns (between mutants, or
-while main reports) raises Interrupted where the run is; the file is already
-restored and verified then, so the cost is a stop and not a mutated file. A
-handled signal the parent set to ignore, as nohup does, stays ignored.
-The mask protects the single-threaded runner only: it is per thread, and the
-handlers run in the main thread.
+The signals in HANDLED_SIGNALS are handled while the run lasts. The first one
+raises Interrupted where the run is, and the finally block restores the file. A
+signal that arrives during a restore, before restore_and_verify has begun
+deferring signals, is retried by restore_until_done. A signal that arrives after
+that is recorded and acted on once the restore is verified. A handled signal the
+parent set to ignore, as nohup does, stays ignored.
+
+Known limitation: nothing blocks these signals between the plant and the restore,
+so three windows are not covered. A signal that lands in mutate_one's finally
+block, just before the restore call, leaves the file planted; the run reports
+RESTORE FAILED and exits 1. A signal after out.planted is set and before the try
+is reported the same way, though nothing was written. A signal in a killer's
+group cleanup, before the group is killed, leaves that group running; the restore
+still runs and is verified, and the run does not report the group.
+
 Each killer runs in its own process group, and a timeout or an interrupt SIGKILLs
 that group. A process the killer started that stays in the group stops with it. A
 process that leaves the group (setsid, a double fork) is not reached, and the
@@ -134,7 +135,7 @@ class Outcome:
         self.relpath = None               # the file this mutant edits, relative to the repository
         self.saved = None                 # the saved copy of that file's original bytes
         self.log = None
-        self.late_signals = []            # signals that arrived after the killers ended or during the restore, recorded when the mask goes back; a signal held before the killers start is raised as Interrupted instead and never lands here
+        self.late_signals = []            # signal names that arrived during the restore, to act on after it
 
 
 class ToolError(Exception):
@@ -409,27 +410,12 @@ def _run_group(cmd, cwd, env, timeout):
     re-raised. A normal exit does not kill the group. The pipes are not read
     after the kill, because a grandchild that outlived the group could hold
     them open.
-
-    HANDLED_SIGNALS are blocked from before the process starts until the wait
-    begins, and again from the first line of the cleanup, so a signal cannot land
-    between the start and the wait, or skip the kill and the reap. A signal that
-    arrives in either span is held, and the cleanup leaves them blocked on the way
-    out, so the held signal waits for whoever puts the mask back. The killer itself starts with the mask the caller had. A caller whose
-    mask already blocks the signals gets no interrupt from the wait either.
     """
-    prior = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True)
     try:
-        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, start_new_session=True,
-                                preexec_fn=lambda: signal.pthread_sigmask(signal.SIG_SETMASK, prior))
-    except BaseException:
-        signal.pthread_sigmask(signal.SIG_SETMASK, prior)
-        raise
-    try:
-        signal.pthread_sigmask(signal.SIG_SETMASK, prior)  # a signal held so far is delivered here, inside the try
         stdout, stderr = proc.communicate(timeout=timeout)
     except BaseException:
-        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
         _kill_group(proc)
         proc.wait()
         proc.stdout.close()
@@ -482,56 +468,20 @@ def run_killers(entry, log, timeout):
     return results
 
 
-_DEFERRED = None  # the list a handler records signals in; None when the handler raises
-_INTERRUPTIBLE = False  # True only inside run_interruptibly()
+_DEFERRED = None  # the list restore_and_verify() records signals in; None outside a restore
 
 
 def _interrupt(signum, _frame):
     """
-    Signal handler for HANDLED_SIGNALS. When _DEFERRED is set it records the signal
-    and returns, so the work in progress finishes and the caller acts on the record.
-    Otherwise it raises Interrupted so the finally blocks run. Inside
-    run_interruptibly() it blocks HANDLED_SIGNALS first, so nothing can interrupt the
-    unwinding before the restore; the mutate_one that unwinds puts the mask back.
+    Signal handler for HANDLED_SIGNALS. Outside a restore it raises Interrupted,
+    so the finally blocks run. During a restore it records the signal and returns,
+    so the restore finishes; main acts on the record afterwards.
     """
     name = signal.Signals(signum).name
     if _DEFERRED is not None:
         _DEFERRED.append(name)
         return
-    if _INTERRUPTIBLE:
-        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
     raise Interrupted(name)
-
-
-def run_interruptibly(entry_mask, func, *args):
-    """
-    func(*args) with the signal mask put back to `entry_mask`, so a handled signal
-    held until now is delivered here, and a handled signal raises Interrupted
-    from here on. HANDLED_SIGNALS are blocked again however func ends, and
-    _interrupt blocks them itself when it raises, so no exit from here leaves them
-    unblocked.
-    """
-    global _INTERRUPTIBLE
-    try:
-        _INTERRUPTIBLE = True
-        signal.pthread_sigmask(signal.SIG_SETMASK, entry_mask)
-        return func(*args)
-    finally:
-        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
-        _INTERRUPTIBLE = False
-
-
-def release_signals(out, mask):
-    """
-    Put the signal mask back to `mask`. A handled signal held until now arrives
-    here and is recorded in out.late_signals, not raised.
-    """
-    global _DEFERRED
-    _DEFERRED = out.late_signals
-    try:
-        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-    finally:
-        _DEFERRED = None
 
 
 def restore_and_verify(out, path, relpath, original, saved, marker):
@@ -540,10 +490,10 @@ def restore_and_verify(out, path, relpath, original, saved, marker):
     from the marker only when every check holds. The verdict goes on `out`:
     restore_ok becomes True only after the entry is cleared, and stays False with a
     RESTORE FAILED problem naming the saved copy when a check fails. OSError,
-    ValueError and ToolError are caught. Signals that arrive while it runs are
-    recorded in out.late_signals rather than raised; this function sets that up
-    itself, so a caller that must not be interrupted before it starts blocks
-    HANDLED_SIGNALS first (restore_blocked does).
+    ValueError and ToolError are caught. Once it has set _DEFERRED, signals are
+    recorded in out.late_signals rather than raised; a signal that lands before
+    that raises Interrupted out of this function, and restore_until_done() runs it
+    again.
     """
     global _DEFERRED
     _DEFERRED = out.late_signals
@@ -570,23 +520,18 @@ def restore_and_verify(out, path, relpath, original, saved, marker):
         _DEFERRED = None
 
 
-def restore_blocked(out, path, relpath, original, saved, marker):
+def restore_until_done(out, path, relpath, original, saved, marker):
     """
-    restore_and_verify() with HANDLED_SIGNALS blocked while it runs. mutate_one
-    already holds them blocked when it calls this, so no signal can arrive before
-    the block here; a caller that does not must do the same. A signal that arrives
-    meanwhile is held, and recorded in out.late_signals when the mask goes back.
-    The mask is put back to what it was on entry, so signals the caller holds
-    blocked stay held. Also clears _INTERRUPTIBLE, which an unwinding that skipped
-    the end of run_interruptibly() can leave set.
+    restore_and_verify(), run again when a signal lands before it has started
+    deferring signals. It is safe to repeat: it writes the same bytes and clearing an
+    absent marker entry changes nothing. The signal is recorded in out.late_signals.
     """
-    global _INTERRUPTIBLE
-    previous = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
-    _INTERRUPTIBLE = False
-    try:
-        restore_and_verify(out, path, relpath, original, saved, marker)
-    finally:
-        release_signals(out, previous)
+    while True:
+        try:
+            restore_and_verify(out, path, relpath, original, saved, marker)
+            return
+        except Interrupted as exc:
+            out.late_signals.append(str(exc))
 
 
 def mutate_one(entry, log_dir, timeout, out=None):
@@ -598,17 +543,8 @@ def mutate_one(entry, log_dir, timeout, out=None):
     the restore is verified, so a restore that never ran reads as a failed one. The
     restore runs in a finally block that covers the recording, the write and the
     killers; it is skipped only when recording the plant was refused, and then
-    nothing was written. HANDLED_SIGNALS are blocked from before out.planted is set
-    until the mask goes back at the very end, except inside run_interruptibly()
-    around the killers, so Interrupted can only be raised there. A signal held
-    between the plant and the start of the killers is delivered when
-    run_interruptibly unmasks: it raises Interrupted, the killers do not run, no
-    verdict is returned, and the restore runs and is verified. A signal that
-    arrives after the killers have ended, or during the restore, is recorded in
-    out.late_signals when the mask goes back, and the run stops after the verified
-    restore. A signal that lands before the first block has planted nothing.
-    Raises ToolError when git cannot answer the clean-tree check, and Interrupted
-    when a signal lands before the killers start or while they run.
+    nothing was written. Raises ToolError when git cannot answer the clean-tree
+    check, and Interrupted when a signal lands during the run.
     """
     if out is None:
         out = Outcome(entry["id"])
@@ -636,32 +572,28 @@ def mutate_one(entry, log_dir, timeout, out=None):
         handle.write(original)
     mutated = text[:pos] + entry["after"] + text[pos + len(entry["before"]):]
     marker = os.path.join(git_dir(), MARKER_NAME)
-    entry_mask = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
+    out.planted = True      # before the marker is written: from here an exit that skips the restore reads as unrestored
+    out.restore_ok = False
+    refused = False
     try:
-        out.planted = True      # before the marker is written: from here an exit that skips the restore reads as unrestored
-        out.restore_ok = False
-        refused = False
         try:
-            try:
-                record_plant(marker, relpath, entry["id"], log_dir, saved)
-            except (OSError, ValueError) as exc:
-                refused = True
-                out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
-                return out
-            with open(out.log, "w", encoding="utf-8") as log:
-                log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
-                log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
-                with open(path, "wb") as handle:
-                    handle.write(mutated.encode("utf-8"))
-                out.killers = run_interruptibly(entry_mask, run_killers, entry, log, timeout)
-        finally:
-            if refused:  # nothing was recorded and nothing was written
-                out.planted = False
-                out.restore_ok = True
-            else:
-                restore_blocked(out, path, relpath, original, saved, marker)
+            record_plant(marker, relpath, entry["id"], log_dir, saved)
+        except (OSError, ValueError) as exc:
+            refused = True
+            out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
+            return out
+        with open(out.log, "w", encoding="utf-8") as log:
+            log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
+            log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
+            with open(path, "wb") as handle:
+                handle.write(mutated.encode("utf-8"))
+            out.killers = run_killers(entry, log, timeout)
     finally:
-        release_signals(out, entry_mask)
+        if refused:  # nothing was recorded and nothing was written
+            out.planted = False
+            out.restore_ok = True
+        else:
+            restore_until_done(out, path, relpath, original, saved, marker)
     failing = [(sel, msg) for sel, st, msg in out.killers if st in ("FAIL", "ERROR")]
     not_run = [sel for sel, st, _ in out.killers if st == "NOT-RUN"]
     timed_out = [sel for sel, st, _ in out.killers if st == "TIMEOUT"]
@@ -848,7 +780,6 @@ def run_locked(args, chosen, marker):
     log_dir = args.log_dir or tempfile.mkdtemp(prefix="mutate-")
     os.makedirs(log_dir, exist_ok=True)
     print(f"mutate: {len(chosen)} mutant(s); killer timeout {args.timeout:g}s; logs in {log_dir}")
-    start_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])  # a query: nothing is added to the mask
     installed = {}
     outcomes = []
     current = None  # the Outcome of the mutant in progress, so an early stop can still read its restore verdict
@@ -864,7 +795,7 @@ def run_locked(args, chosen, marker):
             for line in describe(out, len(entry["killers"])):
                 print(line)
             sys.stdout.flush()
-            if out.late_signals:  # recorded after its killers ended; its file is restored, so stop here
+            if out.late_signals:  # arrived during this mutant's restore; the file is restored, so stop here
                 raise Interrupted(out.late_signals[0])
         after_status = git(["status", "--porcelain"]).stdout
     except (Interrupted, KeyboardInterrupt) as exc:
@@ -873,9 +804,6 @@ def run_locked(args, chosen, marker):
         tool_failure = str(exc)
     finally:
         restore_handlers(installed)
-        # mutate_one puts the mask back itself; this puts back the mask the run started with, for an
-        # exit that skipped that
-        signal.pthread_sigmask(signal.SIG_SETMASK, start_mask)
 
     if interrupted is not None:
         print(f"mutate: interrupted by {interrupted}")
