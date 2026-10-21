@@ -1637,6 +1637,64 @@ class HelpText(TriageRunCase):
         self.assertIn("Exit codes:", proc.stdout)
         self.assertIn("64 usage error.", proc.stdout)
 
+    def test_help_wins_wherever_it_stands_and_does_nothing_else(self):
+        """Path: `--help` or `-h` after another argument, as the value of a flag, or `-h` alone.
+
+        Each argument list runs the script as a subprocess, and must print the
+        help on stdout, exit 0, write nothing to stderr, and do nothing else: the
+        env file is not sourced (it writes a marker file when it is), the log
+        directory is not created, and the OpenCode stub is called for neither
+        `debug` nor `run`. The same env file, log directory and stub are first
+        used by a run that is not help. That run is the positive control for each
+        of those absences: the marker is written, the log directory exists, and
+        the stub's `debug` and `run` are called.
+
+        Mutants, each paired with its mirror: GUARD-HELP-FIRST-TWO (only the
+        first two arguments are looked at) and GUARD-HELP-SKIP-FIRST (the first
+        argument is not looked at); GUARD-HELP-H-OFF (`-h` is not help) and
+        GUARD-HELP-LONG-OFF (`--help` is not help); GUARD-HELP-SOURCES-ENV (help
+        sources the env file) and GUARD-HELP-LOG-DIR (help creates the log
+        directory); GUARD-HELP-DEBUG-CALL (help calls the stub for `debug`) and
+        GUARD-HELP-RUN-CALL (help calls the stub for `run`).
+        """
+        marker = os.path.join(self.tmp, "env-file-was-sourced")
+        env_file = os.path.join(self.tmp, "marking.env")
+        with open(env_file, "w", encoding="utf8") as fh:
+            fh.write("echo sourced > '%s'\n" % marker)
+        os.chmod(env_file, 0o600)
+
+        def reset():
+            """Remove every trace a run leaves, so each argument list starts from none."""
+            for path in (marker, self.run_args, self.debug_count):
+                if os.path.exists(path):
+                    os.remove(path)
+            shutil.rmtree(self.log_dir, ignore_errors=True)
+
+        control = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
+                                  extra_env={"TRIAGE_ENV_FILE": env_file})
+        self.assertEqual(control.returncode, 0, "control: " + control.stderr + self.log())
+        self.assertTrue(os.path.exists(marker), "control: a run that is not help did not source the env file")
+        self.assertTrue(os.path.isdir(self.log_dir), "control: a run that is not help did not create the log directory")
+        self.assertGreaterEqual(self.debug_calls(), 1, "control: a run that is not help did not call the stub for `debug`")
+        self.assertTrue(self.ran(), "control: a run that is not help did not call the stub for `run`")
+
+        env = self.base_env()
+        env["TRIAGE_ENV_FILE"] = env_file
+        for argv in (("--bogus", "--help"), ("grade", "--bogus", "--help"),
+                     ("--model", "--help"), ("grade", "--model", "--help"),
+                     ("-h",), ("grade", "-h")):
+            with self.subTest(argv=" ".join(argv)):
+                reset()
+                proc = subprocess.run(["/bin/bash", self.script, *argv], env=env, stdin=subprocess.DEVNULL,
+                                      capture_output=True, text=True, timeout=30)
+                self.assertEqual(proc.returncode, 0, "argv=%s: %s" % (argv, proc.stderr))
+                self.assertIn("Exit codes:", proc.stdout, "argv=%s: no help on stdout" % (argv,))
+                self.assertEqual(proc.stderr, "", "argv=%s: help wrote to stderr" % (argv,))
+                self.assertFalse(os.path.exists(marker), "argv=%s: help sourced the env file" % (argv,))
+                self.assertFalse(os.path.exists(self.log_dir), "argv=%s: help created the log directory" % (argv,))
+                self.assertEqual(self.debug_calls(), 0, "argv=%s: help called the stub for `debug`" % (argv,))
+                self.assertFalse(self.ran(), "argv=%s: help called the stub for `run`" % (argv,))
+
 
 if __name__ == "__main__":
     unittest.main()

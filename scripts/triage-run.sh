@@ -92,8 +92,10 @@ print_help() {
 # --help and -h are the only thing read before the environment files are
 # sourced, so help has no side effects and works with a broken .env. They are
 # looked for in every argument, and win wherever they stand, even as the value of
-# another flag. The other flags are read further down, after the files, so that a
-# flag wins over a file value.
+# another flag, so `--bogus --help` and `--model --help` print help and exit 0.
+# The tests HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else
+# and the HELP rows in testdata/mutants.json hold that rule. The other flags are
+# read further down, after the files, so that a flag wins over a file value.
 for arg in "$@"; do
   case "$arg" in
     -h|--help) print_help; exit 0 ;;
