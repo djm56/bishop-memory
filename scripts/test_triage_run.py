@@ -26,6 +26,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -134,6 +135,7 @@ case "$1" in
     n=$(( $(cat "$STUB_DEBUG_COUNT" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$STUB_DEBUG_COUNT"
     if [ -n "${STUB_DEBUG_HANG:-}" ]; then exec sleep 600; fi
+    if [ -n "${STUB_DEBUG_SLEEP:-}" ]; then sleep "$STUB_DEBUG_SLEEP"; fi
     if [ "$n" -le "${STUB_DEBUG_COLD:-0}" ]; then printf '%s' "${STUB_DEBUG_COLD_OUT:-}"; exit 0; fi
     if [ -n "${STUB_DEBUG_ERR:-}" ]; then printf '%s\\n' "$STUB_DEBUG_ERR" >&2; fi
     cat "$STUB_DEBUG_OUT"
@@ -156,6 +158,17 @@ TOOLS_WITHOUT_PERL = (
     "mkdir", "stat", "chmod", "grep", "wc", "cut", "dirname", "basename", "curl", "tee",
     "uname", "sort",
 )
+
+# The same tools without python3, for the test of a missing python3. perl is not
+# in the list either, so the guard would fail on perl if the python3 check were
+# absent and reached.
+TOOLS_WITHOUT_PYTHON = tuple(t for t in TOOLS_WITHOUT_PERL if t != "python3")
+
+# The rule count of the unrelated agent in the large-listing test. At this count
+# the pretty-printed listing is over 300 KB, with dense whitespace. The live
+# listing is about 30 KB, and the old bash substitution did not stall at that size
+# when measured; it is quadratic in the text's length, and this size exposes it.
+LARGE_FILLER_RULES = 3000
 
 
 class FakeMemory(http.server.BaseHTTPRequestHandler):
@@ -228,6 +241,31 @@ class TriageRunCase(unittest.TestCase):
         """The path of the copied definition for one agent."""
         return os.path.join(self.root, ".opencode", "agents", agent + ".md")
 
+    def replace_in_definition(self, agent, old, new):
+        """
+        Replace one occurrence of `old` in the copied definition with `new`. The
+        text must occur exactly once, so the edit lands where the test means it to.
+        """
+        path = self.definition_path(agent)
+        with open(path, encoding="utf8") as fh:
+            text = fh.read()
+        if text.count(old) != 1:
+            raise AssertionError("expected one occurrence of %r in %s, found %d" % (old, path, text.count(old)))
+        with open(path, "w", encoding="utf8") as fh:
+            fh.write(text.replace(old, new, 1))
+
+    def drop_definition_line(self, agent, prefix):
+        """Remove the one line of the copied definition that starts with `prefix`."""
+        path = self.definition_path(agent)
+        with open(path, encoding="utf8") as fh:
+            lines = fh.read().split("\n")
+        hits = [i for i, line in enumerate(lines) if line.startswith(prefix)]
+        if len(hits) != 1:
+            raise AssertionError("expected one line starting %r in %s, found %d" % (prefix, path, len(hits)))
+        del lines[hits[0]]
+        with open(path, "w", encoding="utf8") as fh:
+            fh.write("\n".join(lines))
+
     def definition(self, agent):
         """The description and body of the copied definition, as the guard reads them."""
         with open(self.definition_path(agent), encoding="utf8") as fh:
@@ -271,15 +309,19 @@ class TriageRunCase(unittest.TestCase):
         }
 
     def run_script(self, kind, listing, *, debug_rc=0, debug_err=None, run_out=STEP_OK, run_rc=0,
-                   cold=0, cold_out="", hang=False, guard_timeout=30, path=None):
-        """Run the copied script for one kind. The listing is JSON, or raw text when a string.
+                   cold=0, cold_out="", hang=False, guard_timeout=30, path=None, slow=None):
+        """Run the copied script for one kind. The listing is JSON, or raw text when a string, or raw bytes.
 
         `cold` makes the first that many `debug` calls print `cold_out`. `hang`
-        makes every `debug` call sleep until the guard's alarm stops it.
+        makes every `debug` call sleep until the guard's alarm stops it. `slow`
+        makes every `debug` call sleep that many seconds, then answer normally.
         """
-        text = listing if isinstance(listing, str) else json.dumps(listing)
-        with open(self.debug_out, "w") as fh:
-            fh.write(text)
+        if isinstance(listing, bytes):
+            data = listing
+        else:
+            data = (listing if isinstance(listing, str) else json.dumps(listing, ensure_ascii=False)).encode("utf8")
+        with open(self.debug_out, "wb") as fh:
+            fh.write(data)
         with open(self.run_out, "w") as fh:
             fh.write(run_out)
         env = self.base_env(path)
@@ -289,6 +331,7 @@ class TriageRunCase(unittest.TestCase):
             "STUB_DEBUG_COLD": str(cold),
             "STUB_DEBUG_COLD_OUT": cold_out,
             "STUB_DEBUG_HANG": "1" if hang else "",
+            "STUB_DEBUG_SLEEP": str(slow) if slow else "",
             "STUB_RUN_RC": str(run_rc),
             "TRIAGE_GUARD_TIMEOUT_SEC": str(guard_timeout),
         })
@@ -310,6 +353,19 @@ class TriageRunCase(unittest.TestCase):
             proc.communicate()
             self.fail("triage-run.sh did not finish within 30 seconds; the run was killed")
         return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+
+    def run_claude(self, guard_timeout):
+        """
+        Run the copied script on the claude engine, with no claude CLI on the
+        path, and with the given TRIAGE_GUARD_TIMEOUT_SEC. The claude engine does
+        not use the guard, so the bad value must not be reported as exit 64; the
+        CLI check is the next thing that can stop the run, and it exits 2.
+        """
+        env = self.base_env()
+        env.update({"CLAUDE_BIN": os.path.join(self.tmp, "no-such-claude"),
+                    "TRIAGE_GUARD_TIMEOUT_SEC": guard_timeout})
+        return subprocess.run(["/bin/bash", self.script, "grade", "--engine", "claude"], env=env,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
 
     def run_help(self, *args):
         """Run the copied script with the given arguments and return the completed process."""
@@ -361,9 +417,6 @@ class TriageRunCase(unittest.TestCase):
 class GuardAccepts(TriageRunCase):
     def test_guard_accepts_each_triage_agent_definition_and_runs_it(self):
         """Path: the guard passes our own definition and the run starts.
-
-        Control: a guard that refuses every listing fails here (exit 2, no run
-        call). Each kind is run once, with its own agent, from a fresh state.
         """
         for kind, agent in KIND_AGENT.items():
             with self.subTest(agent=agent):
@@ -379,9 +432,7 @@ class GuardAccepts(TriageRunCase):
         """Path: the grader's description is compared as text, against a literal fixture.
 
         The test first pins the literal to the copied definition, so a changed
-        definition fails here rather than in a silent mismatch. Control: a guard
-        that compares the description after stripping its last word refuses this
-        listing, and the test fails.
+        definition fails here rather than in a silent mismatch.
         """
         self.assertEqual(self.definition("mission-grader")[0], LITERAL_GRADER_DESCRIPTION)
         entry = self.agent_entry("mission-grader", GRADER_RULES, description=LITERAL_GRADER_DESCRIPTION)
@@ -391,9 +442,6 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_an_entry_matched_by_name_when_its_id_differs(self):
         """Path: the one entry is matched by its name, and its id is something else.
-
-        Control: a guard that matches on id alone counts no entry here, refuses
-        with "0 agents named", and the test fails.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         entry["id"] = "some-other-id"
@@ -403,10 +451,6 @@ class GuardAccepts(TriageRunCase):
 
     def test_run_is_started_standalone_without_pure_and_with_the_layered_config(self):
         """Path: the run invocation under v2 (no --pure, --standalone, layered config).
-
-        Control: putting `--pure` back into the run command fails the first
-        assertion. Dropping `--standalone` fails the second. Dropping the
-        layered config fails the third, because the MCP server is missing.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
@@ -418,9 +462,6 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_an_external_directory_allow_after_the_final_deny(self):
         """Path: the layered config's external_directory allow is named by the listing after the deny.
-
-        Control: taking external_directory out of the allowed actions refuses
-        this listing, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "external_directory", "resource": "/some/dir/*", "effect": "allow"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
@@ -429,9 +470,6 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_a_deny_on_a_narrower_resource_after_the_final_deny(self):
         """Path: a deny for one resource after the final deny denies, and the guard accepts it.
-
-        Control: a guard that skips only denies on the resource `*` refuses
-        this listing, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "edit", "resource": "src/*", "effect": "deny"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
@@ -440,12 +478,151 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_a_deny_on_every_resource_after_the_final_deny(self):
         """Path: a deny for every resource after the final deny is accepted.
-
-        Control: a guard that skips only denies on resources other than `*`
-        refuses the browser deny already in the grader's rules, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "edit", "resource": "*", "effect": "deny"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+
+    def test_guard_accepts_a_deny_directly_after_the_final_deny(self):
+        """Path: the first rule after the final deny is a deny, which the guard skips.
+
+        Mutant: a guard that refuses a deny in that first slot (GUARD-FIRST-DENY-REFUSE)
+        refuses this listing, and the test fails.
+        """
+        rules = GRADER_RULES[:5] + [{"action": "edit", "resource": "*", "effect": "deny"}] + GRADER_RULES[5:]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_an_ask_on_an_allowed_action_after_the_final_deny(self):
+        """Path: an ask is not a deny. An ask on an allowed action after the final deny is accepted.
+
+        Mutant: a guard that treats an ask as a refusal (GUARD-ASK-REFUSE) refuses
+        this listing, and the test fails.
+        """
+        rules = GRADER_RULES + [{"action": "read", "resource": "src/*", "effect": "ask"}]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_deny_on_a_resource_in_a_nested_block_after_the_final_deny(self):
+        """Path: the definition's nested block denies one resource of an action, after the final deny.
+
+        The nested form `edit:` with `"src/*": deny` is read with that resource.
+        Mutant: a parse that turns the nested deny into an allow (GUARD-NEST-DENY-SWAP)
+        refuses this file, and the test fails.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   "  bishop-triage_grade_write: allow\n  edit:\n    \"src/*\": deny\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_top_level_key_after_the_permission_block(self):
+        """Path: a top-level key after the permission block ends it, and the file is accepted.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n---\n",
+                                   "  bishop-triage_grade_write: allow\ntemperature: 0.2\n---\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_an_indented_block_before_the_permission_block_it_does_not_read(self):
+        """Path: an indented block under another key, before the permission block, is not read as rules.
+        """
+        self.replace_in_definition("mission-grader", "permission:\n", "options:\n  foo: bar\npermission:\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_definition_with_single_quoted_keys_and_values(self):
+        """Path: the permission block quotes its keys and effects with single quotes, as YAML allows.
+
+        The file says '*': deny and 'read': ... and the guard reads the same rules
+        as the double-quoted form.
+        """
+        path = self.definition_path("mission-grader")
+        with open(path, encoding="utf8") as fh:
+            text = fh.read()
+        quoted = text.replace('  "*": deny\n', "  '*': deny\n", 1).replace('    "*": allow\n', "    '*': allow\n", 1)
+        self.assertNotEqual(quoted, text)
+        with open(path, "w", encoding="utf8") as fh:
+            fh.write(quoted)
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_definition_whose_body_is_not_ascii(self):
+        """Path: the body of the definition holds a non-ASCII character, and the listing matches it.
+
+        The definition is read as UTF-8. Mutant: GUARD-READ-ASCII (the definition is read as ASCII) gives exit 4 for this file, and the test fails.
+        """
+        self.replace_in_definition("mission-grader", "# Mission Grader\n", "# Mission Grader — graded\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_listing_entry_that_is_not_ours_with_non_ascii_text(self):
+        """Path: another agent in the listing carries non-ASCII text, and the listing is read as UTF-8.
+        """
+        other = self.agent_entry("Build", GRADER_RULES, source="mission-grader")
+        other["description"] = "Builds the thing — quickly."
+        proc = self.run_script("grade", [other, self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_our_entry_beside_a_bare_string_in_the_listing(self):
+        """Path: the listing holds a string where an agent object should be, beside our entry.
+
+        The string is not an entry of ours, so it is skipped, and our entry is
+        the one named.
+
+        """
+        listing = [self.agent_entry("mission-grader", GRADER_RULES), "not an agent"]
+        proc = self.run_script("grade", listing)
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_completes_a_listing_of_live_size_within_the_bound(self):
+        """Path: a listing of about the live size, with dense whitespace, is read within the bound.
+
+        The listing is pretty-printed JSON with a large unrelated agent. It runs
+        through the file-fed listing check, which is quick. Mutant: GUARD-STRIP-BASH (a bash pattern substitution in place of tr) does not finish the listing within the
+        run's 30-second limit, so the test fails on that limit. The 3-second bound below is a backstop; the
+        mutant does not reach it.
+        """
+        filler = self.agent_entry("Build", GRADER_RULES, source="mission-grader")
+        filler["permissions"] = [{"action": "read", "resource": "/some/path/%d" % i, "effect": "allow"}
+                                 for i in range(LARGE_FILLER_RULES)]
+        listing = [self.agent_entry("mission-grader", GRADER_RULES), filler]
+        text = json.dumps(listing, indent=2, ensure_ascii=False)
+        self.assertGreater(len(text), 300000)
+        started = time.monotonic()
+        proc = self.run_script("grade", text)
+        elapsed = time.monotonic() - started
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertLess(elapsed, 3, "the guard took %.1f s on a %d-byte listing" % (elapsed, len(text)))
+
+    def test_guard_accepts_a_slow_listing_that_finishes_inside_the_bound(self):
+        """Path: the listing takes 2 seconds and the bound is 5, so the listing is read.
+
+        Mutant: a bound that is not the configured one (GUARD-TIMEOUT-SHORT, a
+        constant 1 second) stops this listing, and the exit assertion fails.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
+                               slow=2, guard_timeout=5)
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_a_guard_timeout_of_one_second(self):
+        """Path: TRIAGE_GUARD_TIMEOUT_SEC=1 is a whole number of seconds at least 1, and is accepted.
+
+        Mutant: a bound check that rejects 1 (GUARD-TMO-STRICT) exits 64, and the
+        test fails.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], guard_timeout=1)
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
         self.assertTrue(self.ran())
 
@@ -454,17 +631,14 @@ class GuardRefuses(TriageRunCase):
     def test_guard_refuses_an_unknown_agent_name(self):
         """Path: the named agent is absent from a non-empty listing.
 
-        Control: a guard that treats an empty match as a pass calls the run
-        stub, so the exit code and the refusal text fail here.
+        Mutant GUARD-COUNT-LOW (`len(named) > 1`) reads named[0] of an empty match, raises IndexError
+        and exits 4 rather than 2. The kill is on the exit code (4 != 2).
         """
         proc = self.run_script("grade", [self.agent_entry("Build", GRADER_RULES, source="mission-grader")])
         self.assertRefused(proc, "0 agents named mission-grader")
 
     def test_guard_refuses_two_entries_with_the_same_name(self):
         """Path: two agents share the name, so the guard cannot tell which one runs.
-
-        Control: a guard that takes the first match and ignores the count
-        passes this listing and fails the test.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         proc = self.run_script("grade", [entry, dict(entry)])
@@ -472,9 +646,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_shadowing_entry_whose_id_is_the_agent_name(self):
         """Path: a second entry has our name as its id, so the name is held twice.
-
-        Control: a guard that matches on name alone counts one entry, accepts
-        the listing, and the test fails.
         """
         ours = self.agent_entry("mission-grader", GRADER_RULES)
         shadow = self.agent_entry("Build", GRADER_RULES, source="mission-grader")
@@ -484,9 +655,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_description_that_is_not_ours(self):
         """Path: the agent of our name has a description different from our file.
-
-        Control: removing the description comparison passes this listing (the
-        body still matches), and the test fails.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES, description="Something else entirely.")
         proc = self.run_script("grade", [entry])
@@ -494,9 +662,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_definition_that_is_not_ours(self):
         """Path: the agent of our name has a different body from our file.
-
-        Control: removing the body comparison passes this listing (the
-        description still matches), and the test fails.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES, system="# Some other agent\n\nDo things.\n")
         proc = self.run_script("grade", [entry])
@@ -504,8 +669,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_mode_that_is_not_the_declared_one(self):
         """Path: the agent of our name is a subagent, while our file declares primary.
-
-        Control: removing the mode comparison passes this listing, and the test fails.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES, mode="subagent")
         proc = self.run_script("grade", [entry])
@@ -514,9 +677,9 @@ class GuardRefuses(TriageRunCase):
     def test_guard_refuses_a_listing_with_missing_or_empty_permissions(self):
         """Path: the agent carries no permission rules, missing or as an empty list.
 
-        Control: a guard that accepts an agent with no rules passes both
-        subtests, and each fails. The text is the same for both, because both
-        are the same path: no rules to check.
+        Mutant GUARD-EMPTY-OFF (the permission-list test removed): the missing subtest raises TypeError
+        and exits 4 (4 != 2); the empty subtest is refused for another reason. Each subtest fails on its
+        own assertion; the runner records only the first (see the record prose).
         """
         missing = self.agent_entry("mission-grader", GRADER_RULES)
         del missing["permissions"]
@@ -530,9 +693,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_an_edit_allowed_after_the_deny(self):
         """Path: a later rule allows edit everywhere, overriding the deny.
-
-        Control: a check that accepts an edit allow after the final deny passes
-        this listing, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "edit", "resource": "*", "effect": "allow"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
@@ -540,29 +700,24 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_an_edit_allowed_for_some_paths(self):
         """Path: a later rule allows edit only under src/, which is still an edit permission.
-
-        Control: a check that looks only at rules covering every resource
-        passes this listing, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "edit", "resource": "src/*", "effect": "allow"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
         self.assertRefused(proc, "(edit on src/*: allow) comes after the final deny")
 
     def test_guard_refuses_a_shell_allowed_after_the_deny(self):
-        """Path: a later rule allows bash, the shell action in v2.
+        """Path: a later rule allows shell, which the allowlist does not name.
 
-        Control: a check that does not name bash as disallowed passes this
-        listing, and the test fails.
+        shell is not in ALLOWED_ACTIONS, so the guard refuses an allow for it after the final deny.
+        Mutant: a guard that does not check the action name (GUARD-ACTION-OFF)
+        passes this listing, and the test fails.
         """
-        rules = GRADER_RULES + [{"action": "bash", "resource": "*", "effect": "allow"}]
+        rules = GRADER_RULES + [{"action": "shell", "resource": "*", "effect": "allow"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
-        self.assertRefused(proc, "(bash on *: allow) comes after the final deny")
+        self.assertRefused(proc, "(shell on *: allow) comes after the final deny")
 
     def test_guard_refuses_an_ask_for_a_shell_action_after_the_deny(self):
         """Path: a later rule asks before shell, which is neither a deny nor an allowed action.
-
-        Control: a check that reads only `allow` as a grant passes this listing,
-        and the test fails.
         """
         rules = GRADER_RULES + [{"action": "shell", "resource": "*", "effect": "ask"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
@@ -570,9 +725,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_bishop_action_outside_the_triage_prefix(self):
         """Path: a bishop-named action that is not bishop-triage_ is allowed after the deny.
-
-        Control: a prefix test that matches any `bishop` action passes this
-        listing, and the test fails.
         """
         rules = GRADER_RULES + [{"action": "bishop-other_tool", "resource": "*", "effect": "allow"}]
         proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
@@ -580,9 +732,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_last_covering_rule_that_is_an_allow(self):
         """Path: the last rule covering every action and resource is an allow, not the deny.
-
-        Control: a check that does not test the effect of the last covering rule
-        passes this listing, and the test fails.
         """
         rules = [dict(r) for r in GRADER_RULES]
         rules[4]["effect"] = "allow"
@@ -594,8 +743,8 @@ class GuardRefuses(TriageRunCase):
 
         The `**` and `*/*` subtests use a deny that looks like a covering rule
         and is not one, so they must fail closed as well.
-        Control: a check that returns a pass when no covering rule exists passes
-        these listings, and each subtest fails.
+        Mutant: GUARD-NOCOVER-OFF (the refusal for no covering rule is removed) passes these listings; each subtest
+        fails on the exit code (0 != 2).
         """
         base = [r for r in GRADER_RULES if not (r["action"] == "*" and r["resource"] == "*")]
         for lookalike in ("**", "*/*"):
@@ -612,8 +761,8 @@ class GuardRefuses(TriageRunCase):
         The listing is the one the guard would accept. The file's own permission
         block is read and checked, so the loosened file is refused while the
         listing is stale.
-        Control: removing the check of the definition's permission block accepts
-        this run, and the test fails.
+        Mutant: GUARD-FILE-OFF (the definition's permission block is not checked) accepts this run; the kill is on
+        the exit code.
         """
         path = self.definition_path("mission-grader")
         with open(path, encoding="utf8") as fh:
@@ -628,9 +777,6 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_definition_with_no_permission_block(self):
         """Path: the definition has no permission block at all; the listing is the old one.
-
-        Control: a guard that never reads the definition's permission block
-        accepts this run, and the test fails.
         """
         path = self.definition_path("mission-grader")
         with open(path, encoding="utf8") as fh:
@@ -651,6 +797,84 @@ class GuardRefuses(TriageRunCase):
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
         self.assertRefused(proc, "definition " + path + ": no rule denies every action on every resource")
 
+    def test_guard_refuses_an_edit_allowed_directly_after_the_final_deny(self):
+        """Path: the first rule after the final deny is an allow for edit, in the listing.
+
+        Mutant: a check that starts its loop one rule late (GUARD-FIRST-SKIP)
+        never reads this rule and accepts the listing, so the test fails.
+        """
+        rules = GRADER_RULES[:5] + [{"action": "edit", "resource": "*", "effect": "allow"}] + GRADER_RULES[5:]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertRefused(proc, "(edit on *: allow) comes after the final deny")
+
+    def test_guard_refuses_an_edit_allowed_directly_after_the_final_deny_in_the_file(self):
+        """Path: the first rule after the final deny is an allow for edit, in the definition.
+
+        The listing is the old one. The file's own block puts `edit: allow`
+        directly after its `"*": deny`, so the refusal comes from the file check.
+        Mutant: the same off-by-one (GUARD-FIRST-SKIP) accepts the file, and the
+        test fails.
+        """
+        self.replace_in_definition("mission-grader", '  "*": deny\n  read:\n',
+                                   '  "*": deny\n  edit: allow\n  read:\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertRefused(proc, "definition " + self.definition_path("mission-grader")
+                           + ": rule 1 (edit on *: allow) comes after the final deny")
+
+    def test_guard_refuses_a_nested_edit_allow_in_the_definition(self):
+        """Path: the definition's nested block `edit:` allows every resource, after the final deny.
+
+        The nested form is read with resource `*`, so the refusal is for `edit on *`.
+        Mutant: a parse that drops the nested branch (GUARD-NEST-DROP) reads nothing
+        under `edit:` and accepts the file, so the test fails.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   '  bishop-triage_grade_write: allow\n  edit:\n    "*": allow\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertRefused(proc, "(edit on *: allow) comes after the final deny")
+
+    def test_guard_refuses_a_nested_edit_allow_for_some_paths_in_the_definition(self):
+        """Path: the nested block allows edit for one resource, src/*, after the final deny.
+
+        Mutant: a parse that reads every nested rule as resource `*` (GUARD-NEST-RES)
+        names the wrong resource in the refusal, and the text assertion fails.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   '  bishop-triage_grade_write: allow\n  edit:\n    "src/*": allow\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertRefused(proc, "(edit on src/*: allow) comes after the final deny")
+
+    def test_guard_refuses_a_covering_deny_for_some_resources_only(self):
+        """Path: the only rule that names every action is a deny for one resource, src/*.
+
+        A deny for some resources does not cover every resource, so no rule
+        denies everything.
+
+        """
+        base = [r for r in GRADER_RULES if not (r["action"] == "*" and r["resource"] == "*")]
+        rules = base + [{"action": "*", "resource": "src/*", "effect": "deny"}]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertRefused(proc, "no rule denies every action on every resource")
+
+    def test_guard_refuses_a_covering_deny_for_one_action_only(self):
+        """Path: the only deny is for one action, read, on every resource.
+
+        A deny for one action does not deny every action, so no rule covers.
+
+        """
+        base = [r for r in GRADER_RULES if not (r["action"] == "*" and r["resource"] == "*")]
+        rules = base + [{"action": "read", "resource": "*", "effect": "deny"}]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertRefused(proc, "no rule denies every action on every resource")
+
+    def test_guard_refuses_a_permission_block_that_is_an_object(self):
+        """Path: the agent's permissions are a JSON object, not a list of rules.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        entry["permissions"] = {"read": "allow"}
+        proc = self.run_script("grade", [entry])
+        self.assertRefused(proc, "agent mission-grader lists no permission rules")
+
 
 class GuardCannotCheck(TriageRunCase):
     def test_guard_cannot_check_when_opencode_debug_fails(self):
@@ -659,9 +883,7 @@ class GuardCannotCheck(TriageRunCase):
         The stderr is logged, and the log says the guard could not check. It
         does not say the agent cannot be resolved, which would name a service
         failure as an agent problem.
-        Control: a guard that treats a failing listing as a refusal exits 2, and
-        the exit assertion fails. A guard that drops the stderr from the log
-        fails the stderr assertion.
+
         """
         proc = self.run_script("grade", [], debug_rc=1, debug_err="stub: service unreachable")
         self.assertCannotCheck(proc, "exited 1 (stderr: stub: service unreachable)")
@@ -670,8 +892,8 @@ class GuardCannotCheck(TriageRunCase):
         """Path: `opencode debug agents` exits non-zero but prints a valid listing.
 
         A failing call is not trusted, whatever it printed.
-        Control: a guard that reads a non-zero listing as success accepts this
-        run and calls the run stub, so the exit assertion fails.
+        Mutant: GUARD-DEBUG-ACCEPT (a non-zero listing is read as success) accepts this run; the kill is on the exit
+        code.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], debug_rc=1)
         self.assertCannotCheck(proc, "exited 1")
@@ -681,20 +903,25 @@ class GuardCannotCheck(TriageRunCase):
 
         The perl alarm kills the stub at the bound, so the guard exits 4 with a
         timed-out reason. The stub sleeps 600 seconds when hung; the bound here
-        is 2 seconds.
+        is 2 seconds, and the run must end well inside 10 seconds, so a bound
+        pinned to some other value (a constant) is seen as a late stop.
         Expected failure under a removed alarm: the stub sleeps on, the test's
         own 30-second subprocess limit is reached, and the test errors.
-        Control: removing the alarm lets the stub sleep, and this test errors.
+        Mutant: removing the alarm lets the stub sleep, and this test errors
+        (GUARD-TIMEOUT-OFF). A bound pinned to 1 second is not this test's
+        control; GUARD-TIMEOUT-SHORT is killed by the slow-listing test.
         """
+        started = time.monotonic()
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
                                hang=True, guard_timeout=2)
+        elapsed = time.monotonic() - started
         self.assertCannotCheck(proc, "timed out after 2s")
+        self.assertLess(elapsed, 10, "the listing was stopped %.1f s after it started, not at the 2 s bound" % elapsed)
 
     def test_guard_retries_an_empty_listing_and_accepts_the_next_one(self):
         """Path: a cold service answers with an empty listing once, then with the agents.
 
-        Control: a guard that does not retry refuses on the first empty listing
-        and exits 4, and the test fails. The debug count shows two calls.
+        Mutant GUARD-RETRY-NONE (no retry): the guard exits 4 on the first empty listing.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
                                cold=1, cold_out="")
@@ -705,9 +932,7 @@ class GuardCannotCheck(TriageRunCase):
     def test_guard_cannot_check_an_empty_listing_after_the_retries(self):
         """Path: the service stays cold, and every listing is empty.
 
-        Control: a guard that retries without bound never returns, so the test
-        errors on its own limit; a guard that accepts an empty listing exits 0
-        and the test fails. The debug count shows the three attempts.
+        Mutant GUARD-RETRY-UNBOUNDED (the retries never stop): the test errors on its own limit.
         """
         proc = self.run_script("grade", [], cold=99, cold_out="")
         self.assertCannotCheck(proc, "gave an empty listing on 3 attempts")
@@ -715,9 +940,6 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_a_cold_listing_of_no_agents(self):
         """Path: the service stays cold and answers with a listing of no agents, `[]`.
-
-        Control: a guard that treats `[]` as a listing to check exits 2, not 4,
-        and the test fails.
         """
         proc = self.run_script("grade", [], cold=99, cold_out="[]")
         self.assertCannotCheck(proc, "gave an empty listing on 3 attempts")
@@ -725,19 +947,12 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_an_unparseable_agent_listing(self):
         """Path: the listing command exits 0 but prints something that is not JSON.
-
-        Control: a guard that swallows the parse error and returns a pass
-        calls the run stub, and the test fails. A guard that reports the
-        failure as a refusal exits 2, and the test fails.
         """
         proc = self.run_script("grade", "not json {")
         self.assertCannotCheck(proc, "the agent listing is not JSON")
 
     def test_guard_cannot_check_a_definition_line_it_cannot_read(self):
         """Path: a line in our definition's permission block is in a shape the guard cannot read.
-
-        Control: a parser that skips unreadable lines accepts this run, and the
-        test fails.
         """
         path = self.definition_path("mission-grader")
         with open(path, encoding="utf8") as fh:
@@ -753,8 +968,10 @@ class GuardCannotCheck(TriageRunCase):
         """Path: perl is not on PATH, so the listing cannot be bounded, and nothing runs.
 
         The PATH the run gets holds every tool the script needs except perl.
-        Control: a guard that runs the listing unbounded when perl is absent
-        calls the stub and exits 0, so the exit assertion fails.
+        Mutant: GUARD-PERL-OFF (the perl check removed) starts the listing through the absent perl. The wrapper exits
+        127, the guard logs 'exited 127' and exits 4, and the kill is on the perl-absent reason text. The stub
+        is never reached, since perl is not found. The mutant does not run the listing unbounded, so no
+        recorded mutant shows that case; this test does not show it either.
         """
         bin_dir = os.path.join(self.tmp, "no-perl-bin")
         os.makedirs(bin_dir)
@@ -768,8 +985,315 @@ class GuardCannotCheck(TriageRunCase):
         self.assertCannotCheck(proc, "perl is not on PATH")
         self.assertEqual(self.debug_calls(), 0)
 
+    def test_guard_cannot_check_without_python3_before_the_listing(self):
+        """Path: python3 is not on PATH, so the guard cannot run, and nothing is listed.
+
+        The check runs before the work check, which also uses python3, so the
+        exit and its reason come from the guard's own precondition.
+        Mutant: a guard without the precondition (GUARD-PY3-OFF) runs the work
+        check, which fails on python3 with no log line, and the reason assertion fails.
+        """
+        bin_dir = os.path.join(self.tmp, "no-python-bin")
+        os.makedirs(bin_dir)
+        original = os.environ.get("PATH", "/usr/bin:/bin")
+        for name in TOOLS_WITHOUT_PYTHON:
+            found = shutil.which(name, path=original)
+            if found:
+                os.symlink(found, os.path.join(bin_dir, name))
+        self.assertIsNone(shutil.which("python3", path=bin_dir))
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], path=bin_dir)
+        self.assertCannotCheck(proc, "python3 is not on PATH")
+        self.assertEqual(self.debug_calls(), 0)
+
+    def test_guard_cannot_check_a_definition_that_is_missing_at_once(self):
+        """Path: the definition file is gone. The guard says so before it asks for the listing.
+
+        Mutant: a guard that asks for the listing before it reads the definition
+        (GUARD-DEF-PRECHECK-OFF) calls the stub once, so the call count assertion
+        fails. The reason is the guard's own, not a raw traceback.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        os.remove(self.definition_path("mission-grader"))
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "cannot read the definition " + self.definition_path("mission-grader")
+                               + ": No such file or directory")
+        self.assertEqual(self.debug_calls(), 0)
+
+    def test_guard_cannot_check_a_definition_that_is_not_utf8(self):
+        """Path: the definition holds bytes that are not UTF-8.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        with open(self.definition_path("mission-grader"), "ab") as fh:
+            fh.write(b"\n\xff\n")
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "the definition " + self.definition_path("mission-grader") + " is not UTF-8 text")
+
+    def test_guard_cannot_check_a_definition_with_no_frontmatter(self):
+        """Path: the definition does not open with its frontmatter delimiter.
+
+        Mutant: a check that drops the first-line test (GUARD-DEF-FIRST-OFF) reads
+        the file's later delimiter as its frontmatter and accepts it, so the test fails.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.replace_in_definition("mission-grader", "---\ndescription:", "description:")
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no frontmatter in")
+
+    def test_guard_cannot_check_a_definition_with_no_closing_delimiter(self):
+        """Path: the frontmatter never closes.
+
+        Mutant: a check that drops the closing-delimiter test (GUARD-DEF-CLOSE-OFF)
+        calls index() on a missing delimiter, which raises, and the reason
+        assertion fails.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n---\n",
+                                   "  bishop-triage_grade_write: allow\n")
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no frontmatter in")
+
+    def test_guard_cannot_check_a_definition_with_no_description(self):
+        """Path: the definition has no description line.
+
+        Mutant: a guard that accepts a missing description (GUARD-DEF-DESC-OFF)
+        compares None with the listing, refuses with exit 2, and the test fails.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.drop_definition_line("mission-grader", "description:")
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no quoted description in")
+
+    def test_guard_cannot_check_a_definition_with_no_mode(self):
+        """Path: the definition has no mode line.
+
+        Mutant: a guard that accepts a missing mode (GUARD-DEF-MODE-OFF) compares
+        None with the listing, refuses with exit 2, and the test fails.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.drop_definition_line("mission-grader", "mode:")
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no mode in")
+
+    def test_guard_cannot_check_a_description_with_an_escaped_quote(self):
+        """Path: the description holds an escaped quote, which the line parser does not read.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.replace_in_definition("mission-grader", "Scheduled grader for finished",
+                                   'Scheduled \\"grader\\" for finished')
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no quoted description in")
+
+    def test_guard_cannot_check_a_quoted_mode(self):
+        """Path: the mode is quoted, which the line parser does not read.
+        """
+        entry = self.agent_entry("mission-grader", GRADER_RULES)
+        self.replace_in_definition("mission-grader", "mode: primary", 'mode: "primary"')
+        proc = self.run_script("grade", [entry])
+        self.assertCannotCheck(proc, "no mode in")
+
+    def test_guard_cannot_check_a_listing_that_is_not_a_list(self):
+        """Path: the listing is valid JSON, but an object or a scalar rather than a list.
+
+        Two subtests: an object that holds our entry as a value, and a number.
+        Mutant: a guard without the list test (GUARD-LIST-OFF) iterates the
+        object's keys and refuses with exit 2 ("0 agents named"), and iterates
+        the number and exits 4 with a TypeError. Each subtest's own text fails.
+        """
+        cases = (
+            ("object", json.dumps({"mission-grader": self.agent_entry("mission-grader", GRADER_RULES)})),
+            ("scalar", "5"),
+        )
+        for label, text in cases:
+            with self.subTest(listing=label):
+                proc = self.run_script("grade", text)
+                self.assertCannotCheck(proc, "the agent listing is not a list")
+
+    def test_guard_cannot_check_a_rule_that_is_not_an_object(self):
+        """Path: one permission rule is a string, not an object.
+        """
+        self.assert_rule_is_malformed(GRADER_RULES + ["edit"])
+
+    def test_guard_cannot_check_a_rule_whose_action_is_not_a_string(self):
+        """Path: one permission rule has a number as its action.
+        """
+        self.assert_rule_is_malformed(GRADER_RULES + [{"action": 5, "resource": "*", "effect": "allow"}])
+
+    def test_guard_cannot_check_a_rule_whose_resource_is_not_a_string(self):
+        """Path: one permission rule has a number as its resource.
+        """
+        self.assert_rule_is_malformed(GRADER_RULES + [{"action": "read", "resource": 5, "effect": "allow"}])
+
+    def test_guard_cannot_check_a_rule_with_an_unknown_effect(self):
+        """Path: one permission rule has an effect that is not allow, ask or deny.
+        """
+        self.assert_rule_is_malformed(GRADER_RULES + [{"action": "read", "resource": "*", "effect": "maybe"}])
+
+    def test_guard_cannot_check_an_unmatched_quote_in_a_rule(self):
+        """Path: a rule's effect opens a quote it does not close, so it is not an effect.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   '  bishop-triage_grade_write: allow\n  edit: "allow\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "is malformed")
+
+
+    def test_guard_accepts_an_indented_comment_in_the_permission_block(self):
+        """Path: a comment indented inside the permission block is skipped, and the file is accepted.
+
+        Mutant: GUARD-COMMENT-INDENT, which skips only column-0 comments, so the
+        indented comment is a line the parser cannot read and the file is CannotCheck.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   "  bishop-triage_grade_write: allow\n  # why\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_refuses_an_edit_allow_after_a_column_zero_comment_in_the_permission_block(self):
+        """Path: a comment at column 0 sits inside the permission block, with an edit allow after it.
+
+        The comment is skipped and does not end the block, so the edit allow after
+        it is read, and the file is refused for granting edit after the final deny.
+        Mutant: GUARD-COMMENT-COL0, which does not skip a column-0 comment, so the
+        block is CannotCheck and the test fails on the exit code.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   "  bishop-triage_grade_write: allow\n# why\n  edit: allow\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertRefused(proc, "(edit on *: allow) comes after the final deny")
+
+    def test_guard_cannot_check_a_column_zero_line_in_the_permission_block_that_is_not_a_key(self):
+        """Path: a column-0 line in the permission block that is not a top-level key.
+
+        A quoted key at column 0 does not end the permission block, so the block is
+        CannotCheck and the file is not read as if its last rule were absent.
+        Mutant: GUARD-TOPKEY-OFF, which ends the block at any column-0 line.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   '  bishop-triage_grade_write: allow\n"edit": allow\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "cannot read permission line")
+
+    def test_guard_cannot_check_a_tab_indented_rule_in_the_permission_block(self):
+        """Path: a rule indented with two tabs inside the permission block.
+
+        YAML does not allow tabs for indentation. The line is not read and the
+        block is CannotCheck.
+
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   "  bishop-triage_grade_write: allow\n\t\tedit: allow\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "cannot read permission line")
+
+    def test_guard_cannot_check_an_odd_indent_in_the_permission_block(self):
+        """Path: a rule indented by three spaces, which is neither the action nor the resource indent.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   "  bishop-triage_grade_write: allow\n   edit: allow\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "cannot read permission line")
+
+    def test_guard_cannot_check_a_nested_permission_line_with_no_value(self):
+        """Path: a nested resource line under edit has no effect after its colon.
+        """
+        self.replace_in_definition("mission-grader", "  bishop-triage_grade_write: allow\n",
+                                   '  bishop-triage_grade_write: allow\n  edit:\n    "*":\n')
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "cannot read permission line")
+
+    def test_guard_cannot_check_a_nested_permission_line_with_no_action(self):
+        """Path: a line indented four spaces appears directly under permission, with no action above it.
+        """
+        self.replace_in_definition("mission-grader", "permission:\n", "permission:\n    edit: allow\n")
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
+        self.assertCannotCheck(proc, "cannot read permission line")
+
+    def test_guard_retries_a_cold_listing_of_only_whitespace(self):
+        """Path: a cold service answers with whitespace only, which is an empty listing.
+
+        Mutant: a guard that does not strip whitespace before its empty test
+        (GUARD-STRIP-NONE) reads the whitespace as a listing, the parse fails with
+        "not JSON", and the empty-listing reason assertion fails.
+        """
+        proc = self.run_script("grade", [], cold=99, cold_out="\n  \n")
+        self.assertCannotCheck(proc, "gave an empty listing on 3 attempts")
+        self.assertEqual(self.debug_calls(), 3)
+
+    def test_guard_cannot_check_a_listing_that_is_not_utf8(self):
+        """Path: the listing holds bytes that are not UTF-8.
+        """
+        proc = self.run_script("grade", b'[{"name": "\xff"}]')
+        self.assertCannotCheck(proc, "UnicodeDecodeError")
+
+    def assert_rule_is_malformed(self, rules):
+        """
+        Shared check for the rule-shape tests: the listing's permissions hold a
+        rule the shape check rejects, and the guard exits 4 with the rule named
+        as malformed.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertCannotCheck(proc, "is malformed")
+
+
+class GuardTimeoutValue(TriageRunCase):
+    def test_guard_timeout_that_is_not_a_whole_number_of_seconds_exits_64(self):
+        """Path: TRIAGE_GUARD_TIMEOUT_SEC is 0, 1.5, abc, 30x or -1. None of these is a
+        whole number of seconds at least 1.
+
+        Each subtest exits 64 with the usage message, before any listing is asked for.
+        Mutant: a bound check that accepts 0 (GUARD-TMO-LOOSE) runs the guard for
+        "0" and exits 0, so that subtest fails.
+        """
+        for value in ("0", "1.5", "abc", "30x", "-1"):
+            with self.subTest(value=value):
+                if os.path.exists(self.run_args):
+                    os.remove(self.run_args)
+                if os.path.exists(self.debug_count):
+                    os.remove(self.debug_count)
+                proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
+                                       guard_timeout=value)
+                self.assertEqual(proc.returncode, 64, proc.stderr + self.log())
+                self.assertIn("TRIAGE_GUARD_TIMEOUT_SEC must be a whole number of seconds", proc.stderr)
+                self.assertEqual(self.debug_calls(), 0)
+                self.assertFalse(self.ran())
+
+    def test_guard_timeout_is_checked_only_for_the_opencode_engine(self):
+        """Path: on the claude engine the guard does not run, so a bad guard timeout is not a usage error.
+
+        The run stops at the claude CLI check with exit 2.
+        Mutant: a check that runs on every engine (GUARD-TMO-ENGINE-ALWAYS) exits
+        64 here, and the exit assertion fails.
+        """
+        proc = self.run_claude("0")
+        self.assertEqual(proc.returncode, 2, proc.stderr + self.log())
+        self.assertIn("claude CLI not found", self.log())
+
+    def test_guard_timeout_that_is_bad_is_refused_on_the_opencode_engine(self):
+        """Path: on the opencode engine a bad guard timeout is refused at once, before the listing.
+
+        Mutant: a check that is off for opencode (GUARD-TMO-ENGINE-NEVER) lets the
+        bad value through, the run proceeds to the listing, and the exit assertion
+        fails.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], guard_timeout="0")
+        self.assertEqual(proc.returncode, 64, proc.stderr + self.log())
+        self.assertEqual(self.debug_calls(), 0)
+
 
 class GuardPositiveControl(TriageRunCase):
+    def test_guard_accepts_an_edit_allow_directly_before_the_final_deny(self):
+        """Path: an edit allow directly before the final deny is overridden by it, so the agent is still denied.
+
+        This is the opposite edge of the first-rule refusals: the rule the loop
+        must not read is the one just before the deny, not the one just after.
+
+        """
+        rules = GRADER_RULES[:4] + [{"action": "edit", "resource": "*", "effect": "allow"}] + GRADER_RULES[4:]
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", rules)])
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
     def test_guard_accepts_an_edit_allow_that_a_later_deny_overrides(self):
         """Path: an edit allow that comes before the final deny is overridden, so the agent is still denied.
 
@@ -794,9 +1318,7 @@ class RunReportsErrors(TriageRunCase):
 
         This models an exit-0 stream with an error event, which OpenCode v2 does
         not produce (it exits 1; see the next test). It checks the summary parser
-        alone. Control: reading the message from error.name, as v1 did, drops the
-        text and the log assertion fails. A run that exits 0 with no step is also
-        failed, so the exit code is 1 either way.
+        alone.
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
                                run_out=ERROR_EVENT, run_rc=0)
@@ -807,8 +1329,7 @@ class RunReportsErrors(TriageRunCase):
         """Path: OpenCode v2 exits 1 on an error event, so the summary is not read.
 
         The log names the result file that holds the error, and exit is 1.
-        Control: dropping the result-file pointer from the non-zero exit line
-        fails the "agent exited 1; see" assertion.
+
         """
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
                                run_out=ERROR_EVENT, run_rc=1)
@@ -817,11 +1338,25 @@ class RunReportsErrors(TriageRunCase):
 
 
 class HelpText(TriageRunCase):
+    def test_help_is_answered_before_the_env_file_is_sourced(self):
+        """Path: --help as the first argument prints the help before the .env file is sourced.
+
+        The env file here exits the shell when sourced. Help must still print and
+        exit 0, so help has no side effects and works with a broken .env.
+
+        """
+        env_file = os.path.join(self.tmp, "broken.env")
+        with open(env_file, "w", encoding="utf8") as fh:
+            fh.write("exit 7\n")
+        env = self.base_env()
+        env["TRIAGE_ENV_FILE"] = env_file
+        proc = subprocess.run(["/bin/bash", self.script, "--help"], env=env, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Exit codes:", proc.stdout)
+
     def test_help_as_the_first_argument_prints_the_exit_codes(self):
         """Path: `--help` as the first argument prints the header through its Exit codes paragraph.
-
-        Control: a `--help` that prints a fixed line range stops before the Exit
-        codes paragraph, and the final assertion fails.
         """
         proc = self.run_help("--help")
         self.assertEqual(proc.returncode, 0, proc.stderr)
@@ -830,9 +1365,6 @@ class HelpText(TriageRunCase):
 
     def test_help_after_a_kind_prints_the_exit_codes(self):
         """Path: `grade --help` prints the same header, through the Exit codes paragraph.
-
-        Control: a `--help` that prints a fixed line range stops before the Exit
-        codes paragraph, and the final assertion fails.
         """
         proc = self.run_help("grade", "--help")
         self.assertEqual(proc.returncode, 0, proc.stderr)
