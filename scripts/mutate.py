@@ -56,6 +56,7 @@ import check_mutants as cm  # noqa: E402  (must follow the sys.path insert)
 ROOT = cm.ROOT
 RULE = "=" * 70
 DEFAULT_TIMEOUT = 600.0  # seconds per killer run; matches go test's own default of ten minutes
+LAST_RUN_MARKER = "mutate-last-run.txt"  # in the temporary directory; holds the last run's log directory
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 # The traceback Python prints for a suite that does not compile: a File line with
 # no ", in <name>" suffix (a runtime traceback frame has one), then the
@@ -119,19 +120,25 @@ def tree_clean(relpath):
     return proc.stdout == ""
 
 
+def last_run_marker():
+    """Path of the marker file that names the log directory of the last run that started."""
+    return os.path.join(tempfile.gettempdir(), LAST_RUN_MARKER)
+
+
 def last_saved_originals():
     """
-    The most recently written mutate-* directory in the temporary directory that
-    holds a saved .orig copy, or None. A run leaves its originals there so that a
-    refused or interrupted run can be checked against them.
+    The log directory of the last run that started, when it still holds a saved
+    .orig copy, or None. The run writes its directory to the marker file, which
+    works whether the logs went to a temporary directory or to --log-dir.
     """
-    base = glob.escape(tempfile.gettempdir())
-    candidates = []
-    for path in glob.glob(os.path.join(base, "mutate-*")):
-        origs = glob.glob(os.path.join(glob.escape(path), "*.orig"))
-        if os.path.isdir(path) and origs:
-            candidates.append((max(os.path.getmtime(o) for o in origs), path))
-    return max(candidates)[1] if candidates else None
+    try:
+        with open(last_run_marker(), encoding="utf-8") as handle:
+            path = handle.read().strip()
+    except OSError:
+        return None
+    if path and glob.glob(os.path.join(glob.escape(path), "*.orig")):
+        return path
+    return None
 
 
 def _short(dotted):
@@ -427,6 +434,11 @@ def main(argv=None):
 
     log_dir = args.log_dir or tempfile.mkdtemp(prefix="mutate-")
     os.makedirs(log_dir, exist_ok=True)
+    try:
+        with open(last_run_marker(), "w", encoding="utf-8") as handle:
+            handle.write(os.path.abspath(log_dir) + "\n")
+    except OSError:
+        pass  # without the marker a later refusal simply names no saved originals
     before_status = git(["status", "--porcelain"]).stdout
 
     handled = [signal.SIGTERM] + ([signal.SIGHUP] if hasattr(signal, "SIGHUP") else [])

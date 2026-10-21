@@ -407,6 +407,23 @@ class MainTests(_RepoTest):
     def setUp(self):
         super().setUp()
         self.items = [entry("A", mirror="B"), entry("B", line=3, before="return 2", after="return 4", mirror="A")]
+        # The temporary directory holds the last-run marker, so it is private to each test.
+        self.scratch = tempfile.mkdtemp(prefix="mutate-test-scratch-")
+        self.addCleanup(shutil.rmtree, self.scratch, True)
+        patcher = mock.patch.object(tempfile, "gettempdir", return_value=self.scratch)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write_marker(self, path):
+        """Name `path` as the last run's log directory, as a previous run would have."""
+        with open(mutate.last_run_marker(), "w", encoding="utf-8") as handle:
+            handle.write(path + "\n")
+
+    def test_run_records_its_log_directory_in_the_marker(self):
+        with mock.patch.object(mutate, "run_killers", return_value=[("T.test_x", "FAIL", "AssertionError: x")]):
+            self.run_main(["--ids", "A", "--log-dir", self.logs])
+        with open(mutate.last_run_marker(), encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), os.path.abspath(self.logs) + "\n")
 
     def run_main(self, argv, items=None):
         """main() with the spec replaced and git and go reported present; returns (status, stdout)."""
@@ -452,28 +469,33 @@ class MainTests(_RepoTest):
         self.assertEqual(status, mutate.EXIT_NO_TOOL)
         self.assertIn("go is not installed", out.getvalue())
 
-    def test_dirty_tree_is_refused_and_names_the_last_saved_originals(self):
+    def test_dirty_tree_is_refused_and_names_the_last_runs_saved_originals(self):
         with open(self.path(), "a", encoding="utf-8") as handle:
             handle.write("# local edit\n")
-        fake_tmp = tempfile.mkdtemp(prefix="mutate-test-tmp-")
-        self.addCleanup(shutil.rmtree, fake_tmp, True)
-        saved = os.path.join(fake_tmp, "mutate-20261020-1")
+        saved = os.path.join(self.scratch, "earlier-run")
         os.makedirs(saved)
         with open(os.path.join(saved, "A.orig"), "wb") as handle:
             handle.write(TARGET.encode("utf-8"))
-        with mock.patch.object(tempfile, "gettempdir", return_value=fake_tmp):
-            status, out = self.run_main(["--log-dir", self.logs])
+        self.write_marker(saved)
+        status, out = self.run_main(["--log-dir", self.logs])
         self.assertEqual(status, mutate.EXIT_REFUSED, out)
         self.assertIn("f.py has changes against HEAD", out)
         self.assertIn("the last run's saved originals are in " + saved, out)
 
+    def test_dirty_tree_whose_last_run_kept_no_originals_says_so(self):
+        with open(self.path(), "a", encoding="utf-8") as handle:
+            handle.write("# local edit\n")
+        empty = os.path.join(self.scratch, "empty-run")
+        os.makedirs(empty)
+        self.write_marker(empty)
+        status, out = self.run_main(["--log-dir", self.logs])
+        self.assertEqual(status, mutate.EXIT_REFUSED)
+        self.assertIn("no saved originals from an earlier run", out)
+
     def test_dirty_tree_with_no_earlier_run_says_so(self):
         with open(self.path(), "a", encoding="utf-8") as handle:
             handle.write("# local edit\n")
-        empty_tmp = tempfile.mkdtemp(prefix="mutate-test-tmp-")
-        self.addCleanup(shutil.rmtree, empty_tmp, True)
-        with mock.patch.object(tempfile, "gettempdir", return_value=empty_tmp):
-            status, out = self.run_main(["--log-dir", self.logs])
+        status, out = self.run_main(["--log-dir", self.logs])
         self.assertEqual(status, mutate.EXIT_REFUSED)
         self.assertIn("no saved originals from an earlier run", out)
 

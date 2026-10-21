@@ -197,9 +197,10 @@ run as one `unittest -v` process per mutant, with `PYTHONDONTWRITEBYTECODE=1`
 and `python3 -B -I`, so the timeout bounds that process. Go killers run the
 parent test with `go test -v -run`, one process per selector, and each selector
 picks the subtests it names. Logs go to a temporary directory unless
-`--log-dir` is given. A refused run names the newest saved originals in the
-temporary directory, so a file left mutated by an earlier run can be compared
-with its copy.
+`--log-dir` is given. Each run writes its log directory to a marker file in the
+temporary directory. A refused run names that directory when it still holds
+saved originals, so a file left mutated by an earlier run can be compared with
+its copy.
 
 Exit status is listed under `--help` and here. A test in `scripts/test_mutate.py`
 fails when this table and the `--help` text differ.
