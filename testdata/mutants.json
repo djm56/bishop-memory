@@ -499,10 +499,7 @@
       "property": "Under `--skip-steps` nothing is warned or counted (the skip edge)",
       "mirror": "WARN-PRINT",
       "suite": "scripts/test_reconcile_units.py",
-      "killers": [
-        "StepWarningTests.test_skip_steps_warns_and_counts_nothing",
-        "StepWarningTests.test_unknown_status_is_warned_and_counted"
-      ]
+      "killers": ["StepWarningTests.test_skip_steps_warns_and_counts_nothing"]
     },
     {
       "id": "WARN-PRINT",
