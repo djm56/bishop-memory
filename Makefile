@@ -3,7 +3,7 @@ DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
         triage-seed triage-backfill triage-classify triage-process triage-grade triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
-        mission-links scratch-clean dist
+        mission-links scratch-clean dist mutate
 
 run:
 	go run ./cmd/memoryd
@@ -65,6 +65,11 @@ test:
 	go test ./...
 	python3 -m unittest discover -s scripts -p 'test_*.py'
 	python3 -I scripts/check_mutants.py
+
+# Mutation run over testdata/mutants.json (scripts/mutate.py). Slow: minutes, not
+# part of make test. ID='M1 GO-KEY' runs selected mutants only.
+mutate:
+	python3 -I scripts/mutate.py $(foreach i,$(ID),--id $(i))
 
 fmt:
 	go fmt ./...

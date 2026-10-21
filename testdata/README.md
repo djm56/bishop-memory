@@ -170,6 +170,31 @@ Retired rows are not applied; their targets are no longer in the tree:
 
 <!-- mutants:end -->
 
+## Mutation testing
+
+`scripts/mutate.py` runs the active mutants in [`mutants.json`](mutants.json).
+For each mutant it checks that the file is clean against HEAD, plants the edit
+alone, runs the mutant's killers, then restores the file and verifies the
+restore: the bytes equal the original, `cmp` matches a copy saved before
+planting, and `git diff` is clean. Each killer's full output goes to a
+per-mutant log.
+
+    make mutate                    # every active mutant
+    make mutate ID='GO-KEY M2'     # selected ids only
+
+Exit status is 0 only when every selected mutant is killed and every restore
+verifies. A mutant is KILLED when at least one of its killers fails. A selector
+that matches no test marks the mutant INVALID. SHARED-TEXT is a warning, printed
+when a mutant and its mirror fail with the same message.
+
+Python killers run as one `unittest -v` process per mutant, with
+`PYTHONDONTWRITEBYTECODE=1` and `python3 -B -I`. Go killers run the parent test
+with `go test -v -run`, and each selector picks the subtests it names. Logs go to
+a temporary directory unless `--log-dir` is given.
+
+`make test` runs the record check, not the mutants. The check takes a fraction of
+a second; a mutant run takes minutes.
+
 ## Layout values at the seam
 
 The directory and file names the importer and the reconciler read are declared
