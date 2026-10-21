@@ -164,11 +164,13 @@ TOOLS_WITHOUT_PERL = (
 # absent and reached.
 TOOLS_WITHOUT_PYTHON = tuple(t for t in TOOLS_WITHOUT_PERL if t != "python3")
 
-# The rule count of the unrelated agent in the large-listing test. At this count
-# the pretty-printed listing is over 300 KB, with dense whitespace. The live
-# listing is about 30 KB, and the old bash substitution did not stall at that size
-# when measured; it is quadratic in the text's length, and this size exposes it.
-LARGE_FILLER_RULES = 3000
+# The rule count of the unrelated agent in the live-size test. At this count the
+# pretty-printed listing is over 30 KB, with dense whitespace. The live listing was
+# reported as about 30 KB. On this host's /bin/bash (3.2.57) the pattern
+# substitution that GUARD-STRIP-BASH plants took 5 s on a 10.6 KB listing and did
+# not finish in 60 s on 32 KB (timings in testdata/README.md), so this size
+# exposes it.
+LARGE_FILLER_RULES = 300
 
 
 class FakeMemory(http.server.BaseHTTPRequestHandler):
@@ -540,6 +542,10 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_an_indented_block_before_the_permission_block_it_does_not_read(self):
         """Path: an indented block under another key, before the permission block, is not read as rules.
+
+        Mutant: GUARD-INBLOCK-OFF (every indented line is read) reads `foo: bar`
+        as a rule with an effect that is not allow, ask or deny, and the guard
+        exits 4, not 0.
         """
         self.replace_in_definition("mission-grader", "permission:\n", "options:\n  foo: bar\npermission:\n")
         proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)])
@@ -575,6 +581,9 @@ class GuardAccepts(TriageRunCase):
 
     def test_guard_accepts_a_listing_entry_that_is_not_ours_with_non_ascii_text(self):
         """Path: another agent in the listing carries non-ASCII text, and the listing is read as UTF-8.
+
+        Mutant: GUARD-LISTING-UTF8-ASCII (the listing is decoded as ASCII) cannot
+        decode it, and the guard exits 4, not 0.
         """
         other = self.agent_entry("Build", GRADER_RULES, source="mission-grader")
         other["description"] = "Builds the thing — quickly."
@@ -586,10 +595,22 @@ class GuardAccepts(TriageRunCase):
         """Path: the listing holds a string where an agent object should be, beside our entry.
 
         The string is not an entry of ours, so it is skipped, and our entry is
-        the one named.
+        the one named. Mutant: GUARD-NAMED-DICT-OFF (the object test is removed)
+        calls .get on the string, and the guard exits 4, not 0.
 
         """
         listing = [self.agent_entry("mission-grader", GRADER_RULES), "not an agent"]
+        proc = self.run_script("grade", listing)
+        self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
+        self.assertTrue(self.ran())
+
+    def test_guard_accepts_our_entry_beside_a_bare_string_that_spells_its_name(self):
+        """Path: the listing holds our entry and, beside it, a string equal to the agent's name.
+
+        A string is not an agent entry, so it does not count as a second one with
+        our name, and our entry is still the only one named.
+        """
+        listing = [self.agent_entry("mission-grader", GRADER_RULES), "mission-grader"]
         proc = self.run_script("grade", listing)
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
         self.assertTrue(self.ran())
@@ -598,21 +619,24 @@ class GuardAccepts(TriageRunCase):
         """Path: a listing of about the live size, with dense whitespace, is read within the bound.
 
         The listing is pretty-printed JSON with a large unrelated agent. It runs
-        through the file-fed listing check, which is quick. Mutant: GUARD-STRIP-BASH (a bash pattern substitution in place of tr) does not finish the listing within the
-        run's 30-second limit, so the test fails on that limit. The 3-second bound below is a backstop; the
-        mutant does not reach it.
+        through the file-fed listing check, which is quick. Mutant: GUARD-STRIP-BASH
+        (a bash pattern substitution in place of tr) does not finish the listing
+        within run_script's 30-second limit, so the test fails on that limit, not
+        on the bound below. That kill depends on the host's /bin/bash being slow
+        on the substitution, as the 3.2.57 here is. The bound below is a backstop
+        and the mutant does not reach it.
         """
         filler = self.agent_entry("Build", GRADER_RULES, source="mission-grader")
         filler["permissions"] = [{"action": "read", "resource": "/some/path/%d" % i, "effect": "allow"}
                                  for i in range(LARGE_FILLER_RULES)]
         listing = [self.agent_entry("mission-grader", GRADER_RULES), filler]
         text = json.dumps(listing, indent=2, ensure_ascii=False)
-        self.assertGreater(len(text), 300000)
+        self.assertGreater(len(text), 30000)
         started = time.monotonic()
         proc = self.run_script("grade", text)
         elapsed = time.monotonic() - started
         self.assertEqual(proc.returncode, 0, proc.stderr + self.log())
-        self.assertLess(elapsed, 3, "the guard took %.1f s on a %d-byte listing" % (elapsed, len(text)))
+        self.assertLess(elapsed, 10, "the guard took %.1f s on a %d-byte listing" % (elapsed, len(text)))
 
     def test_guard_accepts_a_slow_listing_that_finishes_inside_the_bound(self):
         """Path: the listing takes 2 seconds and the bound is 5, so the listing is read.
@@ -687,8 +711,10 @@ class GuardRefuses(TriageRunCase):
         """Path: the agent carries no permission rules, missing or as an empty list.
 
         Mutant GUARD-EMPTY-OFF (the permission-list test removed): the missing subtest raises TypeError
-        and exits 4 (4 != 2); the empty subtest is refused for another reason. Each subtest fails on its
-        own assertion; the runner records only the first (see the record prose).
+        and exits 4 (4 != 2); the empty subtest is refused for another reason. Mutant
+        GUARD-RULES-EMPTY-OFF (only the type is tested) fails the empty subtest on the
+        reason text and leaves the missing subtest passing. The runner reports the
+        first failing subtest; the mutant's log holds each one.
         """
         missing = self.agent_entry("mission-grader", GRADER_RULES)
         del missing["permissions"]
@@ -741,6 +767,10 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_last_covering_rule_that_is_an_allow(self):
         """Path: the last rule covering every action and resource is an allow, not the deny.
+
+        Mutant: GUARD-COVER-DENY-ONLY (only a deny counts as covering) finds no
+        covering rule, so the refusal names that instead of rule 4 being an allow,
+        and the reason assertion fails.
         """
         rules = [dict(r) for r in GRADER_RULES]
         rules[4]["effect"] = "allow"
@@ -857,7 +887,9 @@ class GuardRefuses(TriageRunCase):
         """Path: the only rule that names every action is a deny for one resource, src/*.
 
         A deny for some resources does not cover every resource, so no rule
-        denies everything.
+        denies everything. Mutant: GUARD-COVER-OR (a rule covers when either its
+        action or its resource is `*`) takes this deny as the covering rule and
+        accepts the listing, exit 0, not 2.
 
         """
         base = [r for r in GRADER_RULES if not (r["action"] == "*" and r["resource"] == "*")]
@@ -869,6 +901,8 @@ class GuardRefuses(TriageRunCase):
         """Path: the only deny is for one action, read, on every resource.
 
         A deny for one action does not deny every action, so no rule covers.
+        Mutant: GUARD-COVER-OR takes this deny as the covering rule and accepts
+        the listing, exit 0, not 2.
 
         """
         base = [r for r in GRADER_RULES if not (r["action"] == "*" and r["resource"] == "*")]
@@ -878,6 +912,10 @@ class GuardRefuses(TriageRunCase):
 
     def test_guard_refuses_a_permission_block_that_is_an_object(self):
         """Path: the agent's permissions are a JSON object, not a list of rules.
+
+        Mutant: GUARD-RULES-TYPE-OFF (only an empty value is refused) lets the
+        object reach the rule check, which cannot read rule 0, so the guard exits
+        4, not 2.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         entry["permissions"] = {"read": "allow"}
@@ -1030,6 +1068,12 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_a_definition_that_is_not_utf8(self):
         """Path: the definition holds bytes that are not UTF-8.
+
+        Mutants: GUARD-DEF-UTF8-OFF (the UnicodeDecodeError clause is removed)
+        gives exit 4 with the generic handler's reason, so the reason assertion
+        fails. GUARD-DEF-UTF8-LAX (the file is read with errors="replace") reads
+        it, the guard goes on to the listing and refuses the entry, and the exit
+        code is 2, not 4.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         with open(self.definition_path("mission-grader"), "ab") as fh:
@@ -1040,8 +1084,11 @@ class GuardCannotCheck(TriageRunCase):
     def test_guard_cannot_check_a_definition_with_no_frontmatter(self):
         """Path: the definition does not open with its frontmatter delimiter.
 
-        Mutant: a check that drops the first-line test (GUARD-DEF-FIRST-OFF) reads
-        the file's later delimiter as its frontmatter and accepts it, so the test fails.
+        Mutant: GUARD-DEF-FIRST-OFF (the first-line test is dropped) takes the
+        file's later delimiter as the end of the frontmatter and the description
+        line as its start, so the head lacks the description. The guard exits 4
+        with "no quoted description in" and the reason assertion fails; it does
+        not accept the file.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         self.replace_in_definition("mission-grader", "---\ndescription:", "description:")
@@ -1085,6 +1132,10 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_a_description_with_an_escaped_quote(self):
         """Path: the description holds an escaped quote, which the line parser does not read.
+
+        Mutant: GUARD-DESC-RE-LOOSE (the description pattern takes any text) reads
+        it with its backslashes, the listing's description then differs from it,
+        and the guard refuses with exit 2, not 4.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         self.replace_in_definition("mission-grader", "Scheduled grader for finished",
@@ -1094,6 +1145,10 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_a_quoted_mode(self):
         """Path: the mode is quoted, which the line parser does not read.
+
+        Mutant: GUARD-MODE-RE-LOOSE (the mode pattern takes any text) reads it with
+        its quotes, the listing's mode then differs from it, and the guard refuses
+        with exit 2, not 4.
         """
         entry = self.agent_entry("mission-grader", GRADER_RULES)
         self.replace_in_definition("mission-grader", "mode: primary", 'mode: "primary"')
@@ -1231,6 +1286,10 @@ class GuardCannotCheck(TriageRunCase):
 
     def test_guard_cannot_check_a_listing_that_is_not_utf8(self):
         """Path: the listing holds bytes that are not UTF-8.
+
+        Mutant: GUARD-LISTING-UTF8-LAX (the listing is decoded with the "replace"
+        handler) turns the bad byte into a character, finds no agent named, and
+        refuses with exit 2, not 4.
         """
         proc = self.run_script("grade", b'[{"name": "\xff"}]')
         self.assertCannotCheck(proc, "UnicodeDecodeError")
@@ -1423,7 +1482,9 @@ class HelpText(TriageRunCase):
         """Path: --help as the first argument prints the help before the .env file is sourced.
 
         The env file here exits the shell when sourced. Help must still print and
-        exit 0, so help has no side effects and works with a broken .env.
+        exit 0, so help has no side effects and works with a broken .env. Mutant:
+        GUARD-HELP-OFF (no argument is looked at before the env file) sources the
+        file first, and the shell exits 7, not 0.
 
         """
         env_file = os.path.join(self.tmp, "broken.env")

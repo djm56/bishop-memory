@@ -281,11 +281,12 @@ def allowed_action(action):
 def check_rules(rules, who):
     """
     Refuses a rule list unless it denies every action on every resource, read
-    with last-match-wins. The last rule covering every action and every resource
-    must be a deny. Rules before it are overridden for every action, so they are
-    not read. Every rule after it must be a deny or name an allowed action.
-    A rule that is malformed, or has an effect that is not in EFFECTS, is
-    CannotCheck. `who` names the list in the message.
+    with last-match-wins. Every rule is first checked for its shape and effect,
+    wherever it stands: a rule that is malformed, or has an effect that is not in
+    EFFECTS, is CannotCheck. The last rule covering every action and every
+    resource must then be a deny. A rule before it is overridden for every
+    action, so nothing more is read of it. Every rule after it must be a deny or
+    name an allowed action. `who` names the list in the message.
     """
     for i, rule in enumerate(rules):
         if (not isinstance(rule, dict) or not isinstance(rule.get("action"), str)
@@ -476,10 +477,11 @@ PY
 # closed: an unknown name must never reach a default agent that can edit files and
 # run shell commands.
 #
-# Observed on 2.0.32, not re-checked here: `opencode debug agents` does not read
-# OPENCODE_CONFIG_CONTENT, so the layered config the run builds (the OC_CONFIG
-# block, which adds only external_directory allows) is not in the listing. The
-# allowlist accepts those allows. The timeout uses the perl alarm the run uses. A
+# Reported for 2.0.32 and not verified by this change: `opencode debug agents`
+# does not read OPENCODE_CONFIG_CONTENT, so the layered config the run builds (the
+# OC_CONFIG block, which adds only external_directory allows) is not in the
+# listing. The allowlist accepts those allows, which holds either way; if the
+# report is wrong, the listing includes them and the guard still accepts it. The timeout uses the perl alarm the run uses. A
 # cold or empty listing is retried before the guard gives up.
 guard_agent() (
   def="$BISHOP_ROOT/.opencode/agents/$AGENT.md"
@@ -516,8 +518,9 @@ guard_agent() (
       log "[$KIND] could not check agent $AGENT: opencode debug agents $why (stderr: $(flat "$gtmp/err")); nothing run"
       return 4
     fi
-    # tr, not a pattern substitution on the text. The substitution is quadratic in
-    # the listing's length: measured at 180 KB and 360 KB, not at 30 KB.
+    # tr, not a pattern substitution on the text. On the macOS bash 3.2.57 the
+    # substitution took 5 s on a 10.6 KB listing and did not finish in 60 s on
+    # 32 KB; tr took 0.01 s at both (timings in testdata/README.md).
     stripped="$(tr -d '[:space:]' <"$gtmp/listing")"
     if [[ -n "$stripped" && "$stripped" != "[]" ]]; then break; fi
     if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then
