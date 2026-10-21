@@ -81,10 +81,9 @@ checked byte for byte. The table below is generated from
 [`mutants.json`](mutants.json), which is the single source. Edit the spec, then
 run `python3 -I scripts/check_mutants.py --write-readme`. Do not edit the table.
 
-`make test` runs the record check. It fails when a `before` text is no longer at
-its file and line, when a mirror is missing or does not point back, or when this
-table differs from the spec. Failure text is not stored here. `make mutate` (see
-Mutation testing below) produces it from a run.
+`make test` runs the record check (`scripts/check_mutants.py`), which prints a
+message for each error it finds. Failure text is not stored here. `make mutate`
+(see Mutation testing below) produces it from a run.
 
 <!-- mutants:begin -->
 
@@ -174,24 +173,21 @@ Retired rows are not applied; their targets are no longer in the tree:
 
 `scripts/mutate.py` runs the active mutants in [`mutants.json`](mutants.json).
 For each mutant it refuses unless the file is clean against HEAD: `git status
---porcelain --ignored` for the file must print nothing, so a staged edit, an
-unstaged edit, an untracked file and an ignored file all refuse. It then plants
-the edit alone, runs the mutant's killers, and restores the file. The restore is
-verified: the bytes equal the original, `cmp` matches a copy saved before
-planting, and the file is clean against HEAD again. Each killer's full output goes
-to a per-mutant log. The runner is POSIX only (process groups, `flock`,
-`O_NOFOLLOW`) and refuses elsewhere.
+--porcelain --ignored` for the file must print nothing. It then plants the edit
+alone, runs the mutant's killers, and restores the file. The restore is verified
+(`restore_and_verify` in the script holds the checks) before the file counts as
+restored. Each killer's full output goes to a per-mutant log. The runner is POSIX
+only and refuses elsewhere.
 
     make mutate                    # every active mutant
     make mutate ID='GO-KEY M2'     # selected ids only
 
-A mutant is KILLED when at least one of its killers fails and none did not run
-or timed out. A selector that matches no test is NOT-RUN. A module that does not
-compile, a Go build that fails, or a run that exceeds the timeout is also not a
-kill. Any of these makes the mutant INVALID, with the reason printed beside it.
-A killer that passes is listed as not failing. SHARED-TEXT is printed when a
-mutant and its mirror fail with the same message; the run then fails, because a
-shared kill is not two kills.
+A mutant is KILLED when at least one of its killers fails and every killer
+reached a verdict. A killer that did not reach one is not a kill; the mutant is
+INVALID, with the reason printed beside it. `mutate_one` and `run_killers` in
+the script decide each case. A killer that passes is listed as not failing.
+SHARED-TEXT is printed when a mutant and its mirror fail with the same message;
+the run then fails, because a shared kill is not two kills.
 
 Each killer run is bounded by `--timeout SECONDS` (default 600). Python killers
 run as one `unittest -v` process per mutant, with `PYTHONDONTWRITEBYTECODE=1`
@@ -216,7 +212,7 @@ the process ends, however it ends.
 
 Exit status is listed under `--help` and here; `--help` prints `EXIT_DOC`. A test
 in `scripts/test_mutate.py` fails when the rows of this table and `EXIT_DOC` differ
-in either direction: a row with no entry, an entry with no row, or a different meaning.
+in either direction.
 
 | Status | Meaning |
 |--------|---------|
@@ -233,12 +229,14 @@ that group; a process that leaves the group (`setsid`, a double fork) is not
 reached. If a planted file is not restored and verified, the run prints
 `RESTORE FAILED` with the path of the saved original and exits 1 instead of 5,
 because the file may still hold the mutant. A restore that never ran counts as
-not verified. A signal that arrives during a restore is held until the restore is
-done.
+not verified. Once a file is planted, a signal is held, except while its killers
+run, and acted on after the restore is verified. A signal that arrives after a
+mutant's restore is done raises where the run is; the file is restored by then.
 
-A SIGKILL or a power loss skips every restore. Nothing in the runner can
-handle those; the next run refuses on the dirty file and names the saved copy
-recorded in the git directory's `mutate-unrestored.json`.
+Anything that ends the process without letting the runner's code run skips every
+restore. Nothing in the runner can handle that; the next run refuses on the dirty
+file and names the saved copy recorded in the git directory's
+`mutate-unrestored.json`.
 
 The runner and the record check are tooling, not product code. DIR-017 governs
 the product invariants the mutants target, so the tooling is not given mirrored

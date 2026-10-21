@@ -5,14 +5,12 @@ Mutation runner for the DIR-017 spec, testdata/mutants.json.
 For each active mutant, or each one named with --ids:
 
   1. refuse to plant unless the file is clean against HEAD: `git status
-     --porcelain --ignored -- <file>` must print nothing, so a staged edit, an
-     unstaged edit, an untracked file and an ignored file all refuse;
+     --porcelain --ignored -- <file>` must print nothing (see tree_clean);
   2. locate `before` exactly as scripts/check_mutants.py does, and stop if it is not there;
   3. save a copy of the file, plant the edit alone, and run the mutant's killers,
      each run bounded by --timeout;
-  4. restore the original bytes in a finally block, then verify the restore:
-     the bytes equal the original, cmp matches the saved copy, and the file is
-     clean against HEAD.
+  4. restore the original bytes in a finally block, then verify the restore
+     (restore_and_verify holds the checks).
 
 A planted file is recorded in mutate-unrestored.json in the git directory before it is planted.
 The entry is removed only when its restore is verified, so a refusal on a dirty
@@ -27,13 +25,17 @@ each other's files and read each other's mutants, so the lock is a correctness
 rule and not only a guard for the marker. The lock is released when the process
 ends, however it ends.
 
-POSIX only: the runner needs process groups, flock and O_NOFOLLOW, and main()
-refuses on a platform without them.
+POSIX only: main() refuses elsewhere, by the POSIX constant.
 
-The signals in HANDLED_SIGNALS are handled while the run lasts. The first one
-raises Interrupted where the run is, and the finally block restores the file. A
-signal that arrives during a restore is recorded and acted on once the restore is
-done. A handled signal the parent set to ignore, as nohup does, stays ignored.
+The signals in HANDLED_SIGNALS are handled while the run lasts. Once a file is
+planted they are blocked, except while its killers run (run_interruptibly), so
+the only place one raises Interrupted is a killer run, and the finally block
+restores the file. A signal that arrives anywhere else while a file is planted,
+or during its restore, is held and then recorded; the run stops once the restore is
+verified. A signal that arrives after mutate_one returns (between mutants, or
+while main reports) raises Interrupted where the run is; the file is already
+restored and verified then, so the cost is a stop and not a mutated file. A
+handled signal the parent set to ignore, as nohup does, stays ignored.
 Each killer runs in its own process group, and a timeout or an interrupt SIGKILLs
 that group. A process the killer started that stays in the group stops with it. A
 process that leaves the group (setsid, a double fork) is not reached, and the
@@ -41,9 +43,9 @@ group is not killed when the killer exits normally.
 
 Each killer's full, untruncated output goes to a per-mutant log. The summary
 prints one line per mutant: its verdict, how many killers failed, and the first
-failure line. A mutant is KILLED when at least one killer fails and none did
-not run or timed out. A killer that passes under the mutant is listed, because
-the record says it should kill.
+failure line. A mutant is KILLED when at least one killer fails and every killer
+reached a verdict (see mutate_one). A killer that passes under the mutant is
+listed, because the record says it should kill.
 
 SHARED-TEXT is reported when a mutant and its mirror produce the same first
 failure message. A kill that reads the same on both edges is not two kills
@@ -58,9 +60,7 @@ Usage (from anywhere):
     python3 -I scripts/mutate.py --log-dir DIR     keep the logs in DIR
     python3 -I scripts/mutate.py --timeout 300     bound each killer run to 300 seconds
 
-Python killers run as one unittest process per mutant, with
-PYTHONDONTWRITEBYTECODE=1 and python3 -B -I. Go killers run one `go test -run`
-each, in the mutant's package.
+run_killers() defines how each language's killers are run.
 """
 
 import argparse
@@ -96,7 +96,7 @@ ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
 HANDLED_SIGNALS = tuple(getattr(signal, name) for name in ("SIGINT", "SIGTERM", "SIGHUP") if hasattr(signal, name))
 # The traceback Python prints for a suite that does not compile: a File line with
 # no ", in <name>" suffix (a runtime traceback frame has one), then the
-# SyntaxError or IndentationError line, which starts at column 0.
+# syntax-error line the pattern names, which starts at column 0.
 SYNTAX_PATTERN = re.compile(r'^  File "[^"]+", line \d+\n(?:[^\n]*\n)*?(?:SyntaxError|IndentationError): ', re.M)
 
 EXIT_OK = 0
@@ -120,16 +120,16 @@ class Outcome:
 
     def __init__(self, ident):
         self.id = ident
-        self.verdict = "INVALID"          # KILLED, SURVIVED or INVALID
+        self.verdict = "INVALID"          # the verdict mutate_one() assigns
         self.killers = []                 # (selector, status, message) per killer
         self.first_failure = None         # (selector, message) of the first failing killer
-        self.problems = []                # reasons a verdict is INVALID or a restore failed
+        self.problems = []                # what is printed under the mutant: why it is INVALID, or why a restore failed
         self.restore_ok = True            # while planted: False until the restore is verified and its marker entry cleared
         self.planted = False              # True from just before the plant is recorded; reset if recording is refused
         self.relpath = None               # the file this mutant edits, relative to the repository
         self.saved = None                 # the saved copy of that file's original bytes
         self.log = None
-        self.late_signals = []            # signal names that arrived during the restore, to act on after it
+        self.late_signals = []            # signals held or recorded while the file was planted, outside the killers; acted on after the restore
 
 
 class ToolError(Exception):
@@ -154,9 +154,9 @@ def git(args):
 
 def tree_clean(relpath):
     """
-    True when the path has no change against HEAD: no staged or unstaged edit,
-    and no untracked or ignored file. Raises ToolError when git cannot answer,
-    so a failing git is never read as a dirty file.
+    True when `git status --porcelain --ignored` prints nothing for the path.
+    Raises ToolError when git cannot answer, so a failing git is never read as a
+    dirty file.
     """
     proc = git(["status", "--porcelain", "--ignored", "--", relpath])
     if proc.returncode != 0:
@@ -204,8 +204,8 @@ def _unreadable_marker(path, reason):
 def write_marker(path, data):
     """
     Replace the marker at `path` with `data`, atomically: the text goes to a new
-    temporary file in the same directory (created 0600, O_EXCL and O_NOFOLLOW),
-    is fsynced, and is renamed over `path`. A kill leaves the old marker or the new
+    temporary file in the same directory (created exclusively, owner-only, never
+    following a symlink), is fsynced, and is renamed over `path`. A kill leaves the old marker or the new
     one, never a partial file. The rename replaces a symlink at `path` rather than
     following it, so a planted link cannot redirect the write. A kill can leave the
     temporary file behind; it is not read. Raises OSError on failure.
@@ -213,7 +213,12 @@ def write_marker(path, data):
     tmp = f"{path}.{os.getpid()}.{os.urandom(4).hex()}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        try:
+            handle = os.fdopen(fd, "w", encoding="utf-8")
+        except BaseException:
+            os.close(fd)  # fdopen did not take the descriptor, so nothing else will close it
+            raise
+        with handle:
             json.dump(data, handle, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
@@ -298,11 +303,10 @@ def _short(dotted):
 
 def parse_python(output, killers):
     """
-    Classify each killer from unittest -v output. A killer that appears in a
-    FAIL or ERROR header failed, and the first error line of its block is its
-    message. A killer that appears on a "... " line ran and passed. Anything
-    else did not run. The status token on the "... " line is not used: stderr
-    written during a test can push it off that line.
+    Classify each killer from unittest -v output, as (selector, status, message).
+    The message of a failed killer is the first error line of its block. The
+    status token on a "... " line is not used: stderr written during a test can
+    push it off that line.
 
     A test with a docstring prints its name and its first docstring line on
     separate lines, with " ... " after the docstring line. That form is matched
@@ -336,8 +340,7 @@ def parse_python(output, killers):
 def parse_go(output, parent, sub):
     """
     The status of one Go selector from `go test -v` output. Returns
-    (status, message): FAIL when a matching subtest failed, ok when one passed,
-    NOT-RUN when none matched. The message is the first _test.go line printed
+    (status, message). The message is the first _test.go line printed
     under that subtest's own header. A line is attributed to the subtest named
     by the most recent === RUN, === NAME or === CONT header. === PAUSE leaves
     the attribution where it was. The --- FAIL lines come after every header,
@@ -397,9 +400,10 @@ def _run_group(cmd, cwd, env, timeout):
     """
     subprocess.run() for one killer. The killer leads its own session and process
     group. Returns a CompletedProcess. On a timeout or an interrupt the group is
-    killed (see _kill_group), the leader is reaped, and the exception is re-raised.
-    A normal exit does not kill the group. The pipes are not read after the kill, because a grandchild that
-    outlived the group could hold them open.
+    killed (see _kill_group), the leader is reaped, and the exception is
+    re-raised. A normal exit does not kill the group. The pipes are not read
+    after the kill, because a grandchild that outlived the group could hold
+    them open.
     """
     proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             text=True, start_new_session=True)
@@ -417,9 +421,9 @@ def _run_group(cmd, cwd, env, timeout):
 def run_killers(entry, log, timeout):
     """
     Run every killer of one mutant with the mutation planted. Writes the full
-    output of each run to `log`. Returns a list of (selector, status, message),
-    where status is FAIL, ok, NOT-RUN or TIMEOUT. Raises ToolError when go
-    cannot be started.
+    output of each run to `log`. Returns a list of (selector, status, message);
+    each status is decided in this function, parse_python or parse_go. Raises
+    ToolError when go cannot be started.
     """
     if entry["language"] == "py":
         cmd = [sys.executable, "-I", "-B", entry["suite"], "-v"] + entry["killers"]
@@ -458,32 +462,68 @@ def run_killers(entry, log, timeout):
     return results
 
 
-_DEFERRED = None  # the list restore_and_verify() records signals in; None outside a restore
+_DEFERRED = None  # the list a handler records signals in; None when the handler raises
+_INTERRUPTIBLE = False  # True only inside run_interruptibly()
 
 
 def _interrupt(signum, _frame):
     """
-    Signal handler for HANDLED_SIGNALS. Outside a restore it raises Interrupted,
-    so the finally blocks run. During a restore it records the signal and returns,
-    so the restore finishes; main acts on the record afterwards.
+    Signal handler for HANDLED_SIGNALS. When _DEFERRED is set it records the signal
+    and returns, so the work in progress finishes and the caller acts on the record.
+    Otherwise it raises Interrupted so the finally blocks run. Inside
+    run_interruptibly() it blocks HANDLED_SIGNALS first, so nothing can interrupt the
+    unwinding before the restore; the mutate_one that unwinds puts the mask back.
     """
     name = signal.Signals(signum).name
     if _DEFERRED is not None:
         _DEFERRED.append(name)
         return
+    if _INTERRUPTIBLE:
+        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
     raise Interrupted(name)
+
+
+def run_interruptibly(entry_mask, func, *args):
+    """
+    func(*args) with the signal mask put back to `entry_mask`, so a handled signal
+    held until now is delivered here, and a handled signal raises Interrupted
+    from here on. HANDLED_SIGNALS are blocked again however func ends, and
+    _interrupt blocks them itself when it raises, so no exit from here leaves them
+    unblocked.
+    """
+    global _INTERRUPTIBLE
+    try:
+        _INTERRUPTIBLE = True
+        signal.pthread_sigmask(signal.SIG_SETMASK, entry_mask)
+        return func(*args)
+    finally:
+        signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
+        _INTERRUPTIBLE = False
+
+
+def release_signals(out, mask):
+    """
+    Put the signal mask back to `mask`. A handled signal held until now arrives
+    here and is recorded in out.late_signals, not raised.
+    """
+    global _DEFERRED
+    _DEFERRED = out.late_signals
+    try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+    finally:
+        _DEFERRED = None
 
 
 def restore_and_verify(out, path, relpath, original, saved, marker):
     """
-    Write the original bytes back, verify the restore (bytes, cmp against the
-    saved copy, clean against HEAD), and remove the file's entry from the marker
-    only when all three hold. The verdict goes on `out`: restore_ok becomes True
-    only after the entry is cleared, and stays False with a RESTORE FAILED problem
-    naming the saved copy when a check fails. OSError, ValueError and ToolError are
-    caught. Once it has set _DEFERRED, signals are recorded in out.late_signals
-    rather than raised; a signal that lands before that raises Interrupted out of
-    this function, and restore_until_done() runs it again.
+    Write the original bytes back, verify the restore, and remove the file's entry
+    from the marker only when every check holds. The verdict goes on `out`:
+    restore_ok becomes True only after the entry is cleared, and stays False with a
+    RESTORE FAILED problem naming the saved copy when a check fails. OSError,
+    ValueError and ToolError are caught. Signals that arrive while it runs are
+    recorded in out.late_signals rather than raised; this function sets that up
+    itself, so a caller that must not be interrupted before it starts blocks
+    HANDLED_SIGNALS first (restore_blocked does).
     """
     global _DEFERRED
     _DEFERRED = out.late_signals
@@ -510,18 +550,23 @@ def restore_and_verify(out, path, relpath, original, saved, marker):
         _DEFERRED = None
 
 
-def restore_until_done(out, path, relpath, original, saved, marker):
+def restore_blocked(out, path, relpath, original, saved, marker):
     """
-    restore_and_verify(), run again when a signal lands before it has started
-    deferring signals. It is safe to repeat: it writes the same bytes and clearing an
-    absent marker entry changes nothing. The signal is recorded in out.late_signals.
+    restore_and_verify() with HANDLED_SIGNALS blocked while it runs. mutate_one
+    already holds them blocked when it calls this, so no signal can arrive before
+    the block here; a caller that does not must do the same. A signal that arrives
+    meanwhile is held, and recorded in out.late_signals when the mask goes back.
+    The mask is put back to what it was on entry, so signals the caller holds
+    blocked stay held. Also clears _INTERRUPTIBLE, which an unwinding that skipped
+    the end of run_interruptibly() can leave set.
     """
-    while True:
-        try:
-            restore_and_verify(out, path, relpath, original, saved, marker)
-            return
-        except Interrupted as exc:
-            out.late_signals.append(str(exc))
+    global _INTERRUPTIBLE
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
+    _INTERRUPTIBLE = False
+    try:
+        restore_and_verify(out, path, relpath, original, saved, marker)
+    finally:
+        release_signals(out, previous)
 
 
 def mutate_one(entry, log_dir, timeout, out=None):
@@ -533,8 +578,13 @@ def mutate_one(entry, log_dir, timeout, out=None):
     the restore is verified, so a restore that never ran reads as a failed one. The
     restore runs in a finally block that covers the recording, the write and the
     killers; it is skipped only when recording the plant was refused, and then
-    nothing was written. Raises ToolError when git cannot answer the clean-tree
-    check, and Interrupted when a signal lands during the run.
+    nothing was written. HANDLED_SIGNALS are blocked from before out.planted is set
+    until the mask goes back at the very end, except inside run_interruptibly()
+    around the killers, so Interrupted can only be raised there; a signal that
+    arrives while they are blocked is recorded in out.late_signals after the
+    restore. A signal that lands before the first block has planted nothing.
+    Raises ToolError when git cannot answer the clean-tree check, and Interrupted
+    when a signal lands while the killers run.
     """
     if out is None:
         out = Outcome(entry["id"])
@@ -562,28 +612,32 @@ def mutate_one(entry, log_dir, timeout, out=None):
         handle.write(original)
     mutated = text[:pos] + entry["after"] + text[pos + len(entry["before"]):]
     marker = os.path.join(git_dir(), MARKER_NAME)
-    out.planted = True      # before the marker is written: from here an exit that skips the restore reads as unrestored
-    out.restore_ok = False
-    refused = False
+    entry_mask = signal.pthread_sigmask(signal.SIG_BLOCK, HANDLED_SIGNALS)
     try:
+        out.planted = True      # before the marker is written: from here an exit that skips the restore reads as unrestored
+        out.restore_ok = False
+        refused = False
         try:
-            record_plant(marker, relpath, entry["id"], log_dir, saved)
-        except (OSError, ValueError) as exc:
-            refused = True
-            out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
-            return out
-        with open(out.log, "w", encoding="utf-8") as log:
-            log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
-            log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
-            with open(path, "wb") as handle:
-                handle.write(mutated.encode("utf-8"))
-            out.killers = run_killers(entry, log, timeout)
+            try:
+                record_plant(marker, relpath, entry["id"], log_dir, saved)
+            except (OSError, ValueError) as exc:
+                refused = True
+                out.problems.append(f"cannot record the plant in {marker}: {exc}; refusing to plant")
+                return out
+            with open(out.log, "w", encoding="utf-8") as log:
+                log.write(f"mutant {entry['id']}  file {relpath}  line {entry['line']}\n")
+                log.write(f"before: {entry['before']!r}\nafter:  {entry['after']!r}\n{RULE}\n")
+                with open(path, "wb") as handle:
+                    handle.write(mutated.encode("utf-8"))
+                out.killers = run_interruptibly(entry_mask, run_killers, entry, log, timeout)
+        finally:
+            if refused:  # nothing was recorded and nothing was written
+                out.planted = False
+                out.restore_ok = True
+            else:
+                restore_blocked(out, path, relpath, original, saved, marker)
     finally:
-        if refused:  # nothing was recorded and nothing was written
-            out.planted = False
-            out.restore_ok = True
-        else:
-            restore_until_done(out, path, relpath, original, saved, marker)
+        release_signals(out, entry_mask)
     failing = [(sel, msg) for sel, st, msg in out.killers if st in ("FAIL", "ERROR")]
     not_run = [sel for sel, st, _ in out.killers if st == "NOT-RUN"]
     timed_out = [sel for sel, st, _ in out.killers if st == "TIMEOUT"]
@@ -594,7 +648,7 @@ def mutate_one(entry, log_dir, timeout, out=None):
     if timed_out:
         out.problems.append(f"killer(s) timed out after {timeout:g}s: {', '.join(timed_out)}")
     if not out.killers or not_run or timed_out:
-        out.verdict = "INVALID"  # a selector that matched nothing, or a run that never finished, is not a kill
+        out.verdict = "INVALID"  # a killer that did not reach a verdict is not a kill
     elif failing:
         out.verdict = "KILLED"
         out.first_failure = failing[0]
@@ -693,8 +747,7 @@ def main(argv=None):
                         help=f"seconds allowed for each killer run (default {DEFAULT_TIMEOUT:g})")
     args = parser.parse_args(argv)
     if not POSIX:
-        print("mutate: POSIX only; the runner needs process groups, flock and O_NOFOLLOW, "
-              "and this platform has none of them. Nothing was planted")
+        print("mutate: POSIX only; this platform lacks what the runner needs. Nothing was planted")
         return EXIT_REFUSED
     try:
         spec = cm.load_spec()
@@ -771,6 +824,7 @@ def run_locked(args, chosen, marker):
     log_dir = args.log_dir or tempfile.mkdtemp(prefix="mutate-")
     os.makedirs(log_dir, exist_ok=True)
     print(f"mutate: {len(chosen)} mutant(s); killer timeout {args.timeout:g}s; logs in {log_dir}")
+    start_mask = signal.pthread_sigmask(signal.SIG_BLOCK, [])  # a query: nothing is added to the mask
     installed = {}
     outcomes = []
     current = None  # the Outcome of the mutant in progress, so an early stop can still read its restore verdict
@@ -786,7 +840,7 @@ def run_locked(args, chosen, marker):
             for line in describe(out, len(entry["killers"])):
                 print(line)
             sys.stdout.flush()
-            if out.late_signals:  # arrived during this mutant's restore; the file is restored, so stop here
+            if out.late_signals:  # held or recorded during this mutant; its file is restored, so stop here
                 raise Interrupted(out.late_signals[0])
         after_status = git(["status", "--porcelain"]).stdout
     except (Interrupted, KeyboardInterrupt) as exc:
@@ -795,6 +849,9 @@ def run_locked(args, chosen, marker):
         tool_failure = str(exc)
     finally:
         restore_handlers(installed)
+        # mutate_one puts the mask back itself; this puts back the mask the run started with, for an
+        # exit that skipped that
+        signal.pthread_sigmask(signal.SIG_SETMASK, start_mask)
 
     if interrupted is not None:
         print(f"mutate: interrupted by {interrupted}")
