@@ -298,7 +298,22 @@ def check_rules(rules, who):
                           % (who, i, rule["action"], rule["resource"], rule["effect"]))
 
 
-PERMISSION_LINE = re.compile(r'^(\s*)("[^"]*"|[^\s:"]+)\s*:\s*(.*?)\s*$')
+# A permission line: indent in spaces only, then a key and a value. A key or a
+# value may be bare, or in one pair of double or single quotes.
+PERMISSION_LINE = re.compile(r"""^( *)("[^"]*"|'[^']*'|[^\s:"']+)\s*:\s*(.*?)\s*$""")
+# A top-level key line, such as `mode: primary`. At column 0 inside the permission
+# block, only these end the block.
+TOP_KEY = re.compile(r"^[A-Za-z_][\w-]*:")
+
+
+def unquote(text):
+    """
+    The text without one pair of matching quotes around it. Text with no such
+    pair, including an unmatched quote, is returned as it is.
+    """
+    if text[:1] in ("'", '"') and text[-1:] == text[:1] and len(text) > 1:
+        return text[1:-1]
+    return text
 
 
 def permission_rules(head, path):
@@ -306,13 +321,21 @@ def permission_rules(head, path):
     The rules of the permission block in a definition's frontmatter lines, in
     file order. A line `action: effect` is a rule on every resource. An
     `action:` line followed by `resource: effect` lines gives one rule per
-    resource. Any other line in the block is CannotCheck.
+    resource. A line whose first non-blank character is `#` is a comment and is
+    skipped, at any indent, as YAML does. A top-level key line other than
+    `permission:` ends the block. A column-0 line in the block that is not a
+    top-level key is CannotCheck, and so is any indented line in the block the
+    parser does not read.
     """
     rules, action, in_block = [], None, False
     for line in head:
         if not line.strip():
             continue
-        if not line.startswith(" "):
+        if line.lstrip().startswith("#"):
+            continue
+        if line[0] not in " \t":
+            if in_block and not TOP_KEY.match(line):
+                raise CannotCheck("%s: cannot read permission line %r" % (path, line))
             in_block = line.rstrip() == "permission:"
             action = None
             continue
@@ -321,7 +344,7 @@ def permission_rules(head, path):
         match = PERMISSION_LINE.match(line)
         if not match:
             raise CannotCheck("%s: cannot read permission line %r" % (path, line))
-        indent, key, value = len(match.group(1)), match.group(2).strip('"'), match.group(3).strip('"')
+        indent, key, value = len(match.group(1)), unquote(match.group(2)), unquote(match.group(3))
         if indent == 2 and value == "":
             action = key
         elif indent == 2:
@@ -338,20 +361,27 @@ def read_definition(path):
     """
     The description, mode, permission rules and body of the definition at path,
     read from its frontmatter. The body is the text after the closing delimiter,
-    stripped. A definition missing any of these is CannotCheck.
+    stripped. A definition that cannot be read as UTF-8, has no frontmatter, or
+    lacks a quoted description, a mode, or a readable permission block is
+    CannotCheck.
     """
-    with open(path, encoding="utf8") as fh:
-        lines = fh.read().split("\n")
-    if not lines or lines[0] != "---" or "---" not in lines[1:]:
+    try:
+        with open(path, encoding="utf8") as fh:
+            lines = fh.read().split("\n")
+    except OSError as exc:
+        raise CannotCheck("cannot read the definition %s: %s" % (path, exc.strerror or "unreadable"))
+    except UnicodeDecodeError:
+        raise CannotCheck("the definition %s is not UTF-8 text" % path)
+    if lines[0] != "---" or "---" not in lines[1:]:
         raise CannotCheck("no frontmatter in %s" % path)
     end = lines.index("---", 1)
     head = lines[1:end]
     desc = mode = None
     for line in head:
-        m = re.match(r'^description:\s*"(.*)"\s*$', line)
+        m = re.match(r'^description:\s*"([^"\\]*)"\s*$', line)
         if m:
             desc = m.group(1)
-        m = re.match(r"^mode:\s*(\S+)\s*$", line)
+        m = re.match(r"^mode:\s*([A-Za-z]+)\s*$", line)
         if m:
             mode = m.group(1)
     if desc is None:
@@ -361,13 +391,23 @@ def read_definition(path):
     return desc, mode, permission_rules(head, path), "\n".join(lines[end + 1:]).strip()
 
 
+def check_definition(path):
+    """
+    Raises CannotCheck when the definition at path cannot be read or parsed, and
+    Refused or CannotCheck when its own permission block would grant more than
+    the allowlist allows. The guard runs this before it asks OpenCode for the
+    listing, so a loosened file is refused while the listing is still stale.
+    """
+    _desc, _mode, file_rules, _body = read_definition(path)
+    check_rules(file_rules, "definition " + path)
+
+
 def check(agent, path, listing):
     """
     Raises Refused or CannotCheck unless the listing holds exactly one entry
-    whose name or id is `agent`, and that entry has the description, body and
-    mode of the definition at `path`, and its permissions pass check_rules.
-    The definition's own permission block must pass check_rules as well, so a
-    loosened file is refused while the listing is still stale.
+    whose name or id is `agent`, that entry has the description, body and mode
+    of the definition at `path`, and its permissions pass check_rules. The
+    definition's own permission block is checked by check_definition.
     """
     try:
         agents = json.loads(listing)
@@ -375,7 +415,7 @@ def check(agent, path, listing):
         raise CannotCheck("the agent listing is not JSON (%s)" % exc)
     if not isinstance(agents, list):
         raise CannotCheck("the agent listing is not a list")
-    want_desc, want_mode, file_rules, body = read_definition(path)
+    want_desc, want_mode, _rules, body = read_definition(path)
     named = [a for a in agents if isinstance(a, dict) and agent in (a.get("name"), a.get("id"))]
     if len(named) != 1:
         raise Refused("%d agents named %s" % (len(named), agent))
@@ -390,13 +430,20 @@ def check(agent, path, listing):
     if not isinstance(rules, list) or not rules:
         raise Refused("agent %s lists no permission rules" % agent)
     check_rules(rules, "agent " + agent)
-    check_rules(file_rules, "definition " + path)
 
 
 def main(argv, stdin):
-    """The guard's exit status. The reason for a failing status goes to stderr."""
+    """
+    The guard's exit status. With --definition as the first argument, the second
+    names the definition to check on its own. Otherwise the first argument names
+    the agent and the listing comes on stdin, read as UTF-8. The reason for a
+    failing status goes to stderr.
+    """
     try:
-        check(argv[1], argv[2], stdin.read())
+        if argv[1] == "--definition":
+            check_definition(argv[2])
+        else:
+            check(argv[1], argv[2], stdin.buffer.read().decode("utf-8"))
     except Refused as exc:
         print(exc, file=sys.stderr)
         return EXIT_REFUSED
@@ -415,19 +462,39 @@ PY
 # guard_agent: the agent guard for the opencode engine. It runs in a subshell,
 # so the temporary directory it uses is removed on every exit. It returns 0 when
 # the one agent named $AGENT is ours and may run; 2 when the guard checked it and
-# refused; 4 when it could not check, so nothing runs. Each outcome logs its
-# reason. The guard does not trust --agent to fail closed: an unknown name must
-# never reach a default agent that can edit files and run shell commands.
+# refused it, or a precondition failed; 4 when it could not finish checking, so
+# nothing runs. Each outcome logs its reason. The definition is read and checked
+# before the listing is asked for. The guard does not trust --agent to fail
+# closed: an unknown name must never reach a default agent that can edit files and
+# run shell commands.
 #
-# `opencode debug agents` reads the background service. As observed on 2.0.32
-# it does not read OPENCODE_CONFIG_CONTENT, so the layered config the run uses
-# is not in the listing. That config adds only external_directory allows to
-# this agent, which the allowlist accepts. The timeout uses the perl alarm the
-# run uses. A cold or empty listing is retried before the guard gives up.
+# Observed on 2.0.32, not re-checked here: `opencode debug agents` does not read
+# OPENCODE_CONFIG_CONTENT, so the layered config the run builds (the OC_CONFIG
+# block, which adds only external_directory allows) is not in the listing. The
+# allowlist accepts those allows. The timeout uses the perl alarm the run uses. A
+# cold or empty listing is retried before the guard gives up.
 guard_agent() (
   def="$BISHOP_ROOT/.opencode/agents/$AGENT.md"
   gtmp="$(mktemp -d -t triage-guard-XXXXXX)"
   trap 'rm -rf "$gtmp"' EXIT
+  # guard_outcome RC: turns the guard's Python status into this function's
+  # status. The reason the Python gave is in $gtmp/reason.
+  guard_outcome() {
+    local rc="$1" reason
+    reason="$(flat "$gtmp/reason")"
+    if [[ $rc -eq 0 ]]; then return 0; fi
+    if [[ $rc -eq 2 ]]; then
+      log "[$KIND] agent $AGENT is not the definition in .opencode/agents/$AGENT.md, or it is granted something outside the allowlist: $reason; nothing run"
+      return 2
+    fi
+    log "[$KIND] could not check agent $AGENT: $reason (guard exit $rc); nothing run"
+    return 4
+  }
+  # The definition is read and checked before OpenCode is asked for anything, so
+  # a missing or malformed file is reported at once.
+  rc=0
+  python3 -I -c "$GUARD_PY" --definition "$def" </dev/null >/dev/null 2>"$gtmp/reason" || rc=$?
+  if [[ $rc -ne 0 ]]; then guard_outcome "$rc"; return $?; fi
   if ! command -v perl >/dev/null 2>&1; then
     log "[$KIND] could not check agent $AGENT: perl is not on PATH, so the listing cannot be bounded; nothing run"
     return 4
@@ -441,8 +508,8 @@ guard_agent() (
       log "[$KIND] could not check agent $AGENT: opencode debug agents $why (stderr: $(flat "$gtmp/err")); nothing run"
       return 4
     fi
-    # tr, not a pattern substitution on the text: bash stalled for minutes on the
-    # live listing (about 30 KB) when it substituted over the whole string.
+    # tr, not a pattern substitution on the text. The substitution is quadratic in
+    # the listing's length: measured at 180 KB and 360 KB, not at 30 KB.
     stripped="$(tr -d '[:space:]' <"$gtmp/listing")"
     if [[ -n "$stripped" && "$stripped" != "[]" ]]; then break; fi
     if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then
@@ -451,16 +518,9 @@ guard_agent() (
     log "[$KIND] could not check agent $AGENT: opencode debug agents gave an empty listing on $attempt attempts (a cold service?); nothing run"
     return 4
   done
-  py_rc=0
-  python3 -I -c "$GUARD_PY" "$AGENT" "$def" <"$gtmp/listing" >/dev/null 2>"$gtmp/reason" || py_rc=$?
-  reason="$(flat "$gtmp/reason")"
-  if [[ $py_rc -eq 0 ]]; then return 0; fi
-  if [[ $py_rc -eq 2 ]]; then
-    log "[$KIND] OpenCode resolved $AGENT to something other than .opencode/agents/$AGENT.md, or it can edit files or run commands: $reason; nothing run"
-    return 2
-  fi
-  log "[$KIND] could not check agent $AGENT: $reason (guard exit $py_rc); nothing run"
-  return 4
+  rc=0
+  python3 -I -c "$GUARD_PY" "$AGENT" "$def" <"$gtmp/listing" >/dev/null 2>"$gtmp/reason" || rc=$?
+  guard_outcome "$rc"
 )
 
 # --- Preconditions ----------------------------------------------------------
@@ -487,6 +547,11 @@ fi
 if [[ ! -x "$MCPD_BIN" ]]; then
   log "[$KIND] $MCPD_BIN missing; building it"
   (cd "$BISHOP_ROOT" && go build -o "$MCPD_BIN" ./cmd/mcpd) || { log "[$KIND] mcpd build failed"; exit 2; }
+fi
+
+if [[ "$ENGINE" == "opencode" ]] && ! command -v python3 >/dev/null 2>&1; then
+  log "[$KIND] could not check agent: python3 is not on PATH ($PATH), so the agent guard cannot run; nothing run"
+  exit 4
 fi
 
 # --- Is there work? ----------------------------------------------------------
