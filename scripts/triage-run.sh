@@ -441,8 +441,9 @@ guard_agent() (
       log "[$KIND] could not check agent $AGENT: opencode debug agents $why (stderr: $(flat "$gtmp/err")); nothing run"
       return 4
     fi
-    listing="$(cat "$gtmp/listing")"
-    stripped="${listing//[[:space:]]/}"
+    # tr, not a pattern substitution on the text: bash stalled for minutes on the
+    # live listing (about 30 KB) when it substituted over the whole string.
+    stripped="$(tr -d '[:space:]' <"$gtmp/listing")"
     if [[ -n "$stripped" && "$stripped" != "[]" ]]; then break; fi
     if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then
       attempt=$((attempt + 1)); sleep 1; continue
@@ -451,7 +452,7 @@ guard_agent() (
     return 4
   done
   py_rc=0
-  printf '%s' "$listing" | python3 -I -c "$GUARD_PY" "$AGENT" "$def" >/dev/null 2>"$gtmp/reason" || py_rc=$?
+  python3 -I -c "$GUARD_PY" "$AGENT" "$def" <"$gtmp/listing" >/dev/null 2>"$gtmp/reason" || py_rc=$?
   reason="$(flat "$gtmp/reason")"
   if [[ $py_rc -eq 0 ]]; then return 0; fi
   if [[ $py_rc -eq 2 ]]; then
