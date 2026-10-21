@@ -29,13 +29,18 @@ POSIX only: main() refuses elsewhere, by the POSIX constant.
 
 The signals in HANDLED_SIGNALS are handled while the run lasts. Once a file is
 planted they are blocked, except while its killers run (run_interruptibly), so
-the only place one raises Interrupted is a killer run, and the finally block
-restores the file. A signal that arrives anywhere else while a file is planted,
-or during its restore, is held and then recorded; the run stops once the restore is
-verified. A signal that arrives after mutate_one returns (between mutants, or
+the only place one raises Interrupted is there, and the finally block restores
+the file. A signal held from the plant until the killers are due is delivered
+when run_interruptibly unmasks, before any killer starts: it raises Interrupted,
+the killers do not run, and the restore runs and is verified. A signal that
+arrives after the killers have ended, or during the restore, is held and
+recorded in out.late_signals when the mask goes back; the run stops once the
+restore is verified. A signal that arrives after mutate_one returns (between mutants, or
 while main reports) raises Interrupted where the run is; the file is already
 restored and verified then, so the cost is a stop and not a mutated file. A
 handled signal the parent set to ignore, as nohup does, stays ignored.
+The mask protects the single-threaded runner only: it is per thread, and the
+handlers run in the main thread.
 Each killer runs in its own process group, and a timeout or an interrupt SIGKILLs
 that group. A process the killer started that stays in the group stops with it. A
 process that leaves the group (setsid, a double fork) is not reached, and the
@@ -129,7 +134,7 @@ class Outcome:
         self.relpath = None               # the file this mutant edits, relative to the repository
         self.saved = None                 # the saved copy of that file's original bytes
         self.log = None
-        self.late_signals = []            # signals held or recorded while the file was planted, outside the killers; acted on after the restore
+        self.late_signals = []            # signals that arrived after the killers ended or during the restore, recorded when the mask goes back; a signal held before the killers start is raised as Interrupted instead and never lands here
 
 
 class ToolError(Exception):
@@ -205,8 +210,8 @@ def write_marker(path, data):
     """
     Replace the marker at `path` with `data`, atomically: the text goes to a new
     temporary file in the same directory (created exclusively, owner-only, never
-    following a symlink), is fsynced, and is renamed over `path`. A kill leaves the old marker or the new
-    one, never a partial file. The rename replaces a symlink at `path` rather than
+    following a symlink), is fsynced, and is renamed over `path`. A kill leaves the old marker or the
+    new one, never a partial file. The rename replaces a symlink at `path` rather than
     following it, so a planted link cannot redirect the write. A kill can leave the
     temporary file behind; it is not read. Raises OSError on failure.
     """
@@ -580,11 +585,15 @@ def mutate_one(entry, log_dir, timeout, out=None):
     killers; it is skipped only when recording the plant was refused, and then
     nothing was written. HANDLED_SIGNALS are blocked from before out.planted is set
     until the mask goes back at the very end, except inside run_interruptibly()
-    around the killers, so Interrupted can only be raised there; a signal that
-    arrives while they are blocked is recorded in out.late_signals after the
+    around the killers, so Interrupted can only be raised there. A signal held
+    between the plant and the start of the killers is delivered when
+    run_interruptibly unmasks: it raises Interrupted, the killers do not run, no
+    verdict is returned, and the restore runs and is verified. A signal that
+    arrives after the killers have ended, or during the restore, is recorded in
+    out.late_signals when the mask goes back, and the run stops after the verified
     restore. A signal that lands before the first block has planted nothing.
     Raises ToolError when git cannot answer the clean-tree check, and Interrupted
-    when a signal lands while the killers run.
+    when a signal lands before the killers start or while they run.
     """
     if out is None:
         out = Outcome(entry["id"])
@@ -840,7 +849,7 @@ def run_locked(args, chosen, marker):
             for line in describe(out, len(entry["killers"])):
                 print(line)
             sys.stdout.flush()
-            if out.late_signals:  # held or recorded during this mutant; its file is restored, so stop here
+            if out.late_signals:  # recorded after its killers ended; its file is restored, so stop here
                 raise Interrupted(out.late_signals[0])
         after_status = git(["status", "--porcelain"]).stdout
     except (Interrupted, KeyboardInterrupt) as exc:

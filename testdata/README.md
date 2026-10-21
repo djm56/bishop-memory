@@ -229,8 +229,11 @@ that group; a process that leaves the group (`setsid`, a double fork) is not
 reached. If a planted file is not restored and verified, the run prints
 `RESTORE FAILED` with the path of the saved original and exits 1 instead of 5,
 because the file may still hold the mutant. A restore that never ran counts as
-not verified. Once a file is planted, a signal is held, except while its killers
-run, and acted on after the restore is verified. A signal that arrives after a
+not verified. Once a file is planted, signals are blocked except while its killers run. A signal
+held until the killers are due is delivered when they would start: the killers do
+not run, and the file is restored and verified before the run exits. A signal that
+arrives after the killers end, or during the restore, is recorded and the run
+stops after the verified restore. A signal that arrives after a
 mutant's restore is done raises where the run is; the file is restored by then.
 
 Anything that ends the process without letting the runner's code run skips every

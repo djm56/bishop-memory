@@ -857,6 +857,7 @@ class MainTests(_RepoTest):
         def blocks_then_raises(*_args, **_kwargs):
             signal.pthread_sigmask(signal.SIG_BLOCK, mutate.HANDLED_SIGNALS)
             raise mutate.Interrupted("SIGTERM")
+        self.addCleanup(signal.pthread_sigmask, signal.SIG_SETMASK, signal.pthread_sigmask(signal.SIG_BLOCK, []))
         self.assertEqual(blocked_handled(), set(), "control: the run starts with the handled signals unblocked")
         with mock.patch.object(mutate, "mutate_one", side_effect=blocks_then_raises):
             status, out = self.run_main(["--ids", "A", "--log-dir", self.logs])
@@ -1168,8 +1169,8 @@ class PlantWindowTests(_RepoTest):
         return os.path.join(self.repo, ".git", mutate.MARKER_NAME)
 
     def test_a_signal_right_after_the_plant_is_recorded_still_restores_and_clears_the_entry(self):
-        # The signal lands after record_plant returns and before the file is written, where the
-        # old code had no try yet. The entry must not be left behind for a file nobody mutated.
+        # The signal lands after record_plant returns and before the file is written. It is held, then
+        # raised when the killers are due, so the killers never run. The entry must not be left behind.
         real = mutate.record_plant
 
         def record_then_signal(*args):
