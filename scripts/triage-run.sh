@@ -72,17 +72,59 @@
 # BISHOP_MEMORY_URL value in the file is a default; a variable already set in
 # the environment wins.
 #
-# Exit codes: 0 ran or nothing to do; 1 the agent run failed or timed out; 2 a
-# precondition failed (service down, mcpd missing, CLI missing, model id wrong
-# for the engine) or the guard refused the agent (it is not the definition in
-# .opencode/agents, or it can edit files or run commands); 4 the guard could not
-# check the agent (the agent listing failed, timed out, was unparseable, or stayed
-# empty after the retries), so nothing ran; 64 usage error.
+# Exit codes: 0 ran, or there was nothing to do; 1 the agent run failed or timed
+# out; 2 the guard checked the agent and refused it, or a precondition the run
+# needs was not met; 4 the guard could not finish checking the agent, so nothing
+# ran; 64 usage error.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BISHOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Flags are read before anything is sourced, so --help has no side effects and
+# works with a broken .env.
+# print_help: the header comment, from line 2 down to its first blank line, with
+# the comment marks removed. Read from the file, so the header and --help agree.
+print_help() {
+  awk 'NR > 1 && /^$/ { exit } NR > 1 { print }' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  -h|--help) print_help; exit 0 ;;
+esac
+
+KIND="${1:-}"
+shift || true
+CATEGORY=""
+RECLASSIFY=""
+MODEL=""
+LIMIT=""
+ENGINE_FLAG=""
+MISSIONS=""
+REGRADE=0
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --category) CATEGORY="${2:-}"; shift 2 ;;
+    --category=*) CATEGORY="${1#*=}"; shift ;;
+    --reclassify) RECLASSIFY="${2:-}"; shift 2 ;;
+    --reclassify=*) RECLASSIFY="${1#*=}"; shift ;;
+    --model) MODEL="${2:-}"; shift 2 ;;
+    --model=*) MODEL="${1#*=}"; shift ;;
+    --limit) LIMIT="${2:-}"; shift 2 ;;
+    --limit=*) LIMIT="${1#*=}"; shift ;;
+    --engine) ENGINE_FLAG="${2:-}"; shift 2 ;;
+    --engine=*) ENGINE_FLAG="${1#*=}"; shift ;;
+    --mission) MISSIONS="${2:-}"; shift 2 ;;
+    --mission=*) MISSIONS="${1#*=}"; shift ;;
+    --regrade) REGRADE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) print_help; exit 0 ;;
+    *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
+  esac
+done
 
 # --- Credentials and defaults from .env --------------------------------------
 ENV_FILE="${TRIAGE_ENV_FILE:-$BISHOP_ROOT/.env}"
@@ -150,48 +192,6 @@ MCPD_BIN="$BISHOP_ROOT/bin/mcpd"
 GUARD_TIMEOUT_SEC="${TRIAGE_GUARD_TIMEOUT_SEC:-30}"
 GUARD_ATTEMPTS=3  # listings tried while the service is cold or empty, one second apart
 
-# print_help: the header comment, from line 2 down to its first blank line, with
-# the comment marks removed. Read from the file, so the header and --help agree.
-print_help() {
-  awk 'NR > 1 && /^$/ { exit } NR > 1 { print }' "$0" | sed 's/^# \{0,1\}//'
-}
-
-case "${1:-}" in
-  -h|--help) print_help; exit 0 ;;
-esac
-
-KIND="${1:-}"
-shift || true
-CATEGORY=""
-RECLASSIFY=""
-MODEL=""
-LIMIT=""
-ENGINE_FLAG=""
-MISSIONS=""
-REGRADE=0
-DRY_RUN=0
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --category) CATEGORY="${2:-}"; shift 2 ;;
-    --category=*) CATEGORY="${1#*=}"; shift ;;
-    --reclassify) RECLASSIFY="${2:-}"; shift 2 ;;
-    --reclassify=*) RECLASSIFY="${1#*=}"; shift ;;
-    --model) MODEL="${2:-}"; shift 2 ;;
-    --model=*) MODEL="${1#*=}"; shift ;;
-    --limit) LIMIT="${2:-}"; shift 2 ;;
-    --limit=*) LIMIT="${1#*=}"; shift ;;
-    --engine) ENGINE_FLAG="${2:-}"; shift 2 ;;
-    --engine=*) ENGINE_FLAG="${1#*=}"; shift ;;
-    --mission) MISSIONS="${2:-}"; shift 2 ;;
-    --mission=*) MISSIONS="${1#*=}"; shift ;;
-    --regrade) REGRADE=1; shift ;;
-    --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) print_help; exit 0 ;;
-    *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
-  esac
-done
-
 case "$KIND" in
   classify) KIND_ENGINE="${TRIAGE_CLASSIFY_ENGINE:-}" ;;
   process) KIND_ENGINE="${TRIAGE_PROCESS_ENGINE:-}" ;;
@@ -213,7 +213,7 @@ if [[ ! "$TIMEOUT_MIN" =~ ^[0-9]+$ ]]; then
   echo "triage-run.sh: TRIAGE_TIMEOUT_MIN must be a whole number of minutes, got '$TIMEOUT_MIN'" >&2
   exit 64
 fi
-if [[ ! "$GUARD_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
+if [[ "$ENGINE" == "opencode" && ! "$GUARD_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
   echo "triage-run.sh: TRIAGE_GUARD_TIMEOUT_SEC must be a whole number of seconds, at least 1, got '$GUARD_TIMEOUT_SEC'" >&2
   exit 64
 fi
