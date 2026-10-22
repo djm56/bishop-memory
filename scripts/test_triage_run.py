@@ -155,11 +155,12 @@ esac
 """
 
 # The tools the script and its guard use, all but perl. The no-perl test builds
-# a PATH from these alone.
+# a PATH from these alone, and so do the --mission lookup tests, which also need
+# tail and run on the claude engine because it does not use perl.
 TOOLS_WITHOUT_PERL = (
     "python3", "cat", "mktemp", "date", "tr", "head", "sed", "awk", "sleep", "rm",
     "mkdir", "stat", "chmod", "grep", "wc", "cut", "dirname", "basename", "curl", "tee",
-    "uname", "sort",
+    "uname", "sort", "tail",
 )
 
 # The same tools without python3, for the test of a missing python3. perl is not
@@ -2107,6 +2108,162 @@ class GradeExcluded(TriageRunCase):
         self.assertEqual(proc.returncode, 0, "control with none excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
         self.assertEqual(self.claimed(), ["A", "B", "C"], "control claim was %r; expected ['A', 'B', 'C']" % (self.claimed(),))
         self.assertEqual(self.skips(), [], "control skip lines were %r; expected none" % (self.skips(),))
+
+    # --- A tool the --mission lookup needs is missing (DIR-002) --------------
+    #
+    # These runs use the claude engine, which does not use perl or the agent
+    # guard, so the lookup is the only thing that can stop them. The tool is
+    # taken off PATH through a directory of symlinks to every other tool
+    # (tools_dir), and the claude CLI is a stub that records its arguments where
+    # ran() and claimed() read them. The HUD answers A graded, B excluded and C
+    # ungraded, so a lookup that wrongly went ahead would send DELETE for A and C.
+
+    def tools_dir(self, without):
+        """
+        A directory to use as PATH: a symlink to every tool in TOOLS_WITHOUT_PERL
+        except `without` (None leaves none out). It checks that `without` does not
+        resolve in it and that every other tool does, so a run cannot stop on a
+        tool this directory forgot and read as the tool under test being absent.
+        """
+        bin_dir = os.path.join(self.tmp, "tools-without-%s" % (without or "nothing"))
+        os.makedirs(bin_dir)
+        original = os.environ.get("PATH", "/usr/bin:/bin")
+        for name in TOOLS_WITHOUT_PERL:
+            found = shutil.which(name, path=original)
+            if found and name != without:
+                os.symlink(found, os.path.join(bin_dir, name))
+        if without:
+            self.assertIsNone(shutil.which(without, path=bin_dir), "%s is still on the shim PATH" % without)
+        for name in TOOLS_WITHOUT_PERL:
+            if name != without:
+                self.assertIsNotNone(shutil.which(name, path=bin_dir), "the shim PATH lacks %s, which this test does not remove" % name)
+        return bin_dir
+
+    def run_claude_without(self, without, *flags):
+        """
+        Run the grade kind on the claude engine with the HUD answering A graded, B
+        excluded and C ungraded, and with `without` taken off PATH (None for no
+        tool left out). The claude CLI is a stub that records its arguments and
+        answers a finished run.
+        """
+        self.serve_hud(states={"A": "graded", "B": "excluded", "C": None})
+        claude = os.path.join(self.tmp, "claude-stub")
+        with open(claude, "w") as fh:
+            fh.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STUB_RUN_ARGS\"\n"
+                     "printf '{\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":0,\"stop_reason\":\"end_turn\"}'\n")
+        os.chmod(claude, 0o755)
+        return self.run_script("grade", [], path=self.tools_dir(without),
+                               flags=("--engine", "claude", *flags), extra_env={"CLAUDE_BIN": claude})
+
+    def assert_mission_run_not_started(self, proc, tool, reason, asked_lookup):
+        """
+        The could-not-check outcome for a --mission run that lacked `tool`: exit 4,
+        a log line that says the exclusion check could not finish and gives `reason`,
+        no DELETE and no claude run. `asked_lookup` is whether the HUD list was
+        asked for, which it was only where the tool is needed after the answer.
+        The health check was answered in each of these runs.
+        """
+        self.assertEqual(proc.returncode, 4, "run without %s exited %d; expected 4; log: %s" % (tool, proc.returncode, self.log_text()))
+        line = "could not check whether the named missions are excluded: " + reason
+        self.assertIn(line, self.log(), "run without %s did not log %r; log: %s" % (tool, line, self.log_text()))
+        self.assertIn("/healthz", self.server.gets, "run without %s: the health check was not asked; requests %r" % (tool, self.server.gets))
+        asked = "/v1/hud/missions?grade=excluded" in self.server.gets
+        self.assertEqual(asked, asked_lookup, "run without %s: HUD list asked = %r, expected %r; requests %r" % (tool, asked, asked_lookup, self.server.gets))
+        self.assertEqual(self.server.deletes, [], "run without %s still sent DELETE %r" % (tool, self.server.deletes))
+        self.assertFalse(self.ran(), "run without %s still started the grader" % tool)
+
+    def test_mission_run_with_every_tool_present_reopens_and_claims_the_others(self):
+        """Path (control for the missing-tool tests): the same claude run, shim PATH and HUD answer, with no tool left out, deletes A and C and claims A and C.
+
+        It is the run the tests below stop by taking one tool away, so a missing-tool
+        result cannot come from a shim that never let the run through. Mutants
+        GRADE-CURL-ON, GRADE-PY3-ON, GRADE-MKTEMP-ON, GRADE-TAIL-ON and GRADE-SED-ON
+        make their guard fire with the tool present, and this test fails each.
+        """
+        proc = self.run_claude_without(None, "--mission", "A,B,C", "--regrade")
+        self.assertEqual(proc.returncode, 0, "run with every tool exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(sorted(self.server.deletes), ["/v1/mission-grades/A", "/v1/mission-grades/C"],
+                         "DELETE set was %r; expected A and C" % (self.server.deletes,))
+        self.assertEqual(self.claimed(), ["A", "C"], "claim was %r; expected ['A', 'C']" % (self.claimed(),))
+
+    def test_mission_run_without_curl_cannot_check_and_says_curl(self):
+        """Path: curl is not on PATH, so the --mission run exits 4 naming curl, before the health check, and nothing is deleted or claimed.
+
+        The service is not asked at all, the health check included. Mutant GRADE-CURL-OFF (the guard removed) reaches the
+        health check, which fails with exit 2 and the reason 'not answering'.
+        GRADE-CURL-MISSION-OFF (a --mission run is treated as any other) exits 2.
+        """
+        proc = self.run_claude_without("curl", "--mission", "A,B,C", "--regrade")
+        self.assertEqual(proc.returncode, 4, "run without curl exited %d; expected 4; log: %s" % (proc.returncode, self.log_text()))
+        line = "could not check whether the named missions are excluded: curl is not on PATH"
+        self.assertIn(line, self.log(), "run without curl did not log %r; log: %s" % (line, self.log_text()))
+        self.assertNotIn("is not answering", self.log(), "the missing curl was reported as a silent service; log: %s" % self.log_text())
+        self.assertEqual(self.server.gets, [], "the service was asked %r with no curl to ask it" % (self.server.gets,))
+        self.assertEqual(self.server.deletes, [], "run without curl still sent DELETE %r" % (self.server.deletes,))
+        self.assertFalse(self.ran(), "run without curl still started the grader")
+
+    def test_plain_run_without_curl_exits_2_and_says_curl_not_that_the_service_is_silent(self):
+        """Path: curl is not on PATH, and the run has no --mission, so it exits 2 naming curl and does not say the service is not answering.
+
+        The service is not asked. Mutant GRADE-CURL-OFF reaches the health check,
+        which reports the service as not answering. GRADE-CURL-MISSION-ON (a plain
+        run is treated as a --mission one) exits 4 with the exclusion-check reason.
+        """
+        proc = self.run_claude_without("curl")
+        self.assertEqual(proc.returncode, 2, "plain run without curl exited %d; expected 2; log: %s" % (proc.returncode, self.log_text()))
+        self.assertIn("curl is not on PATH", self.log(), "no curl reason; log: %s" % self.log_text())
+        self.assertNotIn("is not answering", self.log(), "the missing curl was reported as a silent service; log: %s" % self.log_text())
+        self.assertNotIn("could not check whether the named missions", self.log(), "a plain run logged the exclusion check; log: %s" % self.log_text())
+        self.assertEqual(self.server.gets, [], "the service was asked %r with no curl to ask it" % (self.server.gets,))
+        self.assertFalse(self.ran(), "a plain run without curl started the grader")
+
+    def test_plain_run_with_every_tool_present_starts_the_grader(self):
+        """Path (control for the plain missing-curl test): the same plain claude run and shim PATH with curl present starts the grader.
+
+        Mutant GRADE-CURL-ON (the guard fires with curl present) exits 2.
+        """
+        proc = self.run_claude_without(None)
+        self.assertEqual(proc.returncode, 0, "plain run with every tool exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertTrue(self.ran(), "control: the plain run did not start the grader")
+        self.assertIn("/healthz", self.server.gets, "control: the health check was not asked")
+
+    def test_mission_run_without_python3_cannot_check_and_says_python3(self):
+        """Path: python3 is not on PATH, so the --mission run exits 4 naming python3, not 64 and 'must name 1-10 mission ids'.
+
+        The health check is answered and the HUD list is not asked for. Mutant
+        GRADE-PY3-OFF (the guard removed) reads the missing python3 as a bad id list
+        and exits 64.
+        """
+        proc = self.run_claude_without("python3", "--mission", "A,B,C", "--regrade")
+        self.assertNotIn("must name 1-10 mission ids", self.log(), "the missing python3 was reported as a bad id list; log: %s" % self.log_text())
+        self.assert_mission_run_not_started(proc, "python3", "python3 is not on PATH", asked_lookup=False)
+
+    def test_mission_run_without_mktemp_cannot_check_and_says_mktemp(self):
+        """Path: mktemp is not on PATH, so the --mission run exits 4 naming mktemp, with no DELETE and no claim.
+
+        Mutant GRADE-MKTEMP-OFF (the guard's exit removed) goes on with no stderr file
+        and fails the lookup, so the exit is 4 but the reason is not mktemp's.
+        """
+        proc = self.run_claude_without("mktemp", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "mktemp", "mktemp failed", asked_lookup=False)
+
+    def test_mission_run_without_tail_cannot_check_and_says_tail(self):
+        """Path: tail is not on PATH, so the --mission run exits 4 naming tail, after the lookup answered, with no DELETE and no claim.
+
+        The HUD list is asked for, since tail is needed only after its answer. Mutant GRADE-TAIL-OFF (the guard's exit removed) goes on with an
+        empty kept list and starts a claim with no ids.
+        """
+        proc = self.run_claude_without("tail", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "tail", "tail failed on the lookup result", asked_lookup=True)
+
+    def test_mission_run_without_sed_cannot_check_and_says_sed(self):
+        """Path: sed is not on PATH, so the --mission run exits 4 naming sed, after the lookup answered, with no DELETE and no claim.
+
+        Mutant GRADE-SED-OFF (the guard's exit removed) goes on with no excluded ids
+        listed and reopens and claims the missions it should have skipped or not.
+        """
+        proc = self.run_claude_without("sed", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "sed", "sed failed on the lookup result", asked_lookup=True)
 
 
 if __name__ == "__main__":

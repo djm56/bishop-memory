@@ -542,6 +542,18 @@ guard_agent() (
 
 # --- Preconditions ----------------------------------------------------------
 
+# A missing curl is reported as itself, so the health check below does not
+# report a service that was never asked as not answering. A --mission run exits
+# 4, the could-not-check outcome: its exclusion lookup needs curl. Any other
+# run exits 2, the code the health check uses for a precondition not met.
+if ! command -v curl >/dev/null 2>&1; then
+  if [[ -n "$MISSIONS" ]]; then
+    log "[$KIND] could not check whether the named missions are excluded: curl is not on PATH ($PATH); nothing deleted or claimed; nothing run"
+    exit 4
+  fi
+  log "[$KIND] curl is not on PATH ($PATH), so bishop-memory cannot be asked for work; nothing run"
+  exit 2
+fi
 if ! api_curl -fsS --max-time 5 "$URL/healthz" >/dev/null 2>&1; then
   log "[$KIND] bishop-memory at $URL is not answering; nothing run"
   exit 2
@@ -603,6 +615,13 @@ elif [[ "$KIND" == "grade" ]]; then
   fi
   MISSION_JSON=""
   if [[ -n "$MISSIONS" ]]; then
+    # python3 reads the ids and the HUD answer below. A missing one is reported as
+    # itself, not as a bad --mission list (exit 64), and exits 4 like the other
+    # could-not-check outcomes of this block.
+    if ! command -v python3 >/dev/null 2>&1; then
+      log "[grade] could not check whether the named missions are excluded: python3 is not on PATH ($PATH); nothing deleted or claimed; nothing run"
+      exit 4
+    fi
     MISSION_JSON="$(printf '%s' "$MISSIONS" | python3 -c '
 import json, sys
 ids = [m.strip() for m in sys.stdin.read().split(",") if m.strip()]
@@ -614,9 +633,11 @@ print(json.dumps(ids))')" || { log "[grade] --mission must name 1-10 mission ids
     # batch. The HUD list gives every mission's grade_state and has no row cap, so
     # one read answers for all the named missions. It runs before any DELETE or
     # claim; if it fails, nothing is deleted or claimed. Python prints each excluded
-    # mission on its own line, then the kept list as the last line.
-    lookup_err="$(mktemp -t triage-lookup-XXXXXX)"
-    LOOKUP="$(api_curl -fsS "$URL/v1/hud/missions?grade=excluded" 2>>"$lookup_err" | python3 -c '
+    # mission on its own line, then the kept list as the last line. The mktemp, tail
+    # and sed in this block are guarded the same way as the lookup: a failure logs
+    # the could-not-check line and exits 4, not the 1 or 127 that set -e would give.
+    lookup_err="$(mktemp -t triage-lookup-XXXXXX)" || { log "[grade] could not check whether the named missions are excluded: mktemp failed; nothing deleted or claimed; nothing run"; exit 4; }
+    LOOKUP="$(api_curl -fsS "$URL/v1/hud/missions?grade=excluded" 2>>"$lookup_err" | python3 -I -c '
 import json, sys
 named = json.loads(sys.argv[1])
 body = json.load(sys.stdin)
@@ -628,8 +649,8 @@ for m in named:
         print(m)
 print(json.dumps([m for m in named if m not in excluded]))' "$MISSION_JSON" 2>>"$lookup_err")" || { log "[grade] could not check whether the named missions are excluded: $(flat "$lookup_err"); nothing deleted or claimed; nothing run"; rm -f "$lookup_err"; exit 4; }
     rm -f "$lookup_err"
-    KEPT_JSON="$(printf '%s\n' "$LOOKUP" | tail -n 1)"
-    EXCLUDED_IDS="$(printf '%s\n' "$LOOKUP" | sed '$d')"
+    KEPT_JSON="$(printf '%s\n' "$LOOKUP" | tail -n 1)" || { log "[grade] could not check whether the named missions are excluded: tail failed on the lookup result; nothing deleted or claimed; nothing run"; exit 4; }
+    EXCLUDED_IDS="$(printf '%s\n' "$LOOKUP" | sed '$d')" || { log "[grade] could not check whether the named missions are excluded: sed failed on the lookup result; nothing deleted or claimed; nothing run"; exit 4; }
     while IFS= read -r m; do
       if [[ -n "$m" ]]; then log "[grade] skipping $m: excluded (N/A) by the operator"; fi
     done <<<"$EXCLUDED_IDS"
