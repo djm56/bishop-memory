@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -67,8 +69,18 @@ func newRecordingClient(t *testing.T) (*client, *requestLog) {
 	return &client{httpClient: stub.Client(), syncHTTPClient: stub.Client(), baseURL: stub.URL, harness: "test"}, log
 }
 
+// argumentOverrides gives a tool's arguments values the generic filler in
+// everyArgument cannot. service_record_append refuses any source but its two
+// enumerated values before it sends anything, so with the filler's value it
+// sends no request and the sweep could not see it. Keyed by tool name, then by
+// argument name.
+var argumentOverrides = map[string]map[string]any{
+	"service_record_append": {"source": "self-reported"},
+}
+
 // everyArgument fills each argument a tool declares, so a handler that checks
-// its required arguments goes on to the request it would send.
+// its required arguments goes on to the request it would send. Arguments listed
+// in argumentOverrides for the tool take the override's value instead.
 func everyArgument(tool mcp.Tool) map[string]any {
 	args := map[string]any{}
 	for name, raw := range tool.InputSchema.Properties {
@@ -86,44 +98,78 @@ func everyArgument(tool mcp.Tool) map[string]any {
 			args[name] = "mission-20261022-99"
 		}
 	}
+	for name, v := range argumentOverrides[tool.Name] {
+		args[name] = v
+	}
 	return args
 }
 
-// sweep registers one mcpd profile on a fresh server with the given client,
-// calls every tool it registers with every argument filled, and returns when
-// all have answered. The register function is the profile's own registration,
-// the one main() calls for that MCPD_PROFILE value.
-func sweep(c *client, register func(*server.MCPServer, *client)) {
-	s := server.NewMCPServer("mcpd", "test")
-	register(s, c)
-	for name, st := range s.ListTools() {
-		req := mcp.CallToolRequest{}
-		req.Params.Name = name
-		req.Params.Arguments = everyArgument(st.Tool)
-		// A tool reports failure as an error result, not a Go error, and the
-		// request log is what the test reads, so the result is not needed.
-		_, _ = st.Handler(context.Background(), req)
+// callTool sends one tools/call request for the named tool, with args as its
+// arguments, through the server's JSON-RPC dispatch: HandleMessage reads the
+// request as a client's message and routes it to the tool. The response is not
+// read. A tool that fails answers with an error result, and the request log is
+// what the tests check.
+func callTool(t *testing.T, s *server.MCPServer, name string, args map[string]any) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params":  map[string]any{"name": name, "arguments": args},
+	})
+	if err != nil {
+		t.Fatalf("encode tools/call for %s: %v", name, err)
 	}
+	_ = s.HandleMessage(context.Background(), raw)
 }
 
-// assertNeverReachesExclusion sweeps one profile and fails on any request that
-// reaches the operator's exclusion route, or that sends PUT or DELETE to a
-// grade. The sweep must send something, or its silence proves nothing.
+// sweep registers one mcpd profile on a fresh server with the given client, then
+// sends a tools/call for every tool it registers, each with every argument
+// filled. The register function is the profile's own registration, the one
+// main() calls for that MCPD_PROFILE value. It returns, keyed by tool name, the
+// requests that tool alone sent to the stub, so each tool is judged on its own.
+func sweep(t *testing.T, c *client, log *requestLog, register func(*server.MCPServer, *client)) map[string][]string {
+	t.Helper()
+	s := server.NewMCPServer("mcpd", "test")
+	register(s, c)
+	perTool := map[string][]string{}
+	for name, st := range s.ListTools() {
+		log.take() // clear what came before, so this tool's list holds only its own requests
+		callTool(t, s, name, everyArgument(st.Tool))
+		perTool[name] = log.take()
+	}
+	return perTool
+}
+
+// assertNeverReachesExclusion sweeps one profile and fails on any tool whose
+// request reaches the operator's exclusion route, or sends PUT or DELETE to a
+// grade. Each tool must send at least one request of its own: a tool that
+// returns before it sends anything would otherwise pass as clean.
 func assertNeverReachesExclusion(t *testing.T, profile string, register func(*server.MCPServer, *client)) {
 	t.Helper()
 	c, log := newRecordingClient(t)
-	sweep(c, register)
-	seen := log.take()
-	if len(seen) == 0 {
-		t.Fatalf("%s profile: no request reached the stub; the sweep proves nothing", profile)
+	perTool := sweep(t, c, log, register)
+	if len(perTool) == 0 {
+		t.Fatalf("%s profile registers no tools; the sweep proves nothing", profile)
 	}
-	for _, rec := range seen {
-		method, path, _ := strings.Cut(rec, " ")
-		if strings.HasSuffix(path, "/exclusion") {
-			t.Errorf("%s profile reaches the operator exclusion route: %s", profile, rec)
+	names := make([]string, 0, len(perTool))
+	for name := range perTool {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		seen := perTool[name]
+		if len(seen) == 0 {
+			t.Errorf("%s profile: tool %s sent no request; its silence proves nothing", profile, name)
 		}
-		if strings.HasPrefix(path, "/v1/mission-grades") && (method == http.MethodPut || method == http.MethodDelete) {
-			t.Errorf("%s profile sends %s, which only the operator may do to a grade", profile, rec)
+		for _, rec := range seen {
+			method, path, _ := strings.Cut(rec, " ")
+			if strings.HasSuffix(path, "/exclusion") {
+				t.Errorf("%s profile: tool %s reaches the operator exclusion route: %s", profile, name, rec)
+			}
+			if strings.HasPrefix(path, "/v1/mission-grades") && (method == http.MethodPut || method == http.MethodDelete) {
+				t.Errorf("%s profile: tool %s sends %s, which only the operator may do to a grade", profile, name, rec)
+			}
 		}
 	}
 }
@@ -131,15 +177,18 @@ func assertNeverReachesExclusion(t *testing.T, profile string, register func(*se
 // TestMCPToolsNeverReachOperatorExclusionRoutes checks that no tool in either
 // mcpd profile reaches the operator's exclusion route, and that no tool deletes
 // or overwrites a grade with PUT or DELETE. Each profile is registered exactly
-// as main() registers it, on a server whose client points at a stub memoryd,
-// and every tool it registers is called with every argument filled. Each
-// subtest runs on its own stub, so a broken path fails that subtest alone.
+// as main() registers it, on a server whose client points at a stub memoryd.
+// Every tool it registers is called through the server's tools/call JSON-RPC
+// dispatch (MCPServer.HandleMessage), the path an MCP client's call takes, and
+// not by invoking the tool's handler directly. Each tool is judged on the
+// requests it sent alone. Each subtest runs on its own stub, so a broken path
+// fails that subtest alone.
 //
 // The absence is paired with controls. The server side: the router must
 // register both exclusion routes, so there is something to keep mcpd away from.
 // The recorder: a probe aimed at the exclusion route must show up in the log,
-// and the triage sweep must reach the grade write route, so an empty log cannot
-// pass as a clean one.
+// and grade_write must reach the grade write route, so an empty log cannot pass
+// as a clean one.
 func TestMCPToolsNeverReachOperatorExclusionRoutes(t *testing.T) {
 	t.Run("router_registers_exclusion_routes", func(t *testing.T) {
 		dbConn, err := sql.Open("sqlite", ":memory:")
@@ -163,6 +212,8 @@ func TestMCPToolsNeverReachOperatorExclusionRoutes(t *testing.T) {
 	})
 
 	t.Run("control_probe_recorded", func(t *testing.T) {
+		// The probe is the proxy called directly, not through tools/call: this
+		// subtest checks the recorder, and the dispatch subtests check the tools.
 		c, log := newRecordingClient(t)
 		probe := makeBodyProxy(c, "control_probe", http.MethodPut, nil, nil,
 			"v1", "mission-grades", "mission-20261022-99", "exclusion")
@@ -183,12 +234,12 @@ func TestMCPToolsNeverReachOperatorExclusionRoutes(t *testing.T) {
 	})
 
 	t.Run("triage_profile_reaches_grade_write", func(t *testing.T) {
-		// Control: the sweep reaches the grade routes, so the absence above is
-		// not the absence of traffic.
+		// Control: grade_write, called through tools/call, reaches the grade write
+		// route, so the absence above is not the absence of traffic.
 		c, log := newRecordingClient(t)
-		sweep(c, registerTriageTools)
-		if !hasRequest(log.take(), "POST /v1/mission-grades") {
-			t.Error("triage profile never sent POST /v1/mission-grades; the sweep cannot see the grade write route")
+		perTool := sweep(t, c, log, registerTriageTools)
+		if !hasRequest(perTool["grade_write"], "POST /v1/mission-grades") {
+			t.Errorf("grade_write sent %v; want POST /v1/mission-grades", perTool["grade_write"])
 		}
 	})
 }
