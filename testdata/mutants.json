@@ -4104,37 +4104,54 @@
       ]
     },
     {
-      "id": "W1-FK-OFF",
-      "status": "active",
-      "language": "go",
-      "file": "internal/store/mission_grades.go",
-      "line": 157,
-      "before": "PRAGMA foreign_keys = ON",
-      "after": "PRAGMA foreign_keys = OFF",
-      "property": "Foreign keys are enforced on the pooled connection after a rebuild, whether it failed or not",
-      "mirror": "W1-FK-ABSENT",
-      "package": "./internal/store",
-      "killers": [
-        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change",
-        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys"
-      ]
-    },
-    {
-      "id": "W1-FK-ABSENT",
+      "id": "W1-FK-SUCCESS-ONLY",
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
       "line": 100,
-      "before": "defer restoreForeignKeys(ctx, conn)",
-      "after": "",
-      "summary": "the restore is never deferred, so the connection is handed back with foreign keys off",
-      "property": "Every exit from the rebuild restores foreign keys (the opposite edge: no restore runs)",
-      "mirror": "W1-FK-OFF",
+      "before": "defer restoreForeignKeys(ctx, conn)\n\n\ttx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer tx.Rollback() //nolint:errcheck",
+      "after": "tx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer func() {\n\t\tif tx.Rollback() == sql.ErrTxDone {\n\t\t\trestoreForeignKeys(ctx, conn)\n\t\t}\n\t}()",
+      "summary": "the restore runs only on the success path: the deferred restore is removed, and a deferred rollback restores foreign keys only when it finds the transaction already committed",
+      "property": "Foreign keys are restored only when the rebuild commits, so a failed rebuild leaves them off (the opposite edge of W1-FK-FAILURE-ONLY)",
+      "mirror": "W1-FK-FAILURE-ONLY",
       "package": "./internal/store",
       "killers": [
-        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys",
         "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change"
       ]
+    },
+    {
+      "id": "W1-FK-FAILURE-ONLY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 100,
+      "before": "defer restoreForeignKeys(ctx, conn)\n\n\ttx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer tx.Rollback() //nolint:errcheck",
+      "after": "tx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer func() {\n\t\tif tx.Rollback() == nil {\n\t\t\trestoreForeignKeys(ctx, conn)\n\t\t}\n\t}()",
+      "summary": "the restore runs only on the failure path: the deferred restore is removed, and a deferred rollback restores foreign keys only when the rollback succeeds, which means the transaction was not committed",
+      "property": "Foreign keys are restored only when the rebuild fails, so a successful rebuild leaves them off (the opposite edge of W1-FK-SUCCESS-ONLY)",
+      "mirror": "W1-FK-SUCCESS-ONLY",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys"
+      ]
+    },
+    {
+      "id": "W1-FK-OFF",
+      "status": "retired",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "reason": "Superseded by the path pair W1-FK-SUCCESS-ONLY and W1-FK-FAILURE-ONLY. Its fault, a restore that leaves foreign keys off on every exit, is still killed by the same subtests, but a single-line edit has no opposite edge for it other than the original line, so no mirror is recorded for it.",
+      "property": "Foreign keys are enforced on the pooled connection after a rebuild, whether it failed or not",
+      "mirror": "W1-FK-ABSENT"
+    },
+    {
+      "id": "W1-FK-ABSENT",
+      "status": "retired",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "reason": "Not a separate fault. The rebuild's own PRAGMA foreign_keys = OFF (mission_grades.go:95) runs before the restore is deferred, so a restore that never runs leaves the same value on every exit, with the same failure text under each killer as a restore that writes OFF. The path faults are W1-FK-SUCCESS-ONLY and W1-FK-FAILURE-ONLY.",
+      "property": "Every exit from the rebuild restores foreign keys (no restore runs)",
+      "mirror": "W1-FK-OFF"
     }
   ]
 }
