@@ -4524,13 +4524,13 @@
       "language": "go",
       "file": "internal/ui/missions.html",
       "line": 687,
-      "before": "g.state === 'excluded' ? '<span class=\"tag\">N/A</span>'",
-      "after": "g.state === 'excluded' ? '<span class=\"tag\">n/e</span>'",
-      "property": "An excluded mission's Grade section carries the N/A tag",
+      "before": ": ''}<span>${esc(g.graded_by || '')}",
+      "after": ": '<span class=\"tag\">N/A</span>'}<span>${esc(g.graded_by || '')}",
+      "property": "An excluded mission's Grade section carries no N/A tag beside its N/A badge",
       "mirror": "UI-HUD-TAG-INSUFF",
       "package": "./internal/ui",
       "killers": [
-        "TestNAGradeSourceText/hud_grade_tag_na"
+        "TestNAGradeTagAbsent/hud_grade_tag_na_absent"
       ]
     },
     {
@@ -4541,7 +4541,7 @@
       "line": 687,
       "before": "g.state === 'insufficient' ? '<span class=\"tag\">not enough evidence</span>'",
       "after": "g.state === 'insufficient' ? '<span class=\"tag\">N/A</span>'",
-      "property": "An insufficient mission keeps the not-enough-evidence tag, not N/A (the opposite edge of UI-HUD-TAG-NA)",
+      "property": "An insufficient mission's Grade section shows the not-enough-evidence tag, not the N/A tag (opposite edge of UI-HUD-TAG-NA)",
       "mirror": "UI-HUD-TAG-NA",
       "package": "./internal/ui",
       "killers": [

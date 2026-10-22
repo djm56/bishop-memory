@@ -684,7 +684,7 @@
     return `<section class="sec" data-pane="summary"><h3>Grade</h3><div class="card verdict">
       ${g.grade ? gradeBadge(g.grade, 'lg solid') : g.state === 'excluded' ? naBadge('lg') : '<span class="grade lg">?</span>'}
       <div>
-        <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : g.state === 'excluded' ? '<span class="tag">N/A</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
+        <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
         <h4>Why</h4><p>${esc(g.summary)}</p>
         ${g.suggestions ? `<h4>Suggestions</h4><p>${esc(g.suggestions)}</p>` : ''}
         ${chips.length ? `<div class="signals">${chips.map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div>` : ''}

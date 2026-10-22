@@ -623,7 +623,6 @@ func TestNAGradeSourceText(t *testing.T) {
 		{"hud_header_letter", "missions", `d.grade?.grade ? gradeBadge(d.grade.grade) :`, missions},
 		{"hud_grade_badge_na", "missions", `g.state === 'excluded' ? naBadge('lg')`, missions},
 		{"hud_badge_letter", "missions", `g.grade ? gradeBadge(g.grade, 'lg solid') :`, missions},
-		{"hud_grade_tag_na", "missions", `g.state === 'excluded' ? '<span class="tag">N/A</span>'`, missions},
 		{"hud_grade_tag_insufficient", "missions", `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`, missions},
 		{"perf_chip_na", "performance", `['excluded', 'N/A']`, performance},
 		{"perf_chip_insufficient", "performance", `['insufficient', 'n/e']`, performance},
@@ -641,6 +640,26 @@ func TestNAGradeSourceText(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNAGradeTagAbsent asserts that the HUD page carries no N/A tag element. An
+// excluded mission's Grade section shows the large N/A badge alone; a second N/A
+// tag beside it was the duplicate this change removed. The control subtest
+// requires the not-enough-evidence tag in the same page source, so the absence
+// cannot pass merely because the whole page lacks tags.
+func TestNAGradeTagAbsent(t *testing.T) {
+	missions := serve(t, MissionsPageHandler()).Body.String()
+	t.Run("control_insufficient_tag_renders", func(t *testing.T) {
+		needle := `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`
+		if !strings.Contains(missions, needle) {
+			t.Fatalf("missions page does not contain %q", needle)
+		}
+	})
+	t.Run("hud_grade_tag_na_absent", func(t *testing.T) {
+		if strings.Contains(missions, `<span class="tag">N/A</span>`) {
+			t.Fatalf("missions page carries a N/A tag element; the Grade section must show the large N/A badge only")
+		}
+	})
 }
 
 // scriptBlock matches an inline script element with or without attributes. It
