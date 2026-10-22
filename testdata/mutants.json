@@ -3736,7 +3736,7 @@
       "mirror": "CLEAR-404-OFF",
       "package": "./internal/api",
       "killers": [
-        "TestExclusionRouteRefusals/lifts_exclusion"
+        "TestExclusionRouteRefusals/lift_returns_200"
       ]
     },
     {
@@ -3767,7 +3767,7 @@
       "mirror": "CLEAR-PRED-ANY",
       "package": "./internal/api",
       "killers": [
-        "TestExclusionRouteRefusals/lifts_exclusion"
+        "TestExclusionRouteRefusals/lift_deletes_row"
       ]
     },
     {

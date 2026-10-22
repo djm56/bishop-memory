@@ -160,12 +160,21 @@ func TestExclusionRouteRefusals(t *testing.T) {
 		}
 	})
 
-	t.Run("lifts_exclusion", func(t *testing.T) {
-		router, db := finishedFixture(t, finished)
+	// The two lift subtests check one property each, so a lift that answers
+	// wrongly and a lift that deletes the wrong row fail with different text.
+	t.Run("lift_returns_200", func(t *testing.T) {
+		router, _ := finishedFixture(t, finished)
 		excludeMission(t, router, finished, "set aside")
 		if code, out := do(t, router, http.MethodDelete, exclusionPath(finished), nil); code != http.StatusOK {
 			t.Fatalf("lifting the exclusion: %d %v", code, out)
 		}
+	})
+
+	t.Run("lift_deletes_row", func(t *testing.T) {
+		// The status is not checked here, so a lift that deletes nothing reports its row, not its status.
+		router, db := finishedFixture(t, finished)
+		excludeMission(t, router, finished, "set aside")
+		do(t, router, http.MethodDelete, exclusionPath(finished), nil)
 		if row := gradeRowOf(t, db, finished); row != nil {
 			t.Fatalf("lifting the exclusion left a row: %v", row)
 		}
