@@ -425,7 +425,7 @@ CREATE TABLE IF NOT EXISTS directive_proposals (
 -- operator's DELETE /v1/mission-grades/:id reopens a mission for regrading.
 -- An 'excluded' row is the operator's N/A: the mission does not count, its
 -- grade stays NULL, the note sits in summary, and the grader never claims it.
--- Only the operator's exclusion routes set or clear one.
+-- The operator's exclusion routes set one; DELETE /v1/mission-grades/:id removes any row, this one included.
 -- signals is a JSON object the server computes from the database (criteria,
 -- steps, fix rounds, findings); the agent never writes it.
 CREATE TABLE IF NOT EXISTS mission_grades (
