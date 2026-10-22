@@ -3219,8 +3219,8 @@
       "mirror": "GUARD-HELP-FIRST-TWO",
       "suite": "scripts/test_triage_run.py",
       "killers": [
-        "HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else",
-        "HelpText.test_help_as_the_first_argument_prints_the_exit_codes"
+        "HelpText.test_help_as_the_first_argument_prints_the_exit_codes",
+        "HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else"
       ]
     },
     {
