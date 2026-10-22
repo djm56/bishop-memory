@@ -751,34 +751,30 @@ func deleteGradeHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		id := c.Param("missionID")
-		tx, err := db.BeginTx(ctx, nil)
-		if err != nil {
-			internalError(c, err)
-			return
-		}
-		defer tx.Rollback()
 
-		// The state check and the delete run in one transaction.
-		var state sql.NullString
-		err = tx.QueryRowContext(ctx, `SELECT state FROM mission_grades WHERE mission_id = ?`, id).Scan(&state)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			internalError(c, err)
-			return
-		}
-		if state.Valid && state.String == "excluded" {
-			c.JSON(http.StatusConflict, gin.H{"error": "mission is excluded; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"})
-			return
-		}
-		result, err := tx.ExecContext(ctx, `DELETE FROM mission_grades WHERE mission_id = ?`, id)
+		// One statement carries both the state test and the delete, so no write
+		// can land between them and an excluded row is never deleted. state is
+		// NOT NULL, so <> leaves no row out of the test.
+		result, err := db.ExecContext(ctx, `DELETE FROM mission_grades WHERE mission_id = ? AND state <> 'excluded'`, id)
 		if err != nil {
-			internalError(c, err)
-			return
-		}
-		if err := tx.Commit(); err != nil {
 			internalError(c, err)
 			return
 		}
 		n, _ := result.RowsAffected()
+		if n == 0 {
+			// Nothing was deleted: the mission has no row, or its row is
+			// excluded. Only now is the row read, to tell the two apart.
+			var one int
+			err := db.QueryRowContext(ctx, `SELECT 1 FROM mission_grades WHERE mission_id = ? AND state = 'excluded'`, id).Scan(&one)
+			if err == nil {
+				c.JSON(http.StatusConflict, gin.H{"error": "mission is excluded; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"})
+				return
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				internalError(c, err)
+				return
+			}
+		}
 		c.JSON(http.StatusOK, gin.H{"mission_id": id, "deleted": n > 0})
 	}
 }
