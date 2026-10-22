@@ -3317,6 +3317,549 @@
       "killers": [
         "HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else"
       ]
+    },
+    {
+      "id": "MG-SKIP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 82,
+      "before": "if strings.Contains(definition, \"'excluded'\") {",
+      "after": "if strings.Contains(definition, \"'excluded'\") || true {",
+      "property": "A database whose mission_grades lacks 'excluded' is rebuilt, not left on the old CHECK",
+      "mirror": "MG-SKIP-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/admits_excluded_without_grade"
+      ]
+    },
+    {
+      "id": "MG-SKIP-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 82,
+      "before": "if strings.Contains(definition, \"'excluded'\") {",
+      "after": "if strings.Contains(definition, \"'excluded'\") && false {",
+      "property": "A table that already admits 'excluded' is left alone (the opposite edge)",
+      "mirror": "MG-SKIP",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/table_left_alone"
+      ]
+    },
+    {
+      "id": "MG-INDEX-DROP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 122,
+      "before": "missionGradesIndex,",
+      "after": "",
+      "summary": "the index statement is removed from the rebuild, so the rebuilt table has no idx_mission_grades_state",
+      "property": "The rebuild leaves idx_mission_grades_state in place",
+      "mirror": "MG-INDEX-COL",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/index_recreated_on_state"
+      ]
+    },
+    {
+      "id": "MG-INDEX-COL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 58,
+      "before": "ON mission_grades(state)",
+      "after": "ON mission_grades(graded_at)",
+      "property": "The index the rebuild recreates covers state, the column the schema declares it on (the opposite edge)",
+      "mirror": "MG-INDEX-DROP",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/index_recreated_on_state"
+      ]
+    },
+    {
+      "id": "MG-COPY-SIGNALS",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 54,
+      "before": "suggestions, signals, graded_by",
+      "after": "suggestions, graded_by",
+      "property": "The rebuild copies signals, the JSON the grade was written against",
+      "mirror": "MG-COPY-ATTEMPTS",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "MG-COPY-ATTEMPTS",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 54,
+      "before": "run_id, attempts, claimed_at",
+      "after": "run_id, claimed_at",
+      "property": "The rebuild copies attempts, the count the claim's retry limit reads (the opposite column)",
+      "mirror": "MG-COPY-SIGNALS",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "SCH-CHECK-OPEN",
+      "status": "active",
+      "language": "go",
+      "file": "db/schema.sql",
+      "line": 448,
+      "before": "CHECK (state <> 'excluded' OR grade IS NULL)",
+      "after": "CHECK (1 = 1)",
+      "property": "A fresh database refuses an excluded row that holds a grade",
+      "mirror": "SCH-CHECK-SHUT",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/refuses_excluded_with_grade"
+      ]
+    },
+    {
+      "id": "SCH-CHECK-SHUT",
+      "status": "active",
+      "language": "go",
+      "file": "db/schema.sql",
+      "line": 448,
+      "before": "CHECK (state <> 'excluded' OR grade IS NULL)",
+      "after": "CHECK (state <> 'excluded')",
+      "property": "A fresh database admits an excluded row with no grade (the opposite edge)",
+      "mirror": "SCH-CHECK-OPEN",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/admits_excluded_without_grade"
+      ]
+    },
+    {
+      "id": "CLAIM-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 151,
+      "before": "case state.Valid && state.String == \"excluded\":",
+      "after": "case false:",
+      "property": "An explicitly named excluded mission is refused, not claimed",
+      "mirror": "CLAIM-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/explicit_claim_of_excluded_refused"
+      ]
+    },
+    {
+      "id": "CLAIM-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 151,
+      "before": "case state.Valid && state.String == \"excluded\":",
+      "after": "case state.Valid && state.String == \"pending\":",
+      "property": "An explicitly named pending retry is still claimed (the opposite edge)",
+      "mirror": "CLAIM-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/explicit_claim_of_pending_retry_allowed"
+      ]
+    },
+    {
+      "id": "SWEEP-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 170,
+      "before": "g.state = 'pending' AND g.attempts < ? AND",
+      "after": "g.state IN ('pending', 'excluded') AND g.attempts < ? AND",
+      "property": "The claim sweep never claims an excluded mission",
+      "mirror": "SWEEP-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_skips_excluded"
+      ]
+    },
+    {
+      "id": "SWEEP-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 170,
+      "before": "g.state = 'pending' AND g.attempts < ? AND",
+      "after": "g.state = 'excluded' AND g.attempts < ? AND",
+      "property": "The claim sweep still claims a pending retry with attempts to spare (the opposite edge)",
+      "mirror": "SWEEP-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_still_claims_pending_retry"
+      ]
+    },
+    {
+      "id": "WAIT-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 86,
+      "before": "(g.state = 'pending' AND g.attempts < ?)",
+      "after": "(g.state IN ('pending', 'excluded') AND g.attempts < ?)",
+      "property": "The waiting count leaves out excluded missions",
+      "mirror": "WAIT-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_skips_excluded"
+      ]
+    },
+    {
+      "id": "WAIT-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 86,
+      "before": "(g.state = 'pending' AND g.attempts < ?)",
+      "after": "(g.state = 'excluded' AND g.attempts < ?)",
+      "property": "The waiting count includes a pending retry (the opposite edge)",
+      "mirror": "WAIT-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_still_claims_pending_retry"
+      ]
+    },
+    {
+      "id": "WRITE-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 555,
+      "before": "WHERE mission_id = ? AND state = 'pending'",
+      "after": "WHERE mission_id = ? AND state IN ('pending', 'excluded')",
+      "property": "A verdict is never written over an excluded row",
+      "mirror": "WRITE-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestWriteNeverOverwritesExcludedRow/verdict_refused_for_excluded"
+      ]
+    },
+    {
+      "id": "WRITE-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 555,
+      "before": "WHERE mission_id = ? AND state = 'pending'",
+      "after": "WHERE mission_id = ? AND state = 'excluded'",
+      "property": "A claimed pending mission takes its verdict (the opposite edge)",
+      "mirror": "WRITE-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestWriteNeverOverwritesExcludedRow/pending_control_takes_verdict"
+      ]
+    },
+    {
+      "id": "PERF-EXCL-AVG",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 708,
+      "before": "p.Excluded++",
+      "after": "p.Excluded++; p.Graded++",
+      "property": "An excluded mission enters no graded count, so it changes no average",
+      "mirror": "PERF-GRADED-IGNORED",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/average_ignores_excluded_F"
+      ]
+    },
+    {
+      "id": "PERF-GRADED-IGNORED",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 701,
+      "before": "sums[p] += gradePoints[grade]",
+      "after": "sums[p] += 0",
+      "property": "A graded mission's points enter the average (the opposite edge)",
+      "mirror": "PERF-EXCL-AVG",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/graded_F_counts_before_exclusion"
+      ]
+    },
+    {
+      "id": "LIST-DEFAULT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 609,
+      "before": "'graded', 'insufficient', 'excluded')",
+      "after": "'graded', 'insufficient')",
+      "property": "The default grade list includes excluded rows",
+      "mirror": "LIST-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedRowsInListAndHUD/default_list_includes_excluded"
+      ]
+    },
+    {
+      "id": "LIST-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 609,
+      "before": "'graded', 'insufficient', 'excluded')",
+      "after": "'graded', 'insufficient', 'excluded', 'pending')",
+      "property": "The default grade list omits pending claims (the opposite edge)",
+      "mirror": "LIST-DEFAULT",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedRowsInListAndHUD/default_list_omits_pending"
+      ]
+    },
+    {
+      "id": "NOTE-GUARD-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 778,
+      "before": "if note == \"\" {",
+      "after": "if false {",
+      "property": "A note of only whitespace is refused",
+      "mirror": "NOTE-GUARD-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_whitespace_note_400"
+      ]
+    },
+    {
+      "id": "NOTE-GUARD-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 778,
+      "before": "if note == \"\" {",
+      "after": "if true {",
+      "property": "A note with text is accepted (the opposite edge)",
+      "mirror": "NOTE-GUARD-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_700_char_note"
+      ]
+    },
+    {
+      "id": "GRADABLE-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 805,
+      "before": "if !gradable {",
+      "after": "if false {",
+      "property": "An exclusion is refused for an unfinished mission with 409",
+      "mirror": "GRADABLE-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_unfinished_mission_409"
+      ]
+    },
+    {
+      "id": "GRADABLE-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 805,
+      "before": "if !gradable {",
+      "after": "if true {",
+      "property": "A finished mission is refused as unfinished (the opposite edge)",
+      "mirror": "GRADABLE-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_700_char_note"
+      ]
+    },
+    {
+      "id": "UNKNOWN-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 797,
+      "before": "if errors.Is(err, sql.ErrNoRows) {",
+      "after": "if false {",
+      "property": "An exclusion for an unknown mission is answered 404, not 500",
+      "mirror": "UNKNOWN-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_unknown_mission_404"
+      ]
+    },
+    {
+      "id": "UNKNOWN-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 797,
+      "before": "if errors.Is(err, sql.ErrNoRows) {",
+      "after": "if true {",
+      "property": "A known mission is answered as unknown (the opposite edge)",
+      "mirror": "UNKNOWN-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_700_char_note"
+      ]
+    },
+    {
+      "id": "CLEAR-404-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 847,
+      "before": "if n, _ := result.RowsAffected(); n == 0 {",
+      "after": "if n, _ := result.RowsAffected(); n == 0 && false {",
+      "property": "Lifting an exclusion that is not there is answered 404",
+      "mirror": "CLEAR-404-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/DELETE_not_excluded_404"
+      ]
+    },
+    {
+      "id": "CLEAR-404-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 847,
+      "before": "if n, _ := result.RowsAffected(); n == 0 {",
+      "after": "if n, _ := result.RowsAffected(); n == 0 || true {",
+      "property": "A lifted exclusion is answered 404 (the opposite edge)",
+      "mirror": "CLEAR-404-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/lifts_exclusion"
+      ]
+    },
+    {
+      "id": "CLEAR-PRED-ANY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 842,
+      "before": "AND state = 'excluded'",
+      "after": "",
+      "summary": "the state test is removed from the lift's DELETE, so the exclusion route can delete a verdict",
+      "property": "The lift deletes only an excluded row, never a verdict",
+      "mirror": "CLEAR-PRED-GRADED",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/DELETE_on_graded_row_404_and_row_kept"
+      ]
+    },
+    {
+      "id": "CLEAR-PRED-GRADED",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 842,
+      "before": "AND state = 'excluded'",
+      "after": "AND state = 'graded'",
+      "property": "The lift deletes a graded row, not an excluded one (the opposite edge)",
+      "mirror": "CLEAR-PRED-ANY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/lifts_exclusion"
+      ]
+    },
+    {
+      "id": "UPSERT-SUGGEST",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 815,
+      "before": "suggestions = NULL, signals = NULL, ",
+      "after": "",
+      "summary": "the upsert leaves the replaced verdict's suggestions and signals on the excluded row",
+      "property": "An excluded row holds no suggestions or signals from the verdict it replaced",
+      "mirror": "UPSERT-SUMMARY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "UPSERT-SUMMARY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 814,
+      "before": "summary = excluded.summary,",
+      "after": "summary = summary,",
+      "property": "The note replaces the summary of the row it excludes (the opposite edge)",
+      "mirror": "UPSERT-SUGGEST",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "ROUTE-SET",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/router.go",
+      "line": 136,
+      "before": "grades.PUT(\"/:missionID/exclusion\", setExclusionHandler(db))",
+      "after": "grades.POST(\"/:missionID/exclusion\", setExclusionHandler(db))",
+      "property": "The set route is registered as PUT",
+      "mirror": "ROUTE-CLEAR",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/router_registers_exclusion_routes"
+      ]
+    },
+    {
+      "id": "ROUTE-CLEAR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/router.go",
+      "line": 137,
+      "before": "grades.DELETE(\"/:missionID/exclusion\", clearExclusionHandler(db))",
+      "after": "grades.GET(\"/:missionID/exclusion\", clearExclusionHandler(db))",
+      "property": "The lift route is registered as DELETE (the opposite edge)",
+      "mirror": "ROUTE-SET",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/router_registers_exclusion_routes"
+      ]
+    },
+    {
+      "id": "MCP-EXCL-REACH",
+      "status": "active",
+      "language": "go",
+      "file": "cmd/mcpd/triage.go",
+      "line": 181,
+      "before": "\"v1\", \"mission-grades\"),",
+      "after": "\"v1\", \"mission-grades\", \"exclusion\"),",
+      "property": "The triage profile's grade write never reaches the operator exclusion route",
+      "mirror": "MCP-WRITE-UNREACHED",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/triage_profile_never_reaches_exclusion"
+      ]
+    },
+    {
+      "id": "MCP-WRITE-UNREACHED",
+      "status": "active",
+      "language": "go",
+      "file": "cmd/mcpd/triage.go",
+      "line": 181,
+      "before": "\"v1\", \"mission-grades\"),",
+      "after": "\"v1\", \"mission-grade\"),",
+      "property": "The triage profile's grade write reaches the grade route it is meant for (the opposite edge)",
+      "mirror": "MCP-EXCL-REACH",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/triage_profile_reaches_grade_write"
+      ]
     }
   ]
 }
