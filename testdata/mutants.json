@@ -4637,6 +4637,37 @@
       "killers": [
         "TestNAGradeSourceText/perf_row_insufficient"
       ]
+    },
+    {
+      "id": "UI-PERF-SETASIDE-SUM",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 540,
+      "before": "${o.insufficient + o.skipped + o.excluded}",
+      "after": "${o.insufficient + o.skipped}",
+      "property": "The Performance page's Set aside total includes the N/A count",
+      "mirror": "UI-PERF-SETASIDE-SUBLINE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_set_aside"
+      ]
+    },
+    {
+      "id": "UI-PERF-SETASIDE-SUBLINE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 540,
+      "before": " · ${o.excluded} N/A",
+      "after": "",
+      "summary": "the Set aside subline drops its N/A term, so the total counts N/A while the subline does not name it",
+      "property": "The Set aside subline names the N/A count beside the other two (the opposite edge of UI-PERF-SETASIDE-SUM)",
+      "mirror": "UI-PERF-SETASIDE-SUM",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_set_aside_subline"
+      ]
     }
   ]
 }

@@ -389,6 +389,8 @@ message for each error it finds. Failure text is not stored here. `make mutate`
 | UI-PERF-HARNESS-NE | `internal/ui/performance.html:473` `` h.insufficient ? `${h.insufficient} n/e` : '' `` becomes `` h.insufficient ? `${h.insufficient} N/A` : '' `` | Each harness subline keeps its n/e count, not N/A (the opposite edge of UI-PERF-HARNESS-NA) | UI-PERF-HARNESS-NA | `./internal/ui` | `TestNAGradeSourceText/perf_harness_insufficient` |
 | UI-PERF-ROW-NA | `internal/ui/performance.html:488` `g.state === 'excluded' ? naBadge()` becomes `g.state === 'insufficient' ? naBadge()` | An excluded mission's grade row reads N/A | UI-PERF-ROW-NE | `./internal/ui` | `TestNAGradeSourceText/perf_row_na` |
 | UI-PERF-ROW-NE | `internal/ui/performance.html:488` `'<span class="tag">n/e</span>'` becomes `'<span class="tag">N/A</span>'` | An insufficient mission's grade row keeps the n/e tag (the opposite edge of UI-PERF-ROW-NA) | UI-PERF-ROW-NA | `./internal/ui` | `TestNAGradeSourceText/perf_row_insufficient` |
+| UI-PERF-SETASIDE-SUM | `internal/ui/performance.html:540` `${o.insufficient + o.skipped + o.excluded}` becomes `${o.insufficient + o.skipped}` | The Performance page's Set aside total includes the N/A count | UI-PERF-SETASIDE-SUBLINE | `./internal/ui` | `TestNAGradeSourceText/perf_set_aside` |
+| UI-PERF-SETASIDE-SUBLINE | `internal/ui/performance.html:540` the Set aside subline drops its N/A term, so the total counts N/A while the subline does not name it | The Set aside subline names the N/A count beside the other two (the opposite edge of UI-PERF-SETASIDE-SUM) | UI-PERF-SETASIDE-SUM | `./internal/ui` | `TestNAGradeSourceText/perf_set_aside_subline` |
 
 Retired rows are not applied; their targets are no longer in the tree:
 
