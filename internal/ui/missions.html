@@ -364,7 +364,7 @@
         <label for="harness" style="display:contents">Harness<select id="harness"><option value="">All harnesses</option></select></label>
         <label for="status" style="display:contents">Status<select id="status"><option value="">Any status</option><option>in-progress</option><option>blocked</option><option>complete</option><option>not-started</option><option value="stale">stale (idle 2 days)</option></select></label>
       </div>
-      <label for="grade" style="display:contents">Grade<select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option></select></label>
+      <label for="grade" style="display:contents">Grade<select id="grade"><option value="">Any grade</option><option>A</option><option>B</option><option>C</option><option>D</option><option>E</option><option>F</option><option value="ungraded">Ungraded</option><option value="na">N/A</option></select></label>
     </div>
     <div class="rail-head"><span>Missions</span><span id="count"></span></div>
     <div class="mlist" id="mlist"></div>
@@ -425,6 +425,10 @@
   const GRADE_POINTS = { A:5, B:4, C:3, D:2, E:1, F:0 };
   const pointsToGrade = p => p >= 4.5 ? 'A' : p >= 3.5 ? 'B' : p >= 2.5 ? 'C' : p >= 1.5 ? 'D' : p >= 0.5 ? 'E' : 'F';
   const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
+  // The operator's N/A: an excluded mission has no letter, so it reads N/A and
+  // its note, if given, is the tooltip. The class has no colour rule of its own,
+  // so it takes the muted colour of .grade in both themes.
+  const naBadge = (cls = '', note = '') => `<span class="grade gNA ${cls}" title="Excluded by the operator${note ? ': ' + esc(note) : ''}">N/A</span>`;
 
   // SQLite CURRENT_TIMESTAMP values are UTC "YYYY-MM-DD HH:MM:SS"; the
   // journal's occurred_at is the harness's "YYYY-MM-DD HH:MM UTC".
@@ -506,7 +510,7 @@
     $('#mpager').innerHTML = pagerHTML(state.listPage, pages, state.missions.length, LIST_PAGE, 'lp');
     $('#mpager').querySelectorAll('[data-lp]').forEach(b => b.onclick = () => { state.listPage = pageFrom(b.dataset.lp, state.listPage); renderList(); $('aside').scrollTop = 0; });
     $('#mlist').innerHTML = state.missions.length ? shown.map(m => `<a class="mrow ${state.current === m.id ? 'on' : ''} s-${esc(m.outcome === 'failed' ? 'failed' : m.status)}${m.stale ? ' stale' : ''}" href="#${esc(m.id)}" ${state.current === m.id ? 'aria-current="true"' : ''}>
-        <span class="id">${m.grade ? gradeBadge(m.grade) + ' ' : ''}${esc(m.id)}</span>
+        <span class="id">${m.grade ? gradeBadge(m.grade) + ' ' : m.grade_state === 'excluded' ? naBadge('', m.excluded_note) + ' ' : ''}${esc(m.id)}</span>
         <span class="t">${esc(m.title)}</span>
         <span class="m"><span class="pill ${esc(m.outcome === 'failed' ? 'failed' : m.status)}">${esc(label(m.outcome === 'failed' ? 'failed' : m.status))}</span>${m.stale ? `<span class="pill stale" title="No activity since ${esc(fmtWhen(m.last_activity))}">stale</span>` : ''}
           <span>${esc(m.harness || '—')}</span><span>${m.steps_done}/${m.steps} steps</span>${m.findings ? `<span>${m.findings} finding${m.findings === 1 ? '' : 's'}</span>` : ''}<span>${fmtDay(m.opened_at)}</span></span>
@@ -598,7 +602,7 @@
     $('#view').innerHTML = `
       <div class="head">
         <div class="ids"><span class="id">${esc(m.id)}</span><span>${esc(m.harness || 'no harness')}</span>${m.owner ? `<span>owner ${esc(m.owner)}</span>` : ''}${m.priority && m.priority !== 'normal' ? `<span class="tag">${esc(m.priority)}</span>` : ''}
-          ${pillFor(m.status)}${m.outcome ? pillFor(m.outcome) : ''}${d.grade?.grade ? gradeBadge(d.grade.grade) : ''}</div>
+          ${pillFor(m.status)}${m.outcome ? pillFor(m.outcome) : ''}${d.grade?.grade ? gradeBadge(d.grade.grade) : d.grade?.state === 'excluded' ? naBadge('', d.grade.summary) : ''}</div>
         <h2>${esc(m.title)}</h2>
         <div class="when">Opened ${esc(fmtWhen(m.opened_at))}${m.closed_at ? ` · closed ${esc(fmtWhen(m.closed_at))}` : ''}${m.next_action ? ` · next: ${esc(m.next_action)}` : ''}${m.blockers ? ` · <span style="color:var(--bad)">blocked: ${esc(m.blockers)}</span>` : ''}${board?.stale ? ` · <span style="color:var(--warn)">stale: no activity since ${esc(fmtWhen(board.last_activity))}</span>` : ''}</div>
       </div>
@@ -678,9 +682,9 @@
       s.findings != null ? `${s.findings} finding${s.findings === 1 ? '' : 's'}` : '',
     ].filter(Boolean);
     return `<section class="sec" data-pane="summary"><h3>Grade</h3><div class="card verdict">
-      ${g.grade ? gradeBadge(g.grade, 'lg solid') : '<span class="grade lg">?</span>'}
+      ${g.grade ? gradeBadge(g.grade, 'lg solid') : g.state === 'excluded' ? naBadge('lg') : '<span class="grade lg">?</span>'}
       <div>
-        <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
+        <div class="meta-row">${g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>' : g.state === 'excluded' ? '<span class="tag">N/A</span>' : ''}<span>${esc(g.graded_by || '')}</span><span>${esc(fmtWhen(g.graded_at))}</span>${g.run_id ? `<span>run #${esc(g.run_id)}</span>` : ''}</div>
         <h4>Why</h4><p>${esc(g.summary)}</p>
         ${g.suggestions ? `<h4>Suggestions</h4><p>${esc(g.suggestions)}</p>` : ''}
         ${chips.length ? `<div class="signals">${chips.map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div>` : ''}

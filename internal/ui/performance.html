@@ -453,6 +453,9 @@
   const fmtDay = s => { const d = toDate(s); return d ? d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'numeric' }) : ''; };
   const LETTERS = ['A','B','C','D','E','F'];
   const gradeBadge = (g, cls = '') => `<span class="grade g${esc(g)} ${cls}" title="Mission grade ${esc(g)}">${esc(g)}</span>`;
+  // The operator's N/A: an excluded mission has no letter. The class has no colour
+  // rule of its own, so it takes the muted colour of .grade in both themes.
+  const naBadge = () => `<span class="grade gNA" title="Excluded by the operator: not counted in any average">N/A</span>`;
   const tile = (k, v, s) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
 
   const PTS = { A:5, B:4, C:3, D:2, E:1, F:0 };
@@ -467,7 +470,7 @@
     if (Math.abs(delta) < 0.3) return '<span class="trend">\u2192 steady</span>';
     return delta > 0 ? '<span class="trend up">\u2191 improving</span>' : '<span class="trend down">\u2193 slipping</span>';
   };
-  const subline = h => [`${h.graded} graded`, h.avg_points != null ? `${Number(h.avg_points).toFixed(2)}&nbsp;/&nbsp;5` : '', h.waiting ? `${h.waiting} waiting` : '', h.insufficient ? `${h.insufficient} n/e` : '', h.skipped ? `${h.skipped} skipped` : ''].filter(Boolean).join(' · ');
+  const subline = h => [`${h.graded} graded`, h.avg_points != null ? `${Number(h.avg_points).toFixed(2)}&nbsp;/&nbsp;5` : '', h.waiting ? `${h.waiting} waiting` : '', h.insufficient ? `${h.insufficient} n/e` : '', h.skipped ? `${h.skipped} skipped` : '', h.excluded ? `${h.excluded} N/A` : ''].filter(Boolean).join(' · ');
 
   function harnessRow(h) {
     const key = h.harness || '';
@@ -482,7 +485,7 @@
 
   function gradeRow(g) {
     return `<div class="grow">
-      <div>${g.grade ? gradeBadge(g.grade) : '<span class="tag">n/e</span>'}</div>
+      <div>${g.grade ? gradeBadge(g.grade) : g.state === 'excluded' ? naBadge() : '<span class="tag">n/e</span>'}</div>
       <div class="gm"><div class="id"><a href="/missions#${encodeURIComponent(g.mission_id)}">${esc(g.mission_id)}</a></div>
         <div class="t">${esc(g.title)}</div>
         <div class="m"><span>${esc(g.harness || 'no harness')}</span><span>${esc(fmtDay(g.closed_at))}</span></div></div>
@@ -521,12 +524,12 @@
     const vPts = vGraded ? LETTERS.reduce((n, l) => n + (overall[l] || 0) * PTS[l], 0) / vGraded : null;
     const vGrade = nHidden ? (vPts != null ? 'FEDCBA'[Math.round(vPts)] : null) : o.avg_grade;
     const byH = state.grades.filter(g => !state.hidden.has(g.harness || '') && (!f.harnessSet || (g.harness || '') === f.harness));
-    const counts = { '': byH.length, insufficient: byH.filter(g => g.state === 'insufficient').length }; LETTERS.forEach(l => counts[l] = byH.filter(g => g.grade === l).length);
-    const grades = byH.filter(g => !f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient'));
+    const counts = { '': byH.length, insufficient: byH.filter(g => g.state === 'insufficient').length, excluded: byH.filter(g => g.state === 'excluded').length }; LETTERS.forEach(l => counts[l] = byH.filter(g => g.grade === l).length);
+    const grades = byH.filter(g => !f.grade || g.grade === f.grade || (f.grade === 'insufficient' && g.state === 'insufficient') || (f.grade === 'excluded' && g.state === 'excluded'));
     const pages = Math.max(1, Math.ceil(grades.length / PAGE)); state.page = Math.min(state.page, pages - 1);
     const shown = grades.slice(state.page * PAGE, state.page * PAGE + PAGE);
     const pager = pagerHTML(state.page, pages, grades.length, PAGE, 'pg');
-    const chips = [['', 'All'], ...LETTERS.map(l => [l, l]), ['insufficient', 'n/e']].filter(([v]) => v === '' || counts[v] || f.grade === v);
+    const chips = [['', 'All'], ...LETTERS.map(l => [l, l]), ['insufficient', 'n/e'], ['excluded', 'N/A']].filter(([v]) => v === '' || counts[v] || f.grade === v);
     $('#view').innerHTML = `
       <div class="card summary">
         <div class="big">${vGrade ? gradeBadge(vGrade, 'lg solid') : '<span class="grade lg">—</span>'}
@@ -534,7 +537,7 @@
         <div class="mid">${distOf(overall)}${legendOf(overall)}</div>
         <div class="stats2">
           <div class="kv"><div class="k">Waiting</div><div class="v">${o.waiting}</div><div class="s">${o.waiting ? 'graded by the next run, 10 at a time' : 'every finished mission has a verdict'}</div></div>
-          <div class="kv"><div class="k">Set aside</div><div class="v">${o.insufficient + o.skipped}</div><div class="s">${o.insufficient} not enough evidence · ${o.skipped} skipped</div></div>
+          <div class="kv"><div class="k">Set aside</div><div class="v">${o.insufficient + o.skipped + o.excluded}</div><div class="s">${o.insufficient} not enough evidence · ${o.skipped} skipped · ${o.excluded} N/A</div></div>
         </div>
       </div>
       <section class="sec"><h3>Harnesses <span class="n">${visible.length}</span>${nHidden ? `<span class="hid">${nHidden} hidden</span>` : ''}<button class="gear" id="opensettings" title="Choose which harnesses to show">Display\u2026</button></h3>

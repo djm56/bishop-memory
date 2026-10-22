@@ -599,6 +599,48 @@ func TestTriageModelTruncatesBeforeEscapeSourceText(t *testing.T) {
 	}
 }
 
+// TestNAGradeSourceText is a source-text check only: it cannot run the pages'
+// JavaScript, and TestEmbeddedScriptsParse checks their syntax separately. It
+// asserts that the HUD offers the N/A filter and labels an excluded mission N/A
+// in its list, header and Grade section while the insufficient label stays, and
+// that the Performance page has an N/A chip, shows N/A on each harness line and
+// on each grade row, and keeps the n/e chip, subline and row label. Each needle
+// is its own subtest, so a mutant that breaks one label fails that label alone.
+func TestNAGradeSourceText(t *testing.T) {
+	missions := serve(t, MissionsPageHandler()).Body.String()
+	performance := serve(t, PerformancePageHandler()).Body.String()
+	cases := []struct {
+		name   string
+		page   string
+		needle string
+		source string
+	}{
+		{"hud_filter_na", "missions", `<option value="na">N/A</option>`, missions},
+		{"hud_filter_ungraded", "missions", `<option value="ungraded">Ungraded</option>`, missions},
+		{"hud_list_na", "missions", `m.grade_state === 'excluded' ? naBadge('', m.excluded_note)`, missions},
+		{"hud_list_letter", "missions", `m.grade ? gradeBadge(m.grade) + ' ' :`, missions},
+		{"hud_header_na", "missions", `d.grade?.state === 'excluded' ? naBadge('', d.grade.summary)`, missions},
+		{"hud_grade_badge_na", "missions", `g.state === 'excluded' ? naBadge('lg')`, missions},
+		{"hud_grade_tag_na", "missions", `g.state === 'excluded' ? '<span class="tag">N/A</span>'`, missions},
+		{"hud_grade_tag_insufficient", "missions", `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`, missions},
+		{"perf_chip_na", "performance", `['excluded', 'N/A']`, performance},
+		{"perf_chip_insufficient", "performance", `['insufficient', 'n/e']`, performance},
+		{"perf_set_aside", "performance", `${o.insufficient + o.skipped + o.excluded}`, performance},
+		{"perf_set_aside_subline", "performance", `${o.insufficient} not enough evidence · ${o.skipped} skipped · ${o.excluded} N/A`, performance},
+		{"perf_harness_na", "performance", "h.excluded ? `${h.excluded} N/A` : ''", performance},
+		{"perf_harness_insufficient", "performance", "h.insufficient ? `${h.insufficient} n/e` : ''", performance},
+		{"perf_row_na", "performance", `g.state === 'excluded' ? naBadge()`, performance},
+		{"perf_row_insufficient", "performance", `'<span class="tag">n/e</span>'`, performance},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(tc.source, tc.needle) {
+				t.Fatalf("%s page does not contain %q", tc.page, tc.needle)
+			}
+		})
+	}
+}
+
 // scriptBlock matches an inline script element with or without attributes. It
 // ends at the first closing script tag, so a literal one inside a JavaScript
 // string would cut a block short.
