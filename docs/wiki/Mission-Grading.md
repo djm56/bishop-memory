@@ -33,7 +33,7 @@ A mission whose record is too thin to judge (no debrief and no steps) gets **not
 
 - **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside, which means the missions that carry no letter and are not waiting (the count is the sum of the insufficient, skipped and excluded rows, `internal/ui/performance.html:540`).
 - **Harnesses** — one row per harness: its average letter and score, a count of its N/A missions when it has any, its latest grades newest first (each opens the mission), and **improving**, **slipping** or **steady** when its five newest grades differ from the five before them by a third of a grade or more (a dash with fewer than six). Click a row to filter the grades below to that harness; click it again to clear. **Display…** hides harnesses you do not want to see, such as test harnesses: a hidden harness drops out of the rows, the summary and the grade list, nothing is deleted, and the choice is kept in this browser.
-- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count; the **N/A** button, shown only when a mission is set aside or the N/A filter is active, lists the set-aside missions). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
+- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count; the **N/A** button, shown only when a mission is set aside or the N/A filter is active, lists the set-aside missions; the counts are for the harness in view, `internal/ui/performance.html:527` and `:532`, so with one harness selected the button shows only that harness's N/A missions). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
 
 The average counts A as 5 down to F as 0 and turns the result back into the nearest letter.
 
@@ -87,6 +87,9 @@ curl -fsS -X PUT -H @"$HOME/.config/bishop-memory/auth.header" -H 'Content-Type:
 # lift it: the mission is ungraded again and the nightly grader can claim it
 curl -fsS -X DELETE -H @"$HOME/.config/bishop-memory/auth.header" \
   "$BISHOP_MEMORY_URL/v1/mission-grades/mission-20261009-03/exclusion"
+
+# the header file holds the key in plain text and is not removed by the commands above
+rm -f ~/.config/bishop-memory/auth.header
 ```
 
 - The mission must be finished. An unknown mission answers 404; an unfinished one answers 409.
@@ -99,14 +102,18 @@ curl -fsS -X DELETE -H @"$HOME/.config/bishop-memory/auth.header" \
 
 A database created before this change is widened the first time memoryd starts after the upgrade. The `mission_grades` table is rebuilt once, in one transaction, keeping every row, and the rebuild is idempotent after that. If the rebuild fails, it rolls back, memoryd logs a `WARNING` and keeps running, and the exclusion route answers 500 until the rebuild succeeds.
 
-Back up the database before restarting the service. `memoryd backup` writes a consistent copy and refuses a target that already exists:
+Back up the database before restarting the service, at the `DB_PATH` the running service uses. `memoryd backup` writes a consistent copy and refuses a target that already exists. Find that `DB_PATH` for your install:
 
-Use the `DB_PATH` your service runs with. The launchd install on a Mac runs with `DB_PATH=data/memory.db` in the checkout; a server install keeps its database elsewhere, so take the path from the settings in its `memoryd.env`.
+- **launchd on a Mac** (including a Mac server install): the job's plist sets `DB_PATH=data/memory.db`, relative to its `WorkingDirectory`, which is the checkout (`scripts/com.bishop-memory.memoryd.plist:32-33`). The database is `<checkout>/data/memory.db` (`docs/wiki/Server-Install.md:169`).
+- **Linux systemd**: the unit sets `Environment=DB_PATH=/var/lib/bishop-memory/memory.db` (`scripts/bishop-memory.service:68`).
+
+The settings file does not carry `DB_PATH` on either install: `memoryd.env` holds the host, port, environment and TLS paths only (`scripts/install.sh:120-127`).
 
 ```sh
-DB_PATH=data/memory.db bin/memoryd backup data/memory-before-na.db
+# DB_PATH as the running service has it, for example data/memory.db in the checkout on a Mac
+DB_PATH=<path from above> bin/memoryd backup data/memory-before-na.db
 # or, with the sqlite3 command line tool:
-sqlite3 data/memory.db ".backup data/memory-before-na.db"
+sqlite3 "$DB_PATH" ".backup data/memory-before-na.db"
 ```
 
 The migration runs only when the operator restarts memoryd, so nothing changes until then.

@@ -406,8 +406,7 @@ except the operational ones, which name their evidence instead.
 - Operator N/A for missions that should not count: `mission_grades.state`
   admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
   `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
-  N/A on the HUD and the Performance page (merged from branch
-  feat/grade-excluded, mission-20261022-05).
+  N/A on the HUD and the Performance page (PR #TBD, mission-20261022-05).
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).

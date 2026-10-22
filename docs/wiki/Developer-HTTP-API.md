@@ -309,7 +309,7 @@ The operator's routes under `/v1/mission-grades`, and the claim route, which the
 | `DELETE /v1/mission-grades/:missionID/exclusion` | | 200 `{"mission_id","deleted":true}`; 404 `mission is not excluded` for a mission that is not excluded |
 | `DELETE /v1/mission-grades/:missionID` | | 409 `mission is excluded; …` for an excluded mission, which keeps its row |
 | `POST /v1/mission-grades/claim` | `{"mission_ids"}` or `{"limit"}` | With `mission_ids`, 409 `some missions cannot be claimed` and a `refused` list if any named mission is excluded, unknown (`no such mission`), unfinished or already has a verdict; the whole batch is refused |
-| `GET /v1/mission-grades` | `?state=`, `?grade=` | Without `state`, the list holds the rows that carry a grade or an exclusion, which is the set named in the `WHERE` at `internal/api/grades.go:612` (`graded`, `insufficient` and `excluded`; pending and skipped rows need `?state=`); an excluded row has a null `grade` |
+| `GET /v1/mission-grades` | `?state=`, `?grade=` | Without `state`, the list holds the rows that carry a grade or an exclusion, which is the set the `WHERE` at `internal/api/grades.go:612` names (pending and skipped rows need `?state=`); an excluded row has a null `grade` |
 
 The PUT does not set `graded_at`, so a hung run stays idle. An explicit claim of an unfinished mission with no outcome answers 409, not 500.
 
