@@ -27,9 +27,12 @@ import subprocess
 import tempfile
 import threading
 import time
+import sys
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)  # the mutation runner starts this file with -I, which leaves out its directory
+import opencode_config_probe as probe  # noqa: E402  (must follow the sys.path insert)
 REPO = os.path.dirname(HERE)
 SCRIPT_SRC = os.path.join(HERE, "triage-run.sh")
 AGENTS_SRC = os.path.join(REPO, ".opencode", "agents")
@@ -1441,61 +1444,190 @@ class LayeredConfigRealOpenCode(TriageRunCase):
     server, lists the config documents it loaded, and exits. It runs with HOME
     and the working directory in the test's temporary directory, so none of the
     operator's own config, plugins or keys is read, and the no-op mcpd of the
-    temporary root is the only command the config names.
+    temporary root is the only command the config names. The invocation and the
+    classification of its answer are in scripts/opencode_config_probe.py, whose
+    branches ConfigProbeClassification drives with a stub binary. A host with no
+    opencode skips these tests as "could not check".
     """
 
     def real_opencode(self):
         """The real opencode (OPENCODE_BIN of the test's own environment, else `opencode`) resolved on PATH, or None."""
         return shutil.which(os.environ.get("OPENCODE_BIN") or "opencode")
 
+    def probe(self, config, agent, steps):
+        """
+        Run the probe on `config` and return the status and reason. Calls
+        opencode_config_probe.probe_config, the entry point the tests below share,
+        with the real binary. The `infos` it returns are in `self.infos`.
+        """
+        status, reason, self.infos = probe.probe_config(self.real_opencode(), config, agent, steps, self.tmp)
+        return status, reason
+
+    def checked_infos(self, config, agent, steps):
+        """The `info` of each document carrying the step cap. A check that could not be made skips the test; a check that found the premise false fails it."""
+        status, reason = self.probe(config, agent, steps)
+        if status == probe.COULD_NOT_CHECK:
+            self.skipTest("could not check: " + reason)
+        if status == probe.FAILED:
+            self.fail(reason)
+        return self.infos
+
     def test_real_opencode_keeps_codemode_off_in_the_config_the_run_builds(self):
         """Path: the grade run's config (built by the script, read back from the stub) is loaded by `opencode api --standalone GET /api/config`.
 
         The config document is found by the step cap the script set for the
         grader, the positive control that the binary read OPENCODE_CONFIG_CONTENT
-        at all. Its bishop-triage server must then report `codemode` false and
-        must not be disabled. With the legacy `mcp.<name>` shape the binary
-        reports the server with no codemode, and the first assertion fails.
-        Without a real opencode, or when it exits non-zero, times out, prints
-        something that is not JSON, or lists no document with the step cap, the
-        check could not be made and the test is skipped with that reason: it
-        neither passes nor fails (DIR-002). Mutant: GUARD-MCP-LEGACY-SHAPE.
+        at all. A binary that ran and listed no such document, or that refused
+        the config with a non-zero exit its own empty-config run does not
+        share, fails the test. Without a real opencode, or when it cannot be
+        started, times out, prints something that is not JSON, or exits non-zero
+        on an empty config too, the check could not be made and the test is
+        skipped with that reason (DIR-002). The classification is
+        opencode_config_probe.probe_config; ConfigProbeClassification drives each
+        of its branches. The bishop-triage server the binary lists must report
+        `codemode` false and must not be disabled. With the legacy `mcp.<name>`
+        shape the binary reports the server with no codemode, and the first
+        assertion fails. Mutant: GUARD-MCP-LEGACY-SHAPE.
         """
-        real = self.real_opencode()
-        if real is None:
-            self.skipTest("could not check: no opencode on PATH and OPENCODE_BIN names none")
         config = self.generated_config("grade")
         steps = config["agent"]["mission-grader"]["steps"]
-        home = os.path.join(self.tmp, "oc-home")
-        cwd = os.path.join(self.tmp, "oc-cwd")
-        os.makedirs(home)
-        os.makedirs(cwd)
-        env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": home,
-               "OPENCODE_CONFIG_CONTENT": json.dumps(config)}
-        proc = subprocess.Popen([real, "api", "--standalone", "GET", "/api/config"], env=env, cwd=cwd,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, start_new_session=True)
-        try:
-            out, err = proc.communicate(timeout=60)
-        except subprocess.TimeoutExpired:
-            os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
-            self.skipTest("could not check: opencode api --standalone did not answer within 60 seconds")
-        if proc.returncode != 0:
-            self.skipTest("could not check: opencode api --standalone exited %d" % proc.returncode)
-        try:
-            documents = json.loads(out)
-        except ValueError:
-            self.skipTest("could not check: opencode api --standalone printed something that is not JSON")
-        infos = [d["info"] for d in documents if isinstance(d, dict) and isinstance(d.get("info"), dict)
-                 and isinstance(d["info"].get("agents"), dict)
-                 and isinstance(d["info"]["agents"].get("mission-grader"), dict)
-                 and d["info"]["agents"]["mission-grader"].get("steps") == steps]
-        if len(infos) != 1:
-            self.skipTest("could not check: the binary listed %d documents with the grader's step cap, not one" % len(infos))
-        server = infos[0]["mcp"]["servers"]["bishop-triage"]
-        self.assertIs(server.get("codemode"), False, "the binary reports codemode %r for the bishop-triage server" % (server.get("codemode"),))
-        self.assertIsNot(server.get("disabled"), True, "the binary reports the bishop-triage server as disabled")
+        for info in self.checked_infos(config, "mission-grader", steps):
+            server = info["mcp"]["servers"]["bishop-triage"]
+            self.assertIs(server.get("codemode"), False, "the binary reports codemode %r for the bishop-triage server" % (server.get("codemode"),))
+            self.assertIsNot(server.get("disabled"), True, "the binary reports the bishop-triage server as disabled")
+
+    def test_real_opencode_lists_disabled_and_drops_enabled(self):
+        """Path: a config that gives one server both `enabled` false and `disabled` true goes through `opencode api --standalone GET /api/config`.
+
+        Observed on 2.0.32: the listing carries `disabled` and carries no
+        `enabled`, whatever its value. That is all this pins. What a live
+        session does with `disabled` is not observed here. The `disabled`
+        assertion is the positive control for the absence of `enabled`: the
+        server entry reached the listing, and only `enabled` did not. The config
+        is the probe's own, not the script's, so no mutant of ours bears on it;
+        the test fails only if a later OpenCode changes what it lists.
+        """
+        mcpd = os.path.join(self.root, "bin", "mcpd")
+        config = {"agent": {"probe-agent": {"steps": 7}},
+                  "mcp": {"servers": {"s": {"type": "local", "command": [mcpd], "codemode": False,
+                                            "enabled": False, "disabled": True}}}}
+        for info in self.checked_infos(config, "probe-agent", 7):
+            server = info["mcp"]["servers"]["s"]
+            self.assertIs(server.get("disabled"), True, "the binary does not list `disabled` for the server it was given")
+            self.assertNotIn("enabled", server, "the binary lists an `enabled` key for the server")
+
+    def test_real_opencode_that_drops_the_config_is_a_failure_and_not_a_skip(self):
+        """Path: two configs go through the probe, one the binary carries and one it drops with exit 0.
+
+        Observed on 2.0.32: a config whose agent `steps` is the string "seven"
+        exits 0 and lists no document with that agent, and no config is refused
+        with a non-zero exit. The control is the same call with a numeric
+        `steps`, which must come back CHECKED: a probe that reports every call as
+        FAILED fails here, not only a probe that reports none. A host with no
+        opencode skips the test.
+        """
+        carried = {"agent": {"probe-agent": {"steps": 7}}}
+        dropped = {"agent": {"probe-agent": {"steps": "seven"}}}
+        status, reason = self.probe(carried, "probe-agent", 7)
+        if status == probe.COULD_NOT_CHECK:
+            self.skipTest("could not check: " + reason)
+        self.assertEqual(status, probe.CHECKED, "the control config was not carried: " + reason)
+        status, reason = self.probe(dropped, "probe-agent", "seven")
+        self.assertEqual(status, probe.FAILED, "a config the binary drops with exit 0 was not reported as a failure: " + reason)
+        self.assertIn("did not carry OPENCODE_CONFIG_CONTENT", reason)
+
+
+class ConfigProbeClassification(unittest.TestCase):
+    """
+    Each branch of opencode_config_probe.probe_config, driven by a stub in place
+    of the opencode binary. The stub answers one way for the layered config and
+    another for the empty control config (it tells them apart by the value of
+    OPENCODE_CONFIG_CONTENT), so every case fixes both. These tests call
+    probe_config directly, with a stub path; nothing here runs the real opencode.
+    """
+
+    AGENT = "probe-agent"
+    STEPS = 7
+    CONFIG = {"agent": {AGENT: {"steps": STEPS}}}
+    OK = "printf '%s' '[{\"info\": {\"agents\": {\"probe-agent\": {\"steps\": 7}}}}]'"
+    OTHER_STEPS = "printf '%s' '[{\"info\": {\"agents\": {\"probe-agent\": {\"steps\": 8}}}}]'"
+    TWICE = ("printf '%s' '[{\"info\": {\"agents\": {\"probe-agent\": {\"steps\": 7}}}},"
+             " {\"info\": {\"agents\": {\"probe-agent\": {\"steps\": 7}}}}]'")
+    EMPTY_LIST = "echo '[]'"
+    NOT_A_LIST = "echo '{}'"
+    NOT_JSON = "echo x"
+    REFUSES = "echo 'refused: bad mcp' >&2; exit 3"
+    BROKEN = "echo 'no writable home' >&2; exit 3"
+    HANGS = "exec sleep 600"
+
+    # name, layered-config answer, control answer, status, strings the reason holds, documents returned
+    CASES = (
+        ("carried", OK, EMPTY_LIST, probe.CHECKED, (), 1),
+        ("carried-by-two-documents", TWICE, EMPTY_LIST, probe.CHECKED, (), 2),
+        ("other-step-cap", OTHER_STEPS, EMPTY_LIST, probe.FAILED, ("lists no document with step cap 7",), 0),
+        ("empty-list", EMPTY_LIST, EMPTY_LIST, probe.FAILED, ("lists no document", "documents listed: 0"), 0),
+        ("not-a-list", NOT_A_LIST, EMPTY_LIST, probe.FAILED, ("lists no document", "documents listed: dict"), 0),
+        ("not-json", NOT_JSON, EMPTY_LIST, probe.COULD_NOT_CHECK, ("not JSON", "'x\\n'"), 0),
+        ("refused-where-control-runs", REFUSES, EMPTY_LIST, probe.FAILED, ("exited 3", "refused the layered config", "refused: bad mcp"), 0),
+        ("exit-where-control-exits", BROKEN, BROKEN, probe.COULD_NOT_CHECK, ("exited 3", "does not run on this host", "no writable home"), 0),
+        ("exit-where-control-hangs", REFUSES, HANGS, probe.COULD_NOT_CHECK, ("exited 3", "did not answer within 1 seconds"), 0),
+        ("no-answer", HANGS, EMPTY_LIST, probe.COULD_NOT_CHECK, ("did not answer within 1 seconds",), 0),
+    )
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="config-probe-test-")
+        self.count = 0
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def stub(self, layered, control):
+        """The path of a stub that runs `layered` for the layered config and `control` for the empty one."""
+        self.count += 1
+        path = os.path.join(self.tmp, "stub-%d" % self.count)
+        with open(path, "w") as fh:
+            fh.write('#!/bin/sh\ncase "$OPENCODE_CONFIG_CONTENT" in\n  "%s") %s ;;\n  *) %s ;;\nesac\n'
+                     % (probe.CONTROL_CONFIG, control, layered))
+        os.chmod(path, 0o755)
+        return path
+
+    def test_probe_config_classifies_each_answer_of_the_binary(self):
+        """Path: probe_config is called with a stub for each answer in CASES, one subtest each.
+
+        Each case names the answer to the layered config and to the control, and
+        the status, the reason text and the document count expected. The CHECKED
+        cases are the positive controls for the rest: a probe that reports every
+        call as FAILED or as COULD_NOT_CHECK fails them. Mutants, each with its
+        mirror: GUARD-OCPROBE-NONZERO-SKIP and GUARD-OCPROBE-NONZERO-FAIL (a
+        non-zero exit); GUARD-OCPROBE-NOMATCH-SKIP and GUARD-OCPROBE-NOTJSON-FAIL
+        (JSON that lists no document, and output that is not JSON);
+        GUARD-OCPROBE-TIMEOUT-FAIL and GUARD-OCPROBE-TIMEOUT-PASS (no answer in
+        time).
+        """
+        for name, layered, control, status, strings, documents in self.CASES:
+            with self.subTest(case=name):
+                got, reason, infos = probe.probe_config(self.stub(layered, control), self.CONFIG, self.AGENT,
+                                                        self.STEPS, self.tmp, timeout=1)
+                self.assertEqual(got, status, "case=%s: status %s, reason: %s" % (name, got, reason))
+                for text in strings:
+                    self.assertIn(text, reason, "case=%s: the reason does not say %r" % (name, text))
+                self.assertEqual(len(infos), documents, "case=%s: documents returned" % name)
+
+    def test_probe_config_could_not_check_without_a_usable_binary(self):
+        """Path: probe_config is called with no binary, and with a path that is a file but not executable.
+
+        Neither is reported as a pass or a failure of the config.
+        """
+        path = os.path.join(self.tmp, "not-executable")
+        with open(path, "w") as fh:
+            fh.write("#!/bin/sh\n")
+        os.chmod(path, 0o644)
+        for name, binary, text in (("none", None, "no opencode on PATH"), ("not-executable", path, "could not be started")):
+            with self.subTest(binary=name):
+                got, reason, infos = probe.probe_config(binary, self.CONFIG, self.AGENT, self.STEPS, self.tmp, timeout=1)
+                self.assertEqual(got, probe.COULD_NOT_CHECK, "binary=%s: status %s, reason: %s" % (name, got, reason))
+                self.assertIn(text, reason, "binary=%s: the reason does not say %r" % (name, text))
+                self.assertEqual(infos, [], "binary=%s: documents returned" % name)
 
 
 ERROR_EVENT = (
