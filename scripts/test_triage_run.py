@@ -1973,7 +1973,9 @@ class GradeExcluded(TriageRunCase):
         proc = self.regrade_b_excluded()
         self.assertEqual(proc.returncode, 0, "regrade with B excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
         skips, claimed = self.skips(), self.claimed()
-        self.assertEqual(skips, ["B"], "skip lines were %r, claim %r; expected skip lines ['B']" % (skips, claimed))
+        # assertTrue, not assertEqual: the message comes first on the failure line, so the
+        # observed skips and claim are what a failure reports, not a list diff.
+        self.assertTrue(skips == ["B"], "skip lines were %r, claim %r; expected skip lines ['B']" % (skips, claimed))
 
     def test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one(self):
         """Path: --regrade sends DELETE for A and for C, and none for B.
