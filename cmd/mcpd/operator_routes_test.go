@@ -52,6 +52,21 @@ func hasRequest(seen []string, want string) bool {
 	return false
 }
 
+// newRecordingClient returns an mcpd client aimed at a stub memoryd, which
+// answers every request with 200 and an empty object, and the log of the
+// requests it receives. The stub closes when the test ends.
+func newRecordingClient(t *testing.T) (*client, *requestLog) {
+	t.Helper()
+	log := &requestLog{}
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.add(r.Method, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(stub.Close)
+	return &client{httpClient: stub.Client(), syncHTTPClient: stub.Client(), baseURL: stub.URL, harness: "test"}, log
+}
+
 // everyArgument fills each argument a tool declares, so a handler that checks
 // its required arguments goes on to the request it would send.
 func everyArgument(tool mcp.Tool) map[string]any {
@@ -86,83 +101,94 @@ func sweep(c *client, register func(*server.MCPServer, *client)) {
 		req.Params.Name = name
 		req.Params.Arguments = everyArgument(st.Tool)
 		// A tool reports failure as an error result, not a Go error, and the
-		// request log is what this test reads, so the result is not needed.
+		// request log is what the test reads, so the result is not needed.
 		_, _ = st.Handler(context.Background(), req)
+	}
+}
+
+// assertNeverReachesExclusion sweeps one profile and fails on any request that
+// reaches the operator's exclusion route, or that sends PUT or DELETE to a
+// grade. The sweep must send something, or its silence proves nothing.
+func assertNeverReachesExclusion(t *testing.T, profile string, register func(*server.MCPServer, *client)) {
+	t.Helper()
+	c, log := newRecordingClient(t)
+	sweep(c, register)
+	seen := log.take()
+	if len(seen) == 0 {
+		t.Fatalf("%s profile: no request reached the stub; the sweep proves nothing", profile)
+	}
+	for _, rec := range seen {
+		method, path, _ := strings.Cut(rec, " ")
+		if strings.HasSuffix(path, "/exclusion") {
+			t.Errorf("%s profile reaches the operator exclusion route: %s", profile, rec)
+		}
+		if strings.HasPrefix(path, "/v1/mission-grades") && (method == http.MethodPut || method == http.MethodDelete) {
+			t.Errorf("%s profile sends %s, which only the operator may do to a grade", profile, rec)
+		}
 	}
 }
 
 // TestMCPToolsNeverReachOperatorExclusionRoutes checks that no tool in either
 // mcpd profile reaches the operator's exclusion route, and that no tool deletes
-// or overwrites a grade with PUT or DELETE. Each profile is registered exactly as
-// main() registers it, on a server whose client points at a stub memoryd, and
-// every tool it registers is called with every argument filled.
+// or overwrites a grade with PUT or DELETE. Each profile is registered exactly
+// as main() registers it, on a server whose client points at a stub memoryd,
+// and every tool it registers is called with every argument filled. Each
+// subtest runs on its own stub, so a broken path fails that subtest alone.
 //
-// Two controls keep the absence honest. The server side first: the router
-// must register both exclusion routes, so there is something to keep mcpd away
-// from. Then the recorder: a probe proxy aimed at the exclusion route must show
-// up in the log, and the sweep must show the grade claim and write routes, so
-// an empty log cannot pass as a clean one.
+// The absence is paired with controls. The server side: the router must
+// register both exclusion routes, so there is something to keep mcpd away from.
+// The recorder: a probe aimed at the exclusion route must show up in the log,
+// and the triage sweep must reach the grade write route, so an empty log cannot
+// pass as a clean one.
 func TestMCPToolsNeverReachOperatorExclusionRoutes(t *testing.T) {
-	dbConn, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("create test database: %v", err)
-	}
-	defer dbConn.Close()
-	router := api.NewRouter(config.Config{AppEnv: "test"}, dbConn)
-	routes := map[string]bool{}
-	for _, route := range router.Routes() {
-		routes[route.Method+":"+route.Path] = true
-	}
-	for _, want := range []string{
-		"PUT:/v1/mission-grades/:missionID/exclusion",
-		"DELETE:/v1/mission-grades/:missionID/exclusion",
-	} {
-		if !routes[want] {
-			t.Errorf("router registers no %s; the operator route this test keeps mcpd away from is missing", want)
+	t.Run("router_registers_exclusion_routes", func(t *testing.T) {
+		dbConn, err := sql.Open("sqlite", ":memory:")
+		if err != nil {
+			t.Fatalf("create test database: %v", err)
 		}
-	}
-
-	log := &requestLog{}
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.add(r.Method, r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{}`))
-	}))
-	defer stub.Close()
-	c := &client{httpClient: stub.Client(), syncHTTPClient: stub.Client(), baseURL: stub.URL, harness: "test"}
-
-	// Control: the recorder sees a request aimed at the exclusion route.
-	probe := makeBodyProxy(c, "control_probe", http.MethodPut, nil, nil,
-		"v1", "mission-grades", "mission-20261022-99", "exclusion")
-	if _, err := probe(context.Background(), mcp.CallToolRequest{}); err != nil {
-		t.Fatalf("control probe: %v", err)
-	}
-	if !hasRequest(log.take(), "PUT "+exclusionRoutePath) {
-		t.Fatal("the control probe's request to the exclusion route was not recorded; the recorder cannot see the route")
-	}
-
-	for name, register := range map[string]func(*server.MCPServer, *client){
-		"harness": registerTools,
-		"triage":  registerTriageTools,
-	} {
-		sweep(c, register)
-		seen := log.take()
-		if len(seen) == 0 {
-			t.Fatalf("%s profile: no request reached the stub; the sweep proves nothing", name)
+		defer dbConn.Close()
+		router := api.NewRouter(config.Config{AppEnv: "test"}, dbConn)
+		routes := map[string]bool{}
+		for _, route := range router.Routes() {
+			routes[route.Method+":"+route.Path] = true
 		}
-		// Control: the sweep reaches the grade routes, so the absence is not
-		// an absence of traffic.
-		if name == "triage" && !hasRequest(seen, "POST /v1/mission-grades") {
-			t.Errorf("triage profile: the sweep never reached POST /v1/mission-grades; the grade routes are unreached")
-		}
-		for _, rec := range seen {
-			method, path, _ := strings.Cut(rec, " ")
-			if strings.HasSuffix(path, "/exclusion") {
-				t.Errorf("%s profile reaches the operator exclusion route: %s", name, rec)
-			}
-			if strings.HasPrefix(path, "/v1/mission-grades") && (method == http.MethodPut || method == http.MethodDelete) {
-				t.Errorf("%s profile sends %s, which only the operator may do to a grade", name, rec)
+		for _, want := range []string{
+			"PUT:/v1/mission-grades/:missionID/exclusion",
+			"DELETE:/v1/mission-grades/:missionID/exclusion",
+		} {
+			if !routes[want] {
+				t.Errorf("router registers no %s; the operator route this test keeps mcpd away from is missing", want)
 			}
 		}
-	}
+	})
+
+	t.Run("control_probe_recorded", func(t *testing.T) {
+		c, log := newRecordingClient(t)
+		probe := makeBodyProxy(c, "control_probe", http.MethodPut, nil, nil,
+			"v1", "mission-grades", "mission-20261022-99", "exclusion")
+		if _, err := probe(context.Background(), mcp.CallToolRequest{}); err != nil {
+			t.Fatalf("control probe: %v", err)
+		}
+		if !hasRequest(log.take(), "PUT "+exclusionRoutePath) {
+			t.Fatal("the control probe's request to the exclusion route was not recorded; the recorder cannot see the route")
+		}
+	})
+
+	t.Run("harness_profile_never_reaches_exclusion", func(t *testing.T) {
+		assertNeverReachesExclusion(t, "harness", registerTools)
+	})
+
+	t.Run("triage_profile_never_reaches_exclusion", func(t *testing.T) {
+		assertNeverReachesExclusion(t, "triage", registerTriageTools)
+	})
+
+	t.Run("triage_profile_reaches_grade_write", func(t *testing.T) {
+		// Control: the sweep reaches the grade routes, so the absence above is
+		// not the absence of traffic.
+		c, log := newRecordingClient(t)
+		sweep(c, registerTriageTools)
+		if !hasRequest(log.take(), "POST /v1/mission-grades") {
+			t.Error("triage profile never sent POST /v1/mission-grades; the sweep cannot see the grade write route")
+		}
+	})
 }
