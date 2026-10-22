@@ -277,6 +277,19 @@ func TestEnsureMissionGradeExcludedWidensOldTable(t *testing.T) {
 			t.Fatal("foreign_key_check reports violations after the rebuild")
 		}
 	})
+
+	t.Run("commit_persists_widening", func(t *testing.T) {
+		// A rebuild that returns nil must have committed the widened definition,
+		// not merely returned without an error. Reads the stored table, not the
+		// rebuild's return value alone.
+		db := legacyGradesDB(t)
+		if err := EnsureMissionGradeExcluded(db); err != nil {
+			t.Fatalf("EnsureMissionGradeExcluded: %v", err)
+		}
+		if !strings.Contains(missionGradesTableSQL(t, db), "'excluded'") {
+			t.Fatal("EnsureMissionGradeExcluded returned nil, but the stored mission_grades still lacks 'excluded'")
+		}
+	})
 }
 
 // TestEnsureMissionGradeExcludedFreshDatabase checks a database created from

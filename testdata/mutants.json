@@ -4100,7 +4100,7 @@
       "mirror": "W1-ROLLBACK",
       "package": "./internal/store",
       "killers": [
-        "TestEnsureMissionGradeExcludedWidensOldTable/admits_excluded_without_grade"
+        "TestEnsureMissionGradeExcludedWidensOldTable/commit_persists_widening"
       ]
     },
     {
