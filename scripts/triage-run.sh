@@ -703,28 +703,28 @@ PY
     if [[ -n "$d" ]]; then ADD_DIR_ARGS+=(--add-dir "$d"); fi
   done <<<"$ADD_DIRS"
 else
-  # Layered over the user's own OpenCode config for this run only: the
-  # bishop-triage server, the step cap, read access to the harness checkouts
-  # (OpenCode has no --add-dir; outside the project it needs an
-  # external_directory allow), and nothing shared, snapshotted, formatted or
-  # auto-updated. small_model is pinned to the run's model so no side call
-  # (titles, compaction) goes to another provider.
-  # The server is written in the v2 shape, mcp.servers.<name>, with codemode
-  # false and with neither `enabled` nor `disabled`.
-  # Observed on 2.0.32: the binary's schema text for `codemode` reads "Expose
-  # this server's tools through Code Mode. Defaults to true", and its tool
-  # snapshot sends a tool to Code Mode unless its codemode is false
-  # (`codemode!==!1`); a live run on the legacy shape mcp.<name> logged
-  # `mcp connected server=bishop-triage tools=15` and then had the grader's calls
-  # by name refused with `No tool named "bishop-triage_triage_run_start" is currently
-  # available`; `opencode api --standalone GET /api/config` reports a legacy
-  # mcp.<name> entry as mcp.servers.<name> with no codemode, and the v2 shape
-  # as written here with codemode false; given a server with `enabled` false and
-  # `disabled` true, it lists `disabled` and no `enabled`
-  # (LayeredConfigRealOpenCode.test_real_opencode_lists_disabled_and_drops_enabled).
-  # Not observed: a live run on this shape, in which the model calls a
-  # bishop-triage tool by name; and what a live session does with `disabled`,
-  # so that a server is on unless `disabled` is true is an assumption.
+  # Layered over the user's own OpenCode config for this run only: the bishop-triage server, the
+  # step cap, read access to the harness checkouts (OpenCode has no --add-dir; outside the project
+  # it needs an external_directory allow), and nothing shared, snapshotted, formatted or
+  # auto-updated. small_model is pinned to the run's model so no side call (titles, compaction) goes
+  # to another provider. The server is written in the v2 shape, mcp.servers.<name>, with codemode
+  # false and with neither `enabled` nor `disabled`. Observed on 2.0.32: the binary's schema text
+  # for `codemode` reads "Expose this server's tools through Code Mode. Defaults to true", and its
+  # tool snapshot sends a tool to Code Mode unless its codemode is false (`codemode!==!1`); a live
+  # run on the legacy shape mcp.<name> logged `mcp connected server=bishop-triage tools=15` and then
+  # had the grader's calls by name refused with `No tool named "bishop-triage_triage_run_start" is
+  # currently available`; `opencode api --standalone GET /api/config` reports a legacy mcp.<name>
+  # entry as mcp.servers.<name> with no codemode, and the v2 shape as written here with codemode
+  # false; given a server with `enabled` false and `disabled` true, it lists `disabled` and no
+  # `enabled` (LayeredConfigRealOpenCode.test_real_opencode_lists_disabled_and_drops_enabled).
+  # Observed on 2.0.32, on this shape: one live GRADE run
+  # (`make triage-grade LIMIT=1 ENGINE=opencode`, 2026-10-22 04:33-04:35 UTC, at 2f63b29).
+  # opencode.log: `mcp connected server=bishop-triage tools=15`. Result file
+  # ~/Library/Logs/bishop-memory/triage-grade-2026-10-22T043342Z.jsonl: no `No tool named` error,
+  # one completed call each of bishop-triage_triage_run_start, _grade_claim, _grade_write and
+  # _triage_run_finish. triage.log: `done steps=5 tool_errors=0`.
+  # Not observed: a live classify or process run on this shape (same builder), or what a live
+  # session does with `disabled`, so that a server is on unless `disabled` is true is an assumption.
   OC_CONFIG="$(python3 - "$MCPD_BIN" "$URL" "$AGENT" "$MAX_TURNS" "$MODEL" "$ADD_DIRS" <<'PY'
 import json, sys
 mcpd, url, agent, steps, model, dirs = sys.argv[1:7]
@@ -775,14 +775,14 @@ run_agent() {
       cmd+=("${ADD_DIR_ARGS[@]}")
     fi
   else
-    # OpenCode v2 has no --pure (observed on 2.0.32: `opencode run --help` lists
-    # none), so the operator's own OpenCode plugins load in this run.
-    # --standalone starts a private server, which the layered config relies on
-    # for OPENCODE_CONFIG_CONTENT. Observed on 2.0.32: `opencode api --standalone
-    # GET /api/config` lists that variable's config as a document, and the
-    # `debug agents` listing from the background service is the same with and
-    # without it, which is why the guard's listing does not see the layered
-    # config. Not observed: a live run of this script on the shape above.
+    # OpenCode v2 has no --pure (observed on 2.0.32: `opencode run --help` lists none), so the
+    # operator's own OpenCode plugins load in this run. --standalone starts a private server, which
+    # the layered config relies on for OPENCODE_CONFIG_CONTENT. Observed on 2.0.32:
+    # `opencode api --standalone GET /api/config` lists that variable's config as a document, and
+    # the `debug agents` listing from the background service is the same with and without it, which
+    # is why the guard's listing does not see the layered config. Observed on 2.0.32, 2026-10-22: a
+    # live grade run of this script on the shape above (evidence at OC_CONFIG). Not observed: a live
+    # classify or process run of this script on it.
     cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run --standalone
       --agent "$AGENT"
       --model "$MODEL"
