@@ -1601,7 +1601,8 @@ class ConfigProbeClassification(unittest.TestCase):
         """Path: probe_config is called with a stub for each answer in CASES, one subtest each.
 
         Each case names the answer to the layered config and to the control, and
-        the status, the reason text and the document count expected. The CHECKED
+        the status, the reason text and the document count expected. The case
+        name is in each assertion's first line, so a failure says which case. The CHECKED
         cases are the positive controls for the rest: a probe that reports every
         call as FAILED or as COULD_NOT_CHECK fails them. Mutants, each with its
         mirror: GUARD-OCPROBE-NONZERO-SKIP and GUARD-OCPROBE-NONZERO-FAIL (a
@@ -1619,10 +1620,10 @@ class ConfigProbeClassification(unittest.TestCase):
             with self.subTest(case=name):
                 got, reason, infos = probe.probe_config(self.stub(layered, control), self.CONFIG, self.AGENT,
                                                         self.STEPS, self.tmp, timeout=1)
-                self.assertEqual(got, status, "case=%s: status %s, reason: %s" % (name, got, reason))
+                self.assertEqual((name, got), (name, status), "reason: " + reason)
                 for text in strings:
                     self.assertIn(text, reason, "case=%s: the reason does not say %r" % (name, text))
-                self.assertEqual(len(infos), documents, "case=%s: documents returned" % name)
+                self.assertEqual((name, len(infos)), (name, documents), "documents returned")
 
     def test_probe_config_could_not_check_without_a_usable_binary(self):
         """Path: probe_config is called with no binary, and with a path that is a file but not executable.
@@ -1638,9 +1639,9 @@ class ConfigProbeClassification(unittest.TestCase):
         for name, binary, text in (("none", None, "no opencode on PATH"), ("not-executable", path, "api --standalone could not be started")):
             with self.subTest(binary=name):
                 got, reason, infos = probe.probe_config(binary, self.CONFIG, self.AGENT, self.STEPS, self.tmp, timeout=1)
-                self.assertEqual(got, probe.COULD_NOT_CHECK, "binary=%s: status %s, reason: %s" % (name, got, reason))
+                self.assertEqual((name, got), (name, probe.COULD_NOT_CHECK), "reason: " + reason)
                 self.assertIn(text, reason, "binary=%s: the reason does not say %r" % (name, text))
-                self.assertEqual(infos, [], "binary=%s: documents returned" % name)
+                self.assertEqual((name, infos), (name, []), "documents returned")
 
 
 ERROR_EVENT = (
