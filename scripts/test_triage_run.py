@@ -2167,14 +2167,18 @@ class GradeExcluded(TriageRunCase):
     def assert_mission_run_not_started(self, proc, tool, reason, asked_lookup):
         """
         The could-not-check outcome for a --mission run that lacked `tool`: exit 4,
-        a log line that says the exclusion check could not finish and gives `reason`,
-        no DELETE and no claude run. `asked_lookup` is whether the HUD list was
-        asked for, which it was only where the tool is needed after the answer.
-        The health check was answered in each of these runs.
+        exactly one log line that says the exclusion check could not finish, and it
+        gives `reason`, no DELETE and no claude run. One line, so the run stopped at
+        the guard for `tool` and not later at a failure that guard let through.
+        `asked_lookup` is whether the HUD list was asked for, which it was only
+        where the tool is needed after the answer. The health check was answered in
+        each of these runs.
         """
         self.assertEqual(proc.returncode, 4, "run without %s exited %d; expected 4; log: %s" % (tool, proc.returncode, self.log_text()))
         line = "could not check whether the named missions are excluded: " + reason
         self.assertIn(line, self.log(), "run without %s did not log %r; log: %s" % (tool, line, self.log_text()))
+        stops = self.log().count("could not check whether the named missions are excluded")
+        self.assertEqual(stops, 1, "run without %s logged %d could-not-check lines; expected 1; log: %s" % (tool, stops, self.log_text()))
         self.assertIn("/healthz", self.server.gets, "run without %s: the health check was not asked; requests %r" % (tool, self.server.gets))
         asked = "/v1/hud/missions?grade=excluded" in self.server.gets
         self.assertEqual(asked, asked_lookup, "run without %s: HUD list asked = %r, expected %r; requests %r" % (tool, asked, asked_lookup, self.server.gets))
@@ -2250,8 +2254,10 @@ class GradeExcluded(TriageRunCase):
     def test_mission_run_without_mktemp_cannot_check_and_says_mktemp(self):
         """Path: mktemp is not on PATH, so the --mission run exits 4 naming mktemp, with no DELETE and no claim.
 
-        Mutant GRADE-MKTEMP-OFF (the guard's exit removed) goes on with no stderr file
-        and fails the lookup, so the exit is 4 but the reason is not mktemp's.
+        Mutant GRADE-MKTEMP-OFF (the guard's exit removed) logs the mktemp reason and
+        goes on with no stderr file; the lookup then fails and logs a second
+        could-not-check line. The exit is 4 either way, so the one-line count in
+        assert_mission_run_not_started is what fails it.
         """
         proc = self.run_claude_without("mktemp", "--mission", "A,B,C", "--regrade")
         self.assert_mission_run_not_started(proc, "mktemp", "mktemp failed", asked_lookup=False)
@@ -2259,8 +2265,9 @@ class GradeExcluded(TriageRunCase):
     def test_mission_run_without_tail_cannot_check_and_says_tail(self):
         """Path: tail is not on PATH, so the --mission run exits 4 naming tail, after the lookup answered, with no DELETE and no claim.
 
-        The HUD list is asked for, since tail is needed only after its answer. Mutant GRADE-TAIL-OFF (the guard's exit removed) goes on with an
-        empty kept list and starts a claim with no ids.
+        The HUD list is asked for, since tail is needed only after its answer.
+        Mutant GRADE-TAIL-OFF (the guard's exit removed) goes on with an empty kept
+        list and the run exits 0.
         """
         proc = self.run_claude_without("tail", "--mission", "A,B,C", "--regrade")
         self.assert_mission_run_not_started(proc, "tail", "tail failed on the lookup result", asked_lookup=True)
@@ -2269,7 +2276,7 @@ class GradeExcluded(TriageRunCase):
         """Path: sed is not on PATH, so the --mission run exits 4 naming sed, after the lookup answered, with no DELETE and no claim.
 
         Mutant GRADE-SED-OFF (the guard's exit removed) goes on with no excluded ids
-        listed and reopens and claims the missions it should have skipped or not.
+        listed and the run exits 0.
         """
         proc = self.run_claude_without("sed", "--mission", "A,B,C", "--regrade")
         self.assert_mission_run_not_started(proc, "sed", "sed failed on the lookup result", asked_lookup=True)
