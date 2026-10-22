@@ -121,9 +121,9 @@ route, the harness registry) is generic. Coupling sits at these edges:
 
 | Area | Where | What it assumes | Class |
 |---|---|---|---|
-| Engine switch | `scripts/triage-run.sh:35-36, 190-193` (`TRIAGE_ENGINE=claude\|opencode`) | The engine is already chosen at run time by `TRIAGE_ENGINE` | Core-generic in shape |
-| Agent folders | `scripts/triage-run.sh:21-23` (`.claude/agents/`, `.opencode/agents/`), `:253` (`AGENT="findings-classifier"`) | Bishop's repository layout and agent names | Hard-coupled to this repository's files |
-| Tool allow-list | `scripts/triage-run.sh:256` (`mcp__bishop-triage__*`); `.claude/agents/*.md` `tools:` lines; `.opencode/agents/*.md` `bishop-triage_*` permissions | The MCP server is named `bishop-triage` | Hard-coupled (the server name is in `findings-processor`, `findings-classifier` and `mission-grader` under both `.claude/agents/` and `.opencode/agents/`, and in the script) |
+| Engine switch | `scripts/triage-run.sh:35-36, 217-220` (`TRIAGE_ENGINE=claude\|opencode`) | The engine is already chosen at run time by `TRIAGE_ENGINE` | Core-generic in shape |
+| Agent folders | `scripts/triage-run.sh:21-23` (`.claude/agents/`, `.opencode/agents/`), `:589` (`AGENT="findings-classifier"`) | Bishop's repository layout and agent names | Hard-coupled to this repository's files |
+| Tool allow-list | `scripts/triage-run.sh:592` (`mcp__bishop-triage__*`, classify); `.claude/agents/*.md` `tools:` lines; `.opencode/agents/*.md` `bishop-triage_*` permissions | The MCP server is named `bishop-triage` | Hard-coupled (the server name is in `findings-processor`, `findings-classifier` and `mission-grader` under both `.claude/agents/` and `.opencode/agents/`, and in the script) |
 | Triage MCP profile | `cmd/mcpd/triage.go`; `MCPD_PROFILE=triage` (ROADMAP, Shipped) | A separate tool set under the same server name | Core-generic profile idea |
 | Doctrine paths | `.claude/skills/findings-triage/SKILL.md`, `.claude/skills/mission-grading/SKILL.md` (named in `triage-run.sh:24-25`) | The agents read Bishop-style skill files | Bishop-specific-but-configurable |
 | Grader packet | `internal/api/grades.go:229-236, 356, 400` | Reads Bishop's DEBRIEF sections | Bishop-specific-but-configurable (see §2.2) |
