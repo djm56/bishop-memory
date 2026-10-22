@@ -3891,6 +3891,157 @@
       "killers": [
         "TestExclusionRouteReportsWhatItReplaced/graded"
       ]
+    },
+    {
+      "id": "CAP-700",
+      "status": "active",
+      "language": "go",
+      "file": "internal/model/grade.go",
+      "line": 35,
+      "before": "binding:\"required,max=700\"",
+      "after": "binding:\"required,max=701\"",
+      "property": "A note longer than 700 characters is refused with 400 (the cap on the exclusion note)",
+      "mirror": "CAP-700-MIRROR",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_701_char_note_400"
+      ]
+    },
+    {
+      "id": "CAP-700-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/model/grade.go",
+      "line": 35,
+      "before": "binding:\"required,max=700\"",
+      "after": "binding:\"required,max=699\"",
+      "property": "A note of exactly 700 characters is accepted (the opposite edge: a cap of 699 refuses it)",
+      "mirror": "CAP-700",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_700_char_note"
+      ]
+    },
+    {
+      "id": "PREV-STATE-NIL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 829,
+      "before": "nullStringPtr(prevState)",
+      "after": "nil",
+      "property": "The response names the state the row held before, when it held one",
+      "mirror": "PREV-STATE-EMPTY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/pending"
+      ]
+    },
+    {
+      "id": "PREV-STATE-EMPTY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 829,
+      "before": "nullStringPtr(prevState)",
+      "after": "prevState.String",
+      "property": "A mission with no row is answered previous_state null, not an empty string (the opposite edge)",
+      "mirror": "PREV-STATE-NIL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/no_row"
+      ]
+    },
+    {
+      "id": "PREV-GRADE-NIL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 830,
+      "before": "nullStringPtr(prevGrade)",
+      "after": "nil",
+      "property": "The response names the grade the row held before, when it held one",
+      "mirror": "PREV-GRADE-EMPTY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "PREV-GRADE-EMPTY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 830,
+      "before": "nullStringPtr(prevGrade)",
+      "after": "prevGrade.String",
+      "property": "A mission with no row is answered previous_grade null, not an empty string (the opposite edge)",
+      "mirror": "PREV-GRADE-NIL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/no_row"
+      ]
+    },
+    {
+      "id": "EXCL-COUNT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 708,
+      "before": "p.Excluded++",
+      "after": "p.Excluded += 0",
+      "summary": "the excluded arm increments nothing, so an excluded mission is counted nowhere",
+      "property": "An excluded mission is counted under excluded",
+      "mirror": "EXCL-COUNT-MIRROR",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/excluded_counted_apart"
+      ]
+    },
+    {
+      "id": "EXCL-COUNT-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 712,
+      "before": "p.Waiting++",
+      "after": "p.Waiting++; p.Excluded++",
+      "property": "A waiting mission is never counted under excluded (the opposite branch)",
+      "mirror": "EXCL-COUNT",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/excluded_counted_apart"
+      ]
+    },
+    {
+      "id": "SKIP-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 126,
+      "before": "WHERE state = 'pending' AND attempts >= ?",
+      "after": "WHERE state IN ('pending', 'excluded') AND attempts >= ?",
+      "property": "The claim sweep's skip leaves an excluded row alone, though its attempts are spent",
+      "mirror": "SKIP-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/spent_exclusion_survives_sweep"
+      ]
+    },
+    {
+      "id": "SKIP-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 126,
+      "before": "WHERE state = 'pending' AND attempts >= ?",
+      "after": "WHERE state = 'excluded' AND attempts >= ?",
+      "property": "The claim sweep still marks a spent pending claim skipped (the opposite edge)",
+      "mirror": "SKIP-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/spent_pending_is_skipped"
+      ]
     }
   ]
 }

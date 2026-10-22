@@ -375,6 +375,17 @@ func TestExcludedMissionIsNeverClaimed(t *testing.T) {
 		}
 	})
 
+	t.Run("spent_pending_is_skipped", func(t *testing.T) {
+		// Control for spent_exclusion_survives_sweep: the same sweep still marks
+		// an unexcluded claim with its attempts spent as skipped.
+		router, db := finishedFixture(t, spent)
+		seedGradeRow(t, db, `INSERT INTO mission_grades (mission_id, state, attempts) VALUES (?, 'pending', 2)`, spent)
+		claimIDs(t, router, map[string]any{})
+		if row := gradeRowOf(t, db, spent); row == nil || row["state"] != "skipped" {
+			t.Fatalf("spent pending row after the sweep = %v, want state skipped", row)
+		}
+	})
+
 	t.Run("explicit_claim_of_excluded_refused", func(t *testing.T) {
 		router, db := finishedFixture(t, excluded)
 		excludeMission(t, router, excluded, "never claimed")
