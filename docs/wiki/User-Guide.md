@@ -101,7 +101,7 @@ make triage-classify
 make triage-install                                                    # nightly launchd jobs
 ```
 
-On OpenCode instead (cheaper models, your own OpenCode config and key): skip the `.env` key and add `TRIAGE_ENGINE=opencode` to `.env`. The defaults are `opencode-go/glm-5.3-flash` for the classifier and `opencode-go/glm-5.2` for the processor; [Developer: Triage Agents](Developer-Triage-Agents#switching-to-opencode) covers choosing models and switching one job at a time.
+On OpenCode instead (cheaper models, your own OpenCode config and key): skip the `.env` key and add `TRIAGE_ENGINE=opencode` to `.env`. The defaults are `opencode-go/glm-5.3-flash` for the classifier and `opencode-go/glm-5.2` for the processor; [Developer: Triage Agents](Developer-Triage-Agents#switching-to-opencode) covers choosing models and switching one job at a time. The OpenCode engine needs OpenCode v2; the runner was observed on 2.0.32, and only a live grade run on the v2 config shape (evidence: [Developer: Triage Agents](Developer-Triage-Agents#the-pieces)).
 
 [Review Page Guide](Review-Page-Guide) walks through deciding. [Developer: Triage Agents](Developer-Triage-Agents) explains what the agents read and why their recommendations are checkable.
 

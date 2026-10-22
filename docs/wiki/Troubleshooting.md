@@ -44,7 +44,9 @@ Symptom first, then cause, then fix. Commands assume the bishop-memory checkout 
 
 ## Triage
 
-**`triage-run.sh` exits 2.** It printed why: service down, `claude` or `opencode` not on PATH (the PATH baked into the launchd plist is printed by `install-triage-schedule.sh`), `bin/mcpd` could not be built, a model id that does not fit the engine (`sonnet` under opencode, `opencode-go/...` under claude), or OpenCode did not resolve the agent to its `.opencode/agents/` twin.
+**`triage-run.sh` exits 2.** It printed why: service down, `claude` or `opencode` not on PATH (the PATH baked into the launchd plist is printed by `install-triage-schedule.sh`), `bin/mcpd` could not be built, a model id that does not fit the engine (`sonnet` under opencode, `opencode-go/...` under claude), or the guard refused the agent: the listing's entry for it does not match its `.opencode/agents/` definition, or it is granted something outside the allowlist. The log line names the reason.
+
+**`triage-run.sh` exits 4.** The guard could not finish checking the agent, so nothing ran. The log line names the reason; for example `opencode debug agents` exited non-zero (an OpenCode that lacks that subcommand), or the listing timed out (`TRIAGE_GUARD_TIMEOUT_SEC`, opencode engine only). The opencode engine needs OpenCode v2; the runner was observed on 2.0.32, and only a live grade run has been observed on the v2 config shape (evidence: [Developer: Triage Agents](Developer-Triage-Agents#the-pieces)). The runner does not check the version itself.
 
 **The JSON result says `Not logged in · Please run /login`, or the launchd job hangs before its first tool call.** No credentials. A terminal shell inside Claude Code carries an `ANTHROPIC_API_KEY`, so manual runs work; launchd has none. Put the key in `.env` (mode 0600) in the checkout. To bill your Claude plan instead of the API, put `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` there and remove the API key, which wins when both are set. The runner warns at start when neither `ANTHROPIC_API_KEY` nor `CLAUDE_CODE_OAUTH_TOKEN` is set. The opencode engine needs neither.
 

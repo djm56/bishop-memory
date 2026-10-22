@@ -19,8 +19,8 @@
 #      bishop-triage MCP server (mcpd in its triage profile) and the tools the
 #      agent definition names, on one of two engines:
 #        claude    Claude Code (`claude -p`); agents in .claude/agents/
-#        opencode  OpenCode (`opencode run`); agents in .opencode/agents/,
-#                  using the providers and keys in your own OpenCode config
+#        opencode  OpenCode v2 (`opencode run`; observed on 2.0.32); agents in
+#                  .opencode/agents/, using the providers and keys in your own OpenCode config
 #      Both engines follow the same doctrine: .claude/skills/findings-triage/SKILL.md
 #      for classify and process, .claude/skills/mission-grading/SKILL.md for grade;
 #   4. appends one line per run to $TRIAGE_LOG_DIR/triage.log and keeps the
@@ -45,6 +45,8 @@
 #   TRIAGE_MAX_TURNS          default 60 (classify) / 120 (process) / 20 (grade); OpenCode calls them steps
 #   TRIAGE_MAX_BUDGET_USD     default 2 (classify) / 5 (process) / 2 (grade); claude only
 #   TRIAGE_TIMEOUT_MIN        stop a run still going after this many minutes (default 45, 20 for grade; 0 = never)
+#   TRIAGE_GUARD_TIMEOUT_SEC  seconds the opencode agent listing may take before the
+#                             guard gives up and exits 4 (default 30; a whole number, at least 1)
 #   TRIAGE_LOG_DIR            default ~/Library/Logs/bishop-memory
 #   TRIAGE_ADD_DIRS           colon-separated extra directories to open read-only for the
 #                             processor; by default every registered harness checkout
@@ -61,23 +63,44 @@
 # Credentials: a launchd job has no Claude login and no API key in its
 # environment, so the headless Claude CLI stops at "Not logged in". The runner
 # sources $TRIAGE_ENV_FILE (default: <bishop-root>/.env, gitignored, the same
-# file the service reads) before anything else. For the claude engine put
+# file the service reads) before it reads any flag; only --help comes first, so
+# it works with a broken file. For the claude engine put
 #   ANTHROPIC_API_KEY=sk-ant-...      (API billing), or
 #   CLAUDE_CODE_OAUTH_TOKEN=...       (your Claude subscription; `claude setup-token`)
 # in it, mode 0600. The opencode engine needs nothing there: OpenCode reads its
 # own config (~/.config/opencode/opencode.json, ~/.local/share/opencode/auth.json),
 # which a launchd job running as you can read. Any TRIAGE_* or
 # BISHOP_MEMORY_URL value in the file is a default; a variable already set in
-# the environment wins.
+# the environment wins, and a flag on the command line wins over both.
 #
-# Exit codes: 0 ran or nothing to do; 1 the agent run failed or timed out; 2 a
-# precondition failed (service down, mcpd missing, CLI missing, agent not
-# resolvable, model id wrong for the engine); 64 usage error.
+# Exit codes: 0 ran, or there was nothing to do; 1 the agent run failed or timed
+# out; 2 the guard checked the agent and refused it, or a precondition the run
+# needs was not met; 4 the guard could not finish checking the agent, so nothing
+# ran; 64 usage error.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BISHOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# print_help: the header comment, from line 2 down to its first blank line, with
+# the comment marks removed. Read from the file, so the header and --help agree.
+print_help() {
+  awk 'NR > 1 && /^$/ { exit } NR > 1 { print }' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# --help and -h are the only thing read before the environment files are
+# sourced, so help has no side effects and works with a broken .env. They are
+# looked for in every argument, and win wherever they stand, even as the value of
+# another flag, so `--bogus --help` and `--model --help` print help and exit 0.
+# The tests HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else
+# and the HELP rows in testdata/mutants.json hold that rule. The other flags are
+# read further down, after the files, so that a flag wins over a file value.
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help) print_help; exit 0 ;;
+  esac
+done
 
 # --- Credentials and defaults from .env --------------------------------------
 ENV_FILE="${TRIAGE_ENV_FILE:-$BISHOP_ROOT/.env}"
@@ -142,7 +165,12 @@ LOG_DIR="${TRIAGE_LOG_DIR:-$HOME/Library/Logs/bishop-memory}"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 OPENCODE_BIN="${OPENCODE_BIN:-opencode}"
 MCPD_BIN="$BISHOP_ROOT/bin/mcpd"
+GUARD_TIMEOUT_SEC="${TRIAGE_GUARD_TIMEOUT_SEC:-30}"
+GUARD_ATTEMPTS=3  # listings tried while the service is cold or empty, one second apart
 
+# --- Flags ---------------------------------------------------------------------
+# Read after the environment files, so a flag wins over a value in either. The
+# flag variables are set here whatever a file said.
 KIND="${1:-}"
 shift || true
 CATEGORY=""
@@ -170,7 +198,6 @@ while [[ $# -gt 0 ]]; do
     --mission=*) MISSIONS="${1#*=}"; shift ;;
     --regrade) REGRADE=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '2,71p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "triage-run.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
@@ -196,6 +223,10 @@ if [[ ! "$TIMEOUT_MIN" =~ ^[0-9]+$ ]]; then
   echo "triage-run.sh: TRIAGE_TIMEOUT_MIN must be a whole number of minutes, got '$TIMEOUT_MIN'" >&2
   exit 64
 fi
+if [[ "$ENGINE" == "opencode" && ! "$GUARD_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
+  echo "triage-run.sh: TRIAGE_GUARD_TIMEOUT_SEC must be a whole number of seconds, at least 1, got '$GUARD_TIMEOUT_SEC'" >&2
+  exit 64
+fi
 [[ -n "$LIMIT" ]] && ITEMS="$LIMIT"
 
 mkdir -p "$LOG_DIR"
@@ -208,6 +239,306 @@ else
 fi
 
 log() { printf '%s %s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" "$*" | tee -a "$LOG_FILE" >&2; }
+
+# flat FILE: the first 400 bytes of FILE on one line, without trailing blanks, for a log line.
+flat() { tr '\n' ' ' <"$1" | head -c 400 | sed 's/ *$//'; }
+
+# The agent guard's Python. It reads the agent listing on stdin and takes the
+# agent name and the definition path as arguments. Exit 0 accepts the agent;
+# EXIT_REFUSED refuses it, having checked it; EXIT_CANNOT_CHECK means the check
+# could not finish. The reason goes to stderr in either failing case.
+IFS= read -r -d '' GUARD_PY <<'PY' || true
+import json
+import re
+import sys
+
+# The actions an agent may hold past its final deny. Any other action must be
+# denied there. Action names under ALLOWED_PREFIX are allowed too.
+ALLOWED_ACTIONS = ("read", "glob", "grep", "list", "external_directory")
+ALLOWED_PREFIX = "bishop-triage_"
+EFFECTS = ("allow", "ask", "deny")
+EXIT_REFUSED = 2
+EXIT_CANNOT_CHECK = 4
+
+
+class Refused(Exception):
+    """The check ran and found something the guard must refuse."""
+
+
+class CannotCheck(Exception):
+    """The check could not finish, so it decides nothing."""
+
+
+def star_match(pattern, text):
+    """True when text matches pattern, where * is the only wildcard."""
+    regex = ".*".join(re.escape(part) for part in pattern.split("*"))
+    return re.fullmatch(regex, text, re.S) is not None
+
+
+def allowed_action(action):
+    """True when action is in ALLOWED_ACTIONS or matches ALLOWED_PREFIX followed by anything."""
+    return action in ALLOWED_ACTIONS or star_match(ALLOWED_PREFIX + "*", action)
+
+
+def check_rules(rules, who):
+    """
+    Refuses a rule list unless it denies every action on every resource, read
+    with last-match-wins. Every rule is first checked for its shape and effect,
+    wherever it stands: a rule that is malformed, or has an effect that is not in
+    EFFECTS, is CannotCheck. The last rule covering every action and every
+    resource must then be a deny. A rule before it is overridden for every
+    action, so nothing more is read of it. Every rule after it must be a deny or
+    name an allowed action. `who` names the list in the message.
+    """
+    for i, rule in enumerate(rules):
+        if (not isinstance(rule, dict) or not isinstance(rule.get("action"), str)
+                or not isinstance(rule.get("resource"), str) or rule.get("effect") not in EFFECTS):
+            raise CannotCheck("%s: rule %d is malformed" % (who, i))
+    covering = [i for i, rule in enumerate(rules) if rule["action"] == "*" and rule["resource"] == "*"]
+    if not covering:
+        raise Refused("%s: no rule denies every action on every resource" % who)
+    last = covering[-1]
+    if rules[last]["effect"] != "deny":
+        raise Refused("%s: the last rule covering every action and resource (rule %d) is not a deny" % (who, last))
+    for i in range(last + 1, len(rules)):
+        rule = rules[i]
+        if rule["effect"] == "deny":
+            continue
+        if not allowed_action(rule["action"]):
+            raise Refused("%s: rule %d (%s on %s: %s) comes after the final deny and is not an allowed action"
+                          % (who, i, rule["action"], rule["resource"], rule["effect"]))
+
+
+# A permission line: indent in spaces only, then a key and a value. A key or a
+# value may be bare, or in one pair of double or single quotes.
+PERMISSION_LINE = re.compile(r"""^( *)("[^"]*"|'[^']*'|[^\s:"']+)\s*:\s*(.*?)\s*$""")
+# A top-level key line, such as `mode: primary`. At column 0 inside the permission
+# block, only these end the block.
+TOP_KEY = re.compile(r"^[A-Za-z_][\w-]*:")
+
+
+def unquote(text):
+    """
+    The text without one pair of matching quotes around it. Text with no such
+    pair, including an unmatched quote, is returned as it is.
+    """
+    if text[:1] in ("'", '"') and text[-1:] == text[:1] and len(text) > 1:
+        return text[1:-1]
+    return text
+
+
+def permission_rules(head, path):
+    """
+    The rules of the permission block in a definition's frontmatter lines, in
+    file order. A line `action: effect` is a rule on every resource. An
+    `action:` line followed by `resource: effect` lines gives one rule per
+    resource. A line whose first non-blank character is `#` is a comment and is
+    skipped, at any indent, as YAML does. A top-level key line other than
+    `permission:` ends the block. A column-0 line in the block that is not a
+    top-level key is CannotCheck, and so is any indented line in the block the
+    parser does not read.
+    """
+    rules, action, in_block = [], None, False
+    for line in head:
+        if not line.strip():
+            continue
+        if line.lstrip().startswith("#"):
+            continue
+        if line[0] not in " \t":
+            if in_block and not TOP_KEY.match(line):
+                raise CannotCheck("%s: cannot read permission line %r" % (path, line))
+            in_block = line.rstrip() == "permission:"
+            action = None
+            continue
+        if not in_block:
+            continue
+        match = PERMISSION_LINE.match(line)
+        if not match:
+            raise CannotCheck("%s: cannot read permission line %r" % (path, line))
+        indent, key, value = len(match.group(1)), unquote(match.group(2)), unquote(match.group(3))
+        if indent == 2 and value == "":
+            action = key
+        elif indent == 2:
+            action = None
+            rules.append({"action": key, "resource": "*", "effect": value})
+        elif indent == 4 and action is not None and value != "":
+            rules.append({"action": action, "resource": key, "effect": value})
+        else:
+            raise CannotCheck("%s: cannot read permission line %r" % (path, line))
+    return rules
+
+
+def read_definition(path):
+    """
+    The description, mode, permission rules and body of the definition at path,
+    read from its frontmatter. The body is the text after the closing delimiter,
+    stripped. A definition that cannot be read as UTF-8, has no frontmatter, or
+    lacks a quoted description, a mode, or a readable permission block is
+    CannotCheck.
+    """
+    try:
+        with open(path, encoding="utf8") as fh:
+            lines = fh.read().split("\n")
+    except OSError as exc:
+        raise CannotCheck("cannot read the definition %s: %s" % (path, exc.strerror or "unreadable"))
+    except UnicodeDecodeError:
+        raise CannotCheck("the definition %s is not UTF-8 text" % path)
+    if lines[0] != "---" or "---" not in lines[1:]:
+        raise CannotCheck("no frontmatter in %s" % path)
+    end = lines.index("---", 1)
+    head = lines[1:end]
+    desc = mode = None
+    for line in head:
+        m = re.match(r'^description:\s*"([^"\\]*)"\s*$', line)
+        if m:
+            desc = m.group(1)
+        m = re.match(r"^mode:\s*([A-Za-z]+)\s*$", line)
+        if m:
+            mode = m.group(1)
+    if desc is None:
+        raise CannotCheck("no quoted description in %s" % path)
+    if mode is None:
+        raise CannotCheck("no mode in %s" % path)
+    return desc, mode, permission_rules(head, path), "\n".join(lines[end + 1:]).strip()
+
+
+def check_definition(path):
+    """
+    Raises CannotCheck when the definition at path cannot be read or parsed, and
+    Refused or CannotCheck when its own permission block would grant more than
+    the allowlist allows. The guard runs this before it asks OpenCode for the
+    listing, so a loosened file is refused while the listing is still stale.
+    """
+    _desc, _mode, file_rules, _body = read_definition(path)
+    check_rules(file_rules, "definition " + path)
+
+
+def check(agent, path, listing):
+    """
+    Raises Refused or CannotCheck unless the listing holds exactly one entry
+    whose name or id is `agent`, that entry has the description, body and mode
+    of the definition at `path`, and its permissions pass check_rules. The
+    definition's own permission block is checked by check_definition.
+    """
+    try:
+        agents = json.loads(listing)
+    except ValueError as exc:
+        raise CannotCheck("the agent listing is not JSON (%s)" % exc)
+    if not isinstance(agents, list):
+        raise CannotCheck("the agent listing is not a list")
+    want_desc, want_mode, _rules, body = read_definition(path)
+    named = [a for a in agents if isinstance(a, dict) and agent in (a.get("name"), a.get("id"))]
+    if len(named) != 1:
+        raise Refused("%d agents named %s" % (len(named), agent))
+    a = named[0]
+    if a.get("description") != want_desc:
+        raise Refused("agent %s description is not the one in %s" % (agent, path))
+    if str(a.get("system", "")).strip() != body:
+        raise Refused("agent %s system prompt is not the body of %s" % (agent, path))
+    if a.get("mode") != want_mode:
+        raise Refused("agent %s has mode %r, but %s declares mode %r" % (agent, a.get("mode"), path, want_mode))
+    rules = a.get("permissions")
+    if not isinstance(rules, list) or not rules:
+        raise Refused("agent %s lists no permission rules" % agent)
+    check_rules(rules, "agent " + agent)
+
+
+def main(argv, stdin):
+    """
+    The guard's exit status. With --definition as the first argument, the second
+    names the definition to check on its own. Otherwise the first argument names
+    the agent and the listing comes on stdin, read as UTF-8. The reason for a
+    failing status goes to stderr.
+    """
+    try:
+        if argv[1] == "--definition":
+            check_definition(argv[2])
+        else:
+            check(argv[1], argv[2], stdin.buffer.read().decode("utf-8"))
+    except Refused as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_REFUSED
+    except CannotCheck as exc:
+        print(exc, file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    except Exception as exc:
+        print("%s: %s" % (type(exc).__name__, exc), file=sys.stderr)
+        return EXIT_CANNOT_CHECK
+    return 0
+
+
+sys.exit(main(sys.argv, sys.stdin))
+PY
+
+# guard_agent: the agent guard for the opencode engine. It runs in a subshell,
+# so the temporary directory it uses is removed on every exit. It returns 0 when
+# the one agent named $AGENT is ours and may run; 2 when the guard checked it and
+# refused it, or a precondition failed; 4 when it could not finish checking, so
+# nothing runs. Each outcome logs its reason. The definition is read and checked
+# before the listing is asked for. The guard does not trust --agent to fail
+# closed: an unknown name must never reach a default agent that can edit files and
+# run shell commands.
+#
+# Observed on 2.0.32: with OPENCODE_CONFIG_CONTENT set to a config that gave the
+# grader external_directory allows, the `opencode debug agents` listing from a
+# warm service was byte for byte the listing without it, and none of those
+# allows was in it. So the layered config the run builds (the OC_CONFIG block)
+# is not in the listing. The allowlist accepts the external_directory allows
+# that block adds, which holds either way: if a later OpenCode puts them in the
+# listing, the guard still accepts it.
+#
+# The timeout uses the perl alarm the run uses. A cold or empty listing is
+# retried before the guard gives up.
+guard_agent() (
+  def="$BISHOP_ROOT/.opencode/agents/$AGENT.md"
+  gtmp="$(mktemp -d -t triage-guard-XXXXXX)"
+  trap 'rm -rf "$gtmp"' EXIT
+  # guard_outcome RC: turns the guard's Python status into this function's
+  # status. The reason the Python gave is in $gtmp/reason.
+  guard_outcome() {
+    local rc="$1" reason
+    reason="$(flat "$gtmp/reason")"
+    if [[ $rc -eq 0 ]]; then return 0; fi
+    if [[ $rc -eq 2 ]]; then
+      log "[$KIND] agent $AGENT is not the definition in .opencode/agents/$AGENT.md, or it is granted something outside the allowlist: $reason; nothing run"
+      return 2
+    fi
+    log "[$KIND] could not check agent $AGENT: $reason (guard exit $rc); nothing run"
+    return 4
+  }
+  # The definition is read and checked before OpenCode is asked for anything, so
+  # a missing or malformed file is reported at once.
+  rc=0
+  python3 -I -c "$GUARD_PY" --definition "$def" </dev/null >/dev/null 2>"$gtmp/reason" || rc=$?
+  if [[ $rc -ne 0 ]]; then guard_outcome "$rc"; return $?; fi
+  if ! command -v perl >/dev/null 2>&1; then
+    log "[$KIND] could not check agent $AGENT: perl is not on PATH, so the listing cannot be bounded; nothing run"
+    return 4
+  fi
+  attempt=1
+  while :; do
+    rc=0
+    (cd "$BISHOP_ROOT" && perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$GUARD_TIMEOUT_SEC" "$OPENCODE_BIN" debug agents) </dev/null >"$gtmp/listing" 2>"$gtmp/err" || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      if [[ $rc -eq 142 ]]; then why="timed out after ${GUARD_TIMEOUT_SEC}s"; else why="exited $rc"; fi
+      log "[$KIND] could not check agent $AGENT: opencode debug agents $why (stderr: $(flat "$gtmp/err")); nothing run"
+      return 4
+    fi
+    # tr, not a pattern substitution on the text. On the macOS bash 3.2.57 the
+    # substitution took 5 s on a 10.6 KB listing and did not finish in 60 s on
+    # 32 KB; tr took 0.01 s at both (timings in testdata/README.md).
+    stripped="$(tr -d '[:space:]' <"$gtmp/listing")"
+    if [[ -n "$stripped" && "$stripped" != "[]" ]]; then break; fi
+    if [[ $attempt -lt $GUARD_ATTEMPTS ]]; then
+      attempt=$((attempt + 1)); sleep 1; continue
+    fi
+    log "[$KIND] could not check agent $AGENT: opencode debug agents gave an empty listing on $attempt attempts (a cold service?); nothing run"
+    return 4
+  done
+  rc=0
+  python3 -I -c "$GUARD_PY" "$AGENT" "$def" <"$gtmp/listing" >/dev/null 2>"$gtmp/reason" || rc=$?
+  guard_outcome "$rc"
+)
 
 # --- Preconditions ----------------------------------------------------------
 
@@ -233,6 +564,11 @@ fi
 if [[ ! -x "$MCPD_BIN" ]]; then
   log "[$KIND] $MCPD_BIN missing; building it"
   (cd "$BISHOP_ROOT" && go build -o "$MCPD_BIN" ./cmd/mcpd) || { log "[$KIND] mcpd build failed"; exit 2; }
+fi
+
+if [[ "$ENGINE" == "opencode" ]] && ! command -v python3 >/dev/null 2>&1; then
+  log "[$KIND] could not check agent: python3 is not on PATH ($PATH), so the agent guard cannot run; nothing run"
+  exit 4
 fi
 
 # --- Is there work? ----------------------------------------------------------
@@ -367,12 +703,28 @@ PY
     if [[ -n "$d" ]]; then ADD_DIR_ARGS+=(--add-dir "$d"); fi
   done <<<"$ADD_DIRS"
 else
-  # Layered over the user's own OpenCode config for this run only: the
-  # bishop-triage server, the step cap, read access to the harness checkouts
-  # (OpenCode has no --add-dir; outside the project it needs an
-  # external_directory allow), and nothing shared, snapshotted, formatted or
-  # auto-updated. small_model is pinned to the run's model so no side call
-  # (titles, compaction) goes to another provider.
+  # Layered over the user's own OpenCode config for this run only: the bishop-triage server, the
+  # step cap, read access to the harness checkouts (OpenCode has no --add-dir; outside the project
+  # it needs an external_directory allow), and nothing shared, snapshotted, formatted or
+  # auto-updated. small_model is pinned to the run's model so no side call (titles, compaction) goes
+  # to another provider. The server is written in the v2 shape, mcp.servers.<name>, with codemode
+  # false and with neither `enabled` nor `disabled`. Observed on 2.0.32: the binary's schema text
+  # for `codemode` reads "Expose this server's tools through Code Mode. Defaults to true", and its
+  # tool snapshot sends a tool to Code Mode unless its codemode is false (`codemode!==!1`); a live
+  # run on the legacy shape mcp.<name> logged `mcp connected server=bishop-triage tools=15` and then
+  # had the grader's calls by name refused with `No tool named "bishop-triage_triage_run_start" is
+  # currently available`; `opencode api --standalone GET /api/config` reports a legacy mcp.<name>
+  # entry as mcp.servers.<name> with no codemode, and the v2 shape as written here with codemode
+  # false; given a server with `enabled` false and `disabled` true, it lists `disabled` and no
+  # `enabled` (LayeredConfigRealOpenCode.test_real_opencode_lists_disabled_and_drops_enabled).
+  # Observed on 2.0.32, on this shape: one live GRADE run
+  # (`make triage-grade LIMIT=1 ENGINE=opencode`, 2026-10-22 04:33-04:35 UTC, at 2f63b29).
+  # opencode.log: `mcp connected server=bishop-triage tools=15`. Result file
+  # ~/Library/Logs/bishop-memory/triage-grade-2026-10-22T043342Z.jsonl: no `No tool named` error,
+  # one completed call each of bishop-triage_triage_run_start, _grade_claim, _grade_write and
+  # _triage_run_finish. triage.log: `done steps=5 tool_errors=0`.
+  # Not observed: a live classify or process run on this shape (same builder), or what a live
+  # session does with `disabled`, so that a server is on unless `disabled` is true is an assumption.
   OC_CONFIG="$(python3 - "$MCPD_BIN" "$URL" "$AGENT" "$MAX_TURNS" "$MODEL" "$ADD_DIRS" <<'PY'
 import json, sys
 mcpd, url, agent, steps, model, dirs = sys.argv[1:7]
@@ -386,29 +738,18 @@ if external:
 print(json.dumps({
     "share": "disabled", "autoupdate": False, "snapshot": False,
     "lsp": False, "formatter": False, "small_model": model,
-    "mcp": {"bishop-triage": {
-        "type": "local", "command": [mcpd], "enabled": True,
-        "environment": {"MCPD_PROFILE": "triage", "BISHOP_MEMORY_URL": url, "BISHOP_HARNESS": "triage"}}},
+    "mcp": {"servers": {"bishop-triage": {
+        "type": "local", "command": [mcpd], "codemode": False,
+        "environment": {"MCPD_PROFILE": "triage", "BISHOP_MEMORY_URL": url, "BISHOP_HARNESS": "triage"}}}},
     "agent": {agent: agent_cfg},
 }))
 PY
 )"
-  # OpenCode does not fail on an unknown --agent: it warns and falls back to
-  # its default agent, which can edit files and run shell commands. Refuse to
-  # run unless the agent resolves to our definition with neither.
-  agent_json="$(cd "$BISHOP_ROOT" && OPENCODE_CONFIG_CONTENT="$OC_CONFIG" "$OPENCODE_BIN" debug agent "$AGENT" --pure </dev/null 2>/dev/null)" || {
-    log "[$KIND] OpenCode cannot resolve agent $AGENT (.opencode/agents/$AGENT.md); nothing run"
-    exit 2
-  }
-  if ! printf '%s' "$agent_json" | python3 -c '
-import json, sys
-d = json.load(sys.stdin)
-tools = d.get("tools") or {}
-ok = d.get("name") == sys.argv[1] and not d.get("native") and not any(tools.get(t) for t in ("edit", "write", "bash", "task"))
-sys.exit(0 if ok else 1)' "$AGENT"; then
-    log "[$KIND] OpenCode resolved $AGENT to something other than .opencode/agents/$AGENT.md, or it can edit files or run commands; nothing run"
-    exit 2
-  fi
+  # The guard runs before anything else. Refused and could-not-check outcomes
+  # exit here, with their own codes, and nothing runs.
+  guard_rc=0
+  guard_agent || guard_rc=$?
+  if [[ $guard_rc -ne 0 ]]; then exit "$guard_rc"; fi
 fi
 
 run_agent() {
@@ -434,13 +775,20 @@ run_agent() {
       cmd+=("${ADD_DIR_ARGS[@]}")
     fi
   else
-    # --pure leaves the user's OpenCode plugins out of an unattended run.
-    cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run "$prompt"
-      --pure
+    # OpenCode v2 has no --pure (observed on 2.0.32: `opencode run --help` lists none), so the
+    # operator's own OpenCode plugins load in this run. --standalone starts a private server, which
+    # the layered config relies on for OPENCODE_CONFIG_CONTENT. Observed on 2.0.32:
+    # `opencode api --standalone GET /api/config` lists that variable's config as a document, and
+    # the `debug agents` listing from the background service is the same with and without it, which
+    # is why the guard's listing does not see the layered config. Observed on 2.0.32, 2026-10-22: a
+    # live grade run of this script on the shape above (evidence at OC_CONFIG). Not observed: a live
+    # classify or process run of this script on it.
+    cmd+=(env "OPENCODE_CONFIG_CONTENT=$OC_CONFIG" "$OPENCODE_BIN" run --standalone
       --agent "$AGENT"
       --model "$MODEL"
       --title "$title"
-      --format json)
+      --format json
+      "$prompt")
   fi
   if [[ "$DRY_RUN" -eq 1 ]]; then
     log "[$KIND] DRY RUN — would run from $BISHOP_ROOT (engine=$ENGINE):"
@@ -506,7 +854,7 @@ for line in open(path):
             run_failed = True
     elif kind == "error":
         err = e.get("error") or {}
-        errors.append((err.get("data") or {}).get("message") or err.get("name") or "error")
+        errors.append((err.get("data") or {}).get("message") or err.get("message") or err.get("type") or "error")
 text = " ".join(texts).strip().replace("\n", " | ")
 failed = bool(errors) or steps == 0 or run_failed
 flag = ("ERROR run closed as failed " if run_failed else "ERROR ") if failed else ""

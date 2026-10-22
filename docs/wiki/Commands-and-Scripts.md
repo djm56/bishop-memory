@@ -104,7 +104,7 @@ scripts/triage-run.sh process  [--category SLUG] [--limit N] [--engine claude|op
 scripts/triage-run.sh grade    [--limit N] [--mission ID[,ID…]] [--regrade] [--engine claude|opencode] [--model M] [--dry-run]
 ```
 
-The single entry point for all three agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for credentials and defaults, checks `/healthz`, checks there is work, then runs the agent headless from the checkout with only the `bishop-triage` MCP server and the agent's tools, on Claude Code (`claude -p`, the default) or OpenCode (`opencode run`, using your own OpenCode config for the provider and key). `--dry-run` prints the exact command; on opencode it also checks the agent resolves. `make triage-classify` / `triage-process` take `ENGINE=` and `MODEL=` for one run. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's result beside it (`.json` for claude, `.jsonl` events for opencode).
+The single entry point for all three agents; launchd and `make` call it. Sources `.env` (or `TRIAGE_ENV_FILE`) for credentials and defaults, checks `/healthz`, checks there is work, then runs the agent headless from the checkout with only the `bishop-triage` MCP server and the agent's tools, on Claude Code (`claude -p`, the default) or OpenCode (`opencode run`, using your own OpenCode config for the provider and key). `--dry-run` prints the exact command; on opencode it also runs the agent guard, so a dry run exits 2 or 4 where a real run would not start. The opencode engine needs OpenCode v2; the runner was observed on 2.0.32, and only a live grade run on the v2 config shape (evidence: [Developer: Triage Agents](Developer-Triage-Agents#the-pieces)); see also [switching to OpenCode](Developer-Triage-Agents#switching-to-opencode). `--help` and `-h` print the header comment and exit 0 wherever they appear in the arguments, before any env file is read. `make triage-classify` / `triage-process` take `ENGINE=` and `MODEL=` for one run. Logs to `$TRIAGE_LOG_DIR/triage.log` (default `~/Library/Logs/bishop-memory`) and keeps each run's result beside it (`.json` for claude, `.jsonl` events for opencode).
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -118,11 +118,12 @@ The single entry point for all three agents; launchd and `make` call it. Sources
 | `TRIAGE_MAX_TURNS` | 60 / 120 / 20 | Turn cap (steps on opencode) |
 | `TRIAGE_MAX_BUDGET_USD` | 2 / 5 / 2 | Spend cap per run; claude only |
 | `TRIAGE_TIMEOUT_MIN` | 45 (20 for grade) | Stop a run still going after this many minutes; `0` never |
+| `TRIAGE_GUARD_TIMEOUT_SEC` | 30 | Seconds the opencode agent listing may take before the guard exits 4; a whole number of at least 1; validated on the opencode engine only |
 | `TRIAGE_ADD_DIRS` | every registered harness checkout | Read-only directories for the processor |
 | `TRIAGE_ENV_FILE` | `<checkout>/.env` | Credentials file |
 | `CLAUDE_BIN` / `OPENCODE_BIN` | `claude` / `opencode` | CLI per engine |
 
-Exit 0 ran or nothing to do, 1 the agent failed, 2 a precondition failed (service down, `claude` missing, `mcpd` unbuildable), 64 usage.
+Exit 0 ran or nothing to do; 1 the agent run failed or timed out; 2 the guard refused the agent, or a precondition the run needs was not met; 4 the guard could not finish checking the agent, so nothing ran; 64 usage error.
 
 ### `scripts/install-triage-schedule.sh`
 
