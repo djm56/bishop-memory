@@ -219,9 +219,9 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 		{"no_row", "", nil, nil},
 		{"pending", `INSERT INTO mission_grades (mission_id, state, attempts) VALUES (?, 'pending', 1)`, "pending", nil},
 		{"graded", `INSERT INTO mission_grades (mission_id, state, grade, summary, suggestions, signals, graded_by, graded_at)
-			VALUES (?, 'graded', 'B', 'old summary', 'old advice', '{"steps":4}', 'model', CURRENT_TIMESTAMP)`, "graded", "B"},
+			VALUES (?, 'graded', 'B', 'old summary', 'old advice', '{"steps":4}', 'model', '2026-10-01 10:00:00')`, "graded", "B"},
 		{"insufficient", `INSERT INTO mission_grades (mission_id, state, summary, graded_by, graded_at)
-			VALUES (?, 'insufficient', 'old summary', 'model', CURRENT_TIMESTAMP)`, "insufficient", nil},
+			VALUES (?, 'insufficient', 'old summary', 'model', '2026-10-01 10:00:00')`, "insufficient", nil},
 		{"skipped", `INSERT INTO mission_grades (mission_id, state, attempts) VALUES (?, 'skipped', 2)`, "skipped", nil},
 	}
 	for _, tc := range prior {
