@@ -3,7 +3,7 @@ package model
 // ClaimGradesRequest is the JSON body for POST /v1/mission-grades/claim.
 // Without mission_ids the server claims the oldest finished missions that
 // have no grade yet; with them it claims exactly those (each must be
-// finished and not already graded).
+// finished, and hold neither a verdict nor an exclusion).
 type ClaimGradesRequest struct {
 	RunID      *int64   `json:"run_id"`
 	Limit      int64    `json:"limit" binding:"omitempty,min=1,max=10"`
@@ -26,4 +26,11 @@ type WriteGradesRequest struct {
 	GradedBy string      `json:"graded_by" binding:"required,max=128"`
 	RunID    *int64      `json:"run_id"`
 	Items    []GradeItem `json:"items" binding:"required,min=1,max=10,dive"`
+}
+
+// ExclusionRequest is the JSON body for PUT /v1/mission-grades/:missionID/exclusion.
+// Note says why the mission does not count. It is stored in the row's summary,
+// which takes the same 700-character cap as a verdict's summary.
+type ExclusionRequest struct {
+	Note string `json:"note" binding:"required,max=700"`
 }

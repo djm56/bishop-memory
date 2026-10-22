@@ -123,8 +123,8 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 		}
 
 		// Mission grading (grades.go). The grader claims and writes through
-		// mcpd's triage profile; DELETE is the operator's regrade and is
-		// registered in no mcpd profile.
+		// mcpd's triage profile. DELETE is the operator's regrade, and the
+		// exclusion routes are the operator's N/A. None is registered in any mcpd profile.
 		grades := v1.Group("/mission-grades")
 		{
 			grades.GET("", listGradesHandler(db))
@@ -133,6 +133,8 @@ func NewRouterWithKeys(cfg config.Config, db *sql.DB, keys *auth.Store) *gin.Eng
 			grades.GET("/performance", performanceHandler(db))
 			grades.POST("/claim", claimGradesHandler(db))
 			grades.DELETE("/:missionID", deleteGradeHandler(db))
+			grades.PUT("/:missionID/exclusion", setExclusionHandler(db))
+			grades.DELETE("/:missionID/exclusion", clearExclusionHandler(db))
 		}
 
 		memory := v1.Group("/memory")
