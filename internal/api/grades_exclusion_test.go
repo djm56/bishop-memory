@@ -836,3 +836,131 @@ func TestRegradeRefusesExcludedMission(t *testing.T) {
 		}
 	})
 }
+
+// hudMissionIDs runs GET path against the HUD list and returns the mission ids
+// it lists.
+func hudMissionIDs(t *testing.T, router *gin.Engine, path string) []string {
+	t.Helper()
+	code, out := do(t, router, http.MethodGet, path, nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET %s = %d %v", path, code, out)
+	}
+	ids := []string{}
+	for _, m := range out["missions"].([]any) {
+		ids = append(ids, m.(map[string]any)["id"].(string))
+	}
+	return ids
+}
+
+// hudRowsByID runs GET /v1/hud/missions and returns each listed row keyed by
+// mission id.
+func hudRowsByID(t *testing.T, router *gin.Engine) map[string]map[string]any {
+	t.Helper()
+	code, out := do(t, router, http.MethodGet, "/v1/hud/missions", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /v1/hud/missions = %d %v", code, out)
+	}
+	rows := map[string]map[string]any{}
+	for _, m := range out["missions"].([]any) {
+		row := m.(map[string]any)
+		rows[row["id"].(string)] = row
+	}
+	return rows
+}
+
+// hudGradeFixture seeds four finished missions: one set aside by the operator,
+// one graded B, one with a pending claim and one with no grade row at all. It
+// returns the router and the four ids in that order.
+func hudGradeFixture(t *testing.T) (*gin.Engine, string, string, string, string) {
+	t.Helper()
+	excluded, graded, pending, unscored := "mission-20261022-91", "mission-20261022-92", "mission-20261022-93", "mission-20261022-94"
+	router, db := finishedFixture(t, excluded, graded, pending, unscored)
+	seedGradeRow(t, db, `INSERT INTO mission_grades (mission_id, state, grade, summary) VALUES (?, 'graded', 'B', 's')`, graded)
+	seedGradeRow(t, db, `INSERT INTO mission_grades (mission_id, state, attempts) VALUES (?, 'pending', 1)`, pending)
+	excludeMission(t, router, excluded, "test mission")
+	return router, excluded, graded, pending, unscored
+}
+
+// TestHUDGradeFilterAndNoteForExcluded checks the HUD's grade filter and the
+// note it carries against an excluded row. An excluded mission is not ungraded.
+// The na filter, and its excluded synonym, list only excluded missions. The
+// letter filter is unchanged. The list row carries the operator's note for an
+// excluded mission and null for any other. Each subtest builds its own database.
+func TestHUDGradeFilterAndNoteForExcluded(t *testing.T) {
+	t.Run("ungraded_drops_excluded", func(t *testing.T) {
+		router, excluded, _, _, _ := hudGradeFixture(t)
+		if ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=ungraded"); hasID(ids, excluded) {
+			t.Fatalf("grade=ungraded lists the excluded mission %s: %v", excluded, ids)
+		}
+	})
+
+	// Mirror: a mission with no grade row at all is still ungraded.
+	t.Run("ungraded_keeps_unscored", func(t *testing.T) {
+		router, _, _, _, unscored := hudGradeFixture(t)
+		if ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=ungraded"); !hasID(ids, unscored) {
+			t.Fatalf("grade=ungraded omits the unscored mission %s: %v", unscored, ids)
+		}
+	})
+
+	// Control: a pending claim is not a grade, so it stays ungraded.
+	t.Run("ungraded_keeps_pending", func(t *testing.T) {
+		router, _, _, pending, _ := hudGradeFixture(t)
+		if ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=ungraded"); !hasID(ids, pending) {
+			t.Fatalf("grade=ungraded omits the pending mission %s: %v", pending, ids)
+		}
+	})
+
+	t.Run("na_lists_excluded", func(t *testing.T) {
+		router, excluded, _, _, _ := hudGradeFixture(t)
+		if ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=na"); !hasID(ids, excluded) {
+			t.Fatalf("grade=na = %v, want the excluded mission %s", ids, excluded)
+		}
+	})
+
+	t.Run("na_omits_other_states", func(t *testing.T) {
+		router, excluded, graded, pending, unscored := hudGradeFixture(t)
+		ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=na")
+		if !hasID(ids, excluded) {
+			t.Fatalf("control failed: grade=na omits the excluded mission %s: %v", excluded, ids)
+		}
+		for _, other := range []string{graded, pending, unscored} {
+			if hasID(ids, other) {
+				t.Fatalf("grade=na lists %s, which is not excluded: %v", other, ids)
+			}
+		}
+	})
+
+	t.Run("na_synonym_excluded", func(t *testing.T) {
+		router, excluded, _, _, _ := hudGradeFixture(t)
+		if ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=excluded"); !hasID(ids, excluded) {
+			t.Fatalf("grade=excluded = %v, want the excluded mission %s", ids, excluded)
+		}
+	})
+
+	// Control: the letter filter still lists only the graded mission.
+	t.Run("letter_filter_unchanged", func(t *testing.T) {
+		router, excluded, graded, _, _ := hudGradeFixture(t)
+		ids := hudMissionIDs(t, router, "/v1/hud/missions?grade=B")
+		if !hasID(ids, graded) || hasID(ids, excluded) {
+			t.Fatalf("grade=B = %v, want the graded mission %s and not %s", ids, graded, excluded)
+		}
+	})
+
+	t.Run("list_note_on_excluded", func(t *testing.T) {
+		router, excluded, _, _, _ := hudGradeFixture(t)
+		if note := hudRowsByID(t, router)[excluded]["excluded_note"]; note != "test mission" {
+			t.Fatalf("excluded_note on the excluded mission's HUD row = %v, want the operator's note", note)
+		}
+	})
+
+	t.Run("list_note_null_on_graded", func(t *testing.T) {
+		router, excluded, graded, _, _ := hudGradeFixture(t)
+		rows := hudRowsByID(t, router)
+		if note := rows[excluded]["excluded_note"]; note != "test mission" {
+			t.Fatalf("control failed: excluded_note on the excluded mission's HUD row = %v", note)
+		}
+		if note := rows[graded]["excluded_note"]; note != nil {
+			t.Fatalf("excluded_note on the graded mission's HUD row = %v, want null", note)
+		}
+	})
+}

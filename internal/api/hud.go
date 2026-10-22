@@ -75,11 +75,16 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 			}
 			where = append(where, "("+clause+")")
 		}
-		// grade: a letter A-F, or "ungraded" for missions without a verdict.
+		// grade: a letter A-F; "ungraded" for a mission with no verdict that is
+		// not excluded; "na" (or its synonym "excluded") for the operator's N/A.
 		if v := strings.TrimSpace(c.Query("grade")); v != "" {
-			if strings.EqualFold(v, "ungraded") {
-				where = append(where, "(SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) IS NULL")
-			} else {
+			switch {
+			case strings.EqualFold(v, "ungraded"):
+				// An excluded row has no grade, so the grade test alone would list it as ungraded.
+				where = append(where, "(SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) IS NULL AND (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) IS NOT 'excluded'")
+			case strings.EqualFold(v, "na"), strings.EqualFold(v, "excluded"):
+				where = append(where, "(SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) = 'excluded'")
+			default:
 				where = append(where, "(SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) = ?")
 				args = append(args, strings.ToUpper(v))
 			}
@@ -89,6 +94,7 @@ func hudMissionsHandler(db *sql.DB) gin.HandlerFunc {
 			SELECT m.id, m.title, m.status, m.outcome, m.harness, m.owner, m.priority,
 			       (SELECT g.grade FROM mission_grades g WHERE g.mission_id = m.id) AS grade,
 			       (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) AS grade_state,
+			       (SELECT g.summary FROM mission_grades g WHERE g.mission_id = m.id AND g.state = 'excluded') AS excluded_note,
 			       m.opened_at, m.closed_at, m.updated_at,
 			       ` + lastActivitySQL + ` AS last_activity,
 			       ` + staleSQL + ` AS stale,
