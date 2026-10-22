@@ -4174,9 +4174,10 @@
       "language": "go",
       "file": "internal/store/mission_grades.go",
       "line": 157,
-      "before": "err != nil {",
-      "after": "err == nil {",
-      "property": "A successful restore is logged and a failed one is not (the opposite branch of W1-LOG)",
+      "before": "if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {\n\t\tlog.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)\n\t}",
+      "after": "if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {\n\t\tlog.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)\n\t} else {\n\t\tlog.Print(\"mission_grades rebuild: foreign keys restored\")\n\t}",
+      "summary": "the success branch logs too: an else branch writes a line when the restore works, so a restore that works is reported as well as one that fails",
+      "property": "A successful restore is logged as well as a failed one (the opposite branch of W1-LOG: the success branch logs, where W1-LOG removes the failure log)",
       "mirror": "W1-LOG",
       "package": "./internal/store",
       "killers": [
