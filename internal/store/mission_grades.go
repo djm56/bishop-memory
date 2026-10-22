@@ -15,8 +15,8 @@
 // rename.
 //
 // Nothing declares mission_grades as a parent, so dropping it removes no
-// dependent rows. Every row the old table holds satisfies the new CHECK: the
-// new CHECK only adds a state, and no existing row holds it.
+// dependent rows. Every row the old table holds satisfies the rebuilt CHECKS,
+// which admit state 'excluded' and add CHECK (state <> 'excluded' OR grade IS NULL): no old row holds 'excluded'.
 package store
 
 import (
