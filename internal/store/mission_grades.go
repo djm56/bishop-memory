@@ -24,6 +24,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -94,9 +95,9 @@ func EnsureMissionGradeExcluded(db *sql.DB) error {
 	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
 		return fmt.Errorf("mission_grades rebuild: foreign keys off: %w", err)
 	}
-	// Whatever happens below, the connection goes back to the pool with
-	// foreign keys enforced again.
-	defer conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`) //nolint:errcheck
+	// Whatever happens below, the connection is handed back with foreign keys
+	// enforced again; if that restore fails, restoreForeignKeys logs it.
+	defer restoreForeignKeys(ctx, conn)
 
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -145,4 +146,15 @@ func EnsureMissionGradeExcluded(db *sql.DB) error {
 		return fmt.Errorf("mission_grades rebuild: commit: %w", err)
 	}
 	return nil
+}
+
+// restoreForeignKeys turns foreign key enforcement back on for the pooled
+// connection the rebuild used. The rebuild has already answered when it runs,
+// so a failure cannot be returned and is logged instead. A connection left with
+// foreign keys off would silently stop every ON DELETE CASCADE on the app's
+// only connection.
+func restoreForeignKeys(ctx context.Context, conn *sql.Conn) {
+	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+		log.Printf("mission_grades rebuild: restoring foreign keys: %v", err)
+	}
 }

@@ -324,6 +324,72 @@ func TestEnsureMissionGradeExcludedFreshDatabase(t *testing.T) {
 	})
 }
 
+// failedRebuild runs the rebuild over db, which the caller has arranged to fail,
+// and checks what the failure leaves behind: the rows and the table definition
+// exactly as they were, and foreign keys still enforced on the pooled
+// connection. It returns the rebuild's error so the caller can name the step
+// that failed.
+func failedRebuild(t *testing.T, db *sql.DB) error {
+	t.Helper()
+	before := missionGradeRows(t, db)
+	definition := missionGradesTableSQL(t, db)
+	err := EnsureMissionGradeExcluded(db)
+	if err == nil {
+		t.Fatal("the rebuild returned no error")
+	}
+	if diff := firstRowDifference(before, missionGradeRows(t, db)); diff != "" {
+		t.Fatalf("a failed rebuild changed the rows: %s", diff)
+	}
+	if got := missionGradesTableSQL(t, db); got != definition {
+		t.Fatalf("a failed rebuild changed the table definition:\nbefore: %s\nafter:  %s", definition, got)
+	}
+	if fk := scalarInt(t, db, `PRAGMA foreign_keys`); fk != 1 {
+		t.Fatalf("foreign_keys after a failed rebuild = %d, want 1", fk)
+	}
+	return err
+}
+
+// TestEnsureMissionGradeExcludedRebuildFailure runs the rebuild where it must
+// fail, one failure per subtest on its own legacy database. The last subtest is
+// the control: the same restore of foreign keys runs when the rebuild succeeds.
+func TestEnsureMissionGradeExcludedRebuildFailure(t *testing.T) {
+	t.Run("fails_before_any_change", func(t *testing.T) {
+		// The first statement fails, because the rebuild's temporary table already exists.
+		db := legacyGradesDB(t)
+		if _, err := db.Exec(`CREATE TABLE mission_grades_rebuild (x INTEGER)`); err != nil {
+			t.Fatalf("pre-create mission_grades_rebuild: %v", err)
+		}
+		if err := failedRebuild(t, db); !strings.Contains(err.Error(), "mission_grades_rebuild") {
+			t.Fatalf("rebuild error = %v; want it to name mission_grades_rebuild", err)
+		}
+	})
+
+	t.Run("fails_after_drop_rolls_back", func(t *testing.T) {
+		// A view over mission_grades lets the DROP run and makes the RENAME fail,
+		// so the rollback has a dropped table to put back.
+		db := legacyGradesDB(t)
+		if _, err := db.Exec(`CREATE VIEW grade_probe AS SELECT mission_id FROM mission_grades`); err != nil {
+			t.Fatalf("create view: %v", err)
+		}
+		if err := failedRebuild(t, db); !strings.Contains(err.Error(), "grade_probe") {
+			t.Fatalf("rebuild error = %v; want the rename to fail on grade_probe", err)
+		}
+		if n := scalarInt(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE name = 'mission_grades_rebuild'`); n != 0 {
+			t.Fatalf("%d mission_grades_rebuild left after the rollback, want 0", n)
+		}
+	})
+
+	t.Run("success_restores_foreign_keys", func(t *testing.T) {
+		db := legacyGradesDB(t)
+		if err := EnsureMissionGradeExcluded(db); err != nil {
+			t.Fatalf("EnsureMissionGradeExcluded: %v", err)
+		}
+		if fk := scalarInt(t, db, `PRAGMA foreign_keys`); fk != 1 {
+			t.Fatalf("foreign_keys after a successful rebuild = %d, want 1", fk)
+		}
+	})
+}
+
 // TestMissionGradesDefinitionMatchesSchema keeps the rebuild's table definition
 // identical to db/schema.sql's, so a rebuilt database and a fresh one agree.
 func TestMissionGradesDefinitionMatchesSchema(t *testing.T) {

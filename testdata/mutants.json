@@ -3323,7 +3323,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 82,
+      "line": 83,
       "before": "if strings.Contains(definition, \"'excluded'\") {",
       "after": "if strings.Contains(definition, \"'excluded'\") || true {",
       "property": "A database whose mission_grades lacks 'excluded' is rebuilt, not left on the old CHECK",
@@ -3338,7 +3338,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 82,
+      "line": 83,
       "before": "if strings.Contains(definition, \"'excluded'\") {",
       "after": "if strings.Contains(definition, \"'excluded'\") && false {",
       "property": "A table that already admits 'excluded' is left alone (the opposite edge)",
@@ -3353,7 +3353,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 122,
+      "line": 123,
       "before": "missionGradesIndex,",
       "after": "",
       "summary": "the index statement is removed from the rebuild, so the rebuilt table has no idx_mission_grades_state",
@@ -3369,7 +3369,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 58,
+      "line": 59,
       "before": "ON mission_grades(state)",
       "after": "ON mission_grades(graded_at)",
       "property": "The index the rebuild recreates covers state, the column the schema declares it on (the opposite edge)",
@@ -3384,7 +3384,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 54,
+      "line": 55,
       "before": "suggestions, signals, graded_by",
       "after": "suggestions, graded_by",
       "property": "The rebuild copies signals, the JSON the grade was written against",
@@ -3399,7 +3399,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/store/mission_grades.go",
-      "line": 54,
+      "line": 55,
       "before": "run_id, attempts, claimed_at",
       "after": "run_id, claimed_at",
       "property": "The rebuild copies attempts, the count the claim's retry limit reads (the opposite column)",
@@ -4041,6 +4041,99 @@
       "package": "./internal/api",
       "killers": [
         "TestExcludedMissionIsNeverClaimed/spent_pending_is_skipped"
+      ]
+    },
+    {
+      "id": "W1-ERR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 127,
+      "before": "return fmt.Errorf(\"mission_grades rebuild: %w\", err)",
+      "after": "return nil",
+      "property": "A statement that fails makes the rebuild return its error",
+      "mirror": "W1-ERR-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change"
+      ]
+    },
+    {
+      "id": "W1-ERR-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 126,
+      "before": "err != nil {",
+      "after": "err == nil {",
+      "property": "A statement that succeeds does not fail the rebuild (the opposite edge)",
+      "mirror": "W1-ERR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "W1-ROLLBACK",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 106,
+      "before": "defer tx.Rollback()",
+      "after": "defer tx.Commit()",
+      "property": "A failed rebuild rolls back, so the rows and the table definition are as they were",
+      "mirror": "W1-COMMIT",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_after_drop_rolls_back"
+      ]
+    },
+    {
+      "id": "W1-COMMIT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 145,
+      "before": "tx.Commit()",
+      "after": "tx.Rollback()",
+      "property": "A successful rebuild commits (the opposite edge: it rolls back, and the widened table is lost)",
+      "mirror": "W1-ROLLBACK",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/admits_excluded_without_grade"
+      ]
+    },
+    {
+      "id": "W1-FK-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 157,
+      "before": "PRAGMA foreign_keys = ON",
+      "after": "PRAGMA foreign_keys = OFF",
+      "property": "Foreign keys are enforced on the pooled connection after a rebuild, whether it failed or not",
+      "mirror": "W1-FK-ABSENT",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change",
+        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys"
+      ]
+    },
+    {
+      "id": "W1-FK-ABSENT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 100,
+      "before": "defer restoreForeignKeys(ctx, conn)",
+      "after": "",
+      "summary": "the restore is never deferred, so the connection is handed back with foreign keys off",
+      "property": "Every exit from the rebuild restores foreign keys (the opposite edge: no restore runs)",
+      "mirror": "W1-FK-OFF",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys",
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change"
       ]
     }
   ]
