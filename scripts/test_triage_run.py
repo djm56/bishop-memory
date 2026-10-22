@@ -2001,16 +2001,25 @@ class GradeExcluded(TriageRunCase):
         self.assertEqual(self.claimed(), ["A", "C"], "claim was %r; expected ['A', 'C']" % (self.claimed(),))
 
     def test_all_named_missions_excluded_exits_0_with_nothing_run(self):
-        """Path: --regrade --mission A,B with both excluded logs both skips, exits 0, deletes nothing and starts no grader.
+        """Path: --regrade --mission A,B with both excluded exits 0, deletes nothing, starts no grader, logs a skip line for A and for B, and logs the all-excluded reason.
 
-        Mutant GRADE-ALLEX-OFF (the all-excluded test no longer matches) starts the
-        grader with an empty claim, and this test catches it.
+        Each claim is asserted: the exit code, the DELETE set, the grader not
+        started, the two skip lines (read from the log by skips()) and the
+        all-excluded line (read from the log by text). Mutant GRADE-ALLEX-OFF (the
+        all-excluded test no longer matches) starts the grader with an empty claim.
+        GRADE-SKIP-PRINT-OFF logs no skip line. GRADE-ALLEX-LOG-OFF drops the
+        all-excluded line and GRADE-ALLEX-LOG-WRONG gives another reason; the failure
+        message carries the log, so the two read differently.
         """
         self.serve_hud(states={"A": "excluded", "B": "excluded"})
         proc = self.grade("--mission", "A,B", "--regrade")
         self.assertEqual(proc.returncode, 0, "every named mission excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
         self.assertEqual(self.server.deletes, [], "DELETE set %r; expected none" % (self.server.deletes,))
         self.assertFalse(self.ran(), "the grader was started for a request whose missions are all excluded")
+        skips = self.skips()
+        self.assertTrue(skips == ["A", "B"], "skip lines were %r; expected ['A', 'B']; log: %s" % (skips, self.log_text()))
+        reason = "[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run"
+        self.assertIn(reason, self.log(), "no all-excluded line; log: %s" % self.log_text())
 
     def test_an_ungraded_mission_beside_an_excluded_one_still_runs(self):
         """Path (control for the all-excluded exit): --mission A,B with A excluded and B ungraded starts the grader for B alone.

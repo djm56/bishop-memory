@@ -3027,7 +3027,7 @@
       "killers": [
         "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission",
         "GradeExcluded.test_dry_run_reports_the_skip_for_the_excluded_mission",
-        "GradeExcluded.test_plain_mission_drops_the_excluded_one_from_the_claim"
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
       ]
     },
     {
@@ -3172,6 +3172,36 @@
       "suite": "scripts/test_triage_run.py",
       "killers": [
         "GradeExcluded.test_an_ungraded_mission_beside_an_excluded_one_still_runs"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-LOG-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 659,
+      "before": "log \"[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run\"",
+      "after": ":",
+      "property": "A request whose named missions are all excluded logs why nothing ran",
+      "mirror": "GRADE-ALLEX-LOG-WRONG",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-LOG-WRONG",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 659,
+      "before": "log \"[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run\"",
+      "after": "log \"[grade] every finished mission has a verdict; nothing to do\"",
+      "property": "The line logged when every named mission is excluded gives that reason, not another message's",
+      "mirror": "GRADE-ALLEX-LOG-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
       ]
     },
     {
