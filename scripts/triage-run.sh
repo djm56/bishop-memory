@@ -486,6 +486,7 @@ PY
 # is not in the listing. The allowlist accepts the external_directory allows
 # that block adds, which holds either way: if a later OpenCode puts them in the
 # listing, the guard still accepts it.
+#
 # The timeout uses the perl alarm the run uses. A cold or empty listing is
 # retried before the guard gives up.
 guard_agent() (
@@ -709,7 +710,7 @@ else
   # auto-updated. small_model is pinned to the run's model so no side call
   # (titles, compaction) goes to another provider.
   # The server is written in the v2 shape, mcp.servers.<name>, with codemode
-  # false. v2 has no `enabled` key: a server is on unless `disabled` is true.
+  # false and with neither `enabled` nor `disabled`.
   # Observed on 2.0.32: the binary's schema text for `codemode` reads "Expose
   # this server's tools through Code Mode. Defaults to true", and its tool
   # snapshot sends a tool to Code Mode unless its codemode is false
@@ -718,8 +719,12 @@ else
   # by name refused with `No tool named "bishop-triage_triage_run_start" is currently
   # available`; `opencode api --standalone GET /api/config` reports a legacy
   # mcp.<name> entry as mcp.servers.<name> with no codemode, and the v2 shape
-  # as written here with codemode false. Not observed: a live run on this
-  # shape, in which the model calls a bishop-triage tool by name.
+  # as written here with codemode false; given a server with `enabled` false and
+  # `disabled` true, it lists `disabled` and no `enabled`
+  # (LayeredConfigRealOpenCode.test_real_opencode_lists_disabled_and_drops_enabled).
+  # Not observed: a live run on this shape, in which the model calls a
+  # bishop-triage tool by name; and what a live session does with `disabled`,
+  # so that a server is on unless `disabled` is true is an assumption.
   OC_CONFIG="$(python3 - "$MCPD_BIN" "$URL" "$AGENT" "$MAX_TURNS" "$MODEL" "$ADD_DIRS" <<'PY'
 import json, sys
 mcpd, url, agent, steps, model, dirs = sys.argv[1:7]
