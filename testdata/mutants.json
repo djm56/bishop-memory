@@ -3444,7 +3444,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 151,
+      "line": 154,
       "before": "case state.Valid && state.String == \"excluded\":",
       "after": "case false:",
       "property": "An explicitly named excluded mission is refused, not claimed",
@@ -3459,7 +3459,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 151,
+      "line": 154,
       "before": "case state.Valid && state.String == \"excluded\":",
       "after": "case state.Valid && state.String == \"pending\":",
       "property": "An explicitly named pending retry is still claimed (the opposite edge)",
@@ -3474,7 +3474,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 170,
+      "line": 173,
       "before": "g.state = 'pending' AND g.attempts < ? AND",
       "after": "g.state IN ('pending', 'excluded') AND g.attempts < ? AND",
       "property": "The claim sweep never claims an excluded mission",
@@ -3489,7 +3489,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 170,
+      "line": 173,
       "before": "g.state = 'pending' AND g.attempts < ? AND",
       "after": "g.state = 'excluded' AND g.attempts < ? AND",
       "property": "The claim sweep still claims a pending retry with attempts to spare (the opposite edge)",
@@ -3504,7 +3504,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 86,
+      "line": 87,
       "before": "(g.state = 'pending' AND g.attempts < ?)",
       "after": "(g.state IN ('pending', 'excluded') AND g.attempts < ?)",
       "property": "The waiting count leaves out excluded missions",
@@ -3519,7 +3519,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 86,
+      "line": 87,
       "before": "(g.state = 'pending' AND g.attempts < ?)",
       "after": "(g.state = 'excluded' AND g.attempts < ?)",
       "property": "The waiting count includes a pending retry (the opposite edge)",
@@ -3534,7 +3534,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 555,
+      "line": 558,
       "before": "WHERE mission_id = ? AND state = 'pending'",
       "after": "WHERE mission_id = ? AND state IN ('pending', 'excluded')",
       "property": "A verdict is never written over an excluded row",
@@ -3549,7 +3549,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 555,
+      "line": 558,
       "before": "WHERE mission_id = ? AND state = 'pending'",
       "after": "WHERE mission_id = ? AND state = 'excluded'",
       "property": "A claimed pending mission takes its verdict (the opposite edge)",
@@ -3564,7 +3564,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 708,
+      "line": 711,
       "before": "p.Excluded++",
       "after": "p.Excluded++; p.Graded++",
       "property": "An excluded mission enters no graded count, so it changes no average",
@@ -3579,7 +3579,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 701,
+      "line": 704,
       "before": "sums[p] += gradePoints[grade]",
       "after": "sums[p] += 0",
       "property": "A graded mission's points enter the average (the opposite edge)",
@@ -3594,7 +3594,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 609,
+      "line": 612,
       "before": "'graded', 'insufficient', 'excluded')",
       "after": "'graded', 'insufficient')",
       "property": "The default grade list includes excluded rows",
@@ -3609,7 +3609,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 609,
+      "line": 612,
       "before": "'graded', 'insufficient', 'excluded')",
       "after": "'graded', 'insufficient', 'excluded', 'pending')",
       "property": "The default grade list omits pending claims (the opposite edge)",
@@ -3624,7 +3624,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 778,
+      "line": 807,
       "before": "if note == \"\" {",
       "after": "if false {",
       "property": "A note of only whitespace is refused",
@@ -3639,7 +3639,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 778,
+      "line": 807,
       "before": "if note == \"\" {",
       "after": "if true {",
       "property": "A note with text is accepted (the opposite edge)",
@@ -3654,7 +3654,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 805,
+      "line": 834,
       "before": "if !gradable {",
       "after": "if false {",
       "property": "An exclusion is refused for an unfinished mission with 409",
@@ -3669,7 +3669,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 805,
+      "line": 834,
       "before": "if !gradable {",
       "after": "if true {",
       "property": "A finished mission is refused as unfinished (the opposite edge)",
@@ -3684,7 +3684,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 797,
+      "line": 826,
       "before": "if errors.Is(err, sql.ErrNoRows) {",
       "after": "if false {",
       "property": "An exclusion for an unknown mission is answered 404, not 500",
@@ -3699,7 +3699,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 797,
+      "line": 826,
       "before": "if errors.Is(err, sql.ErrNoRows) {",
       "after": "if true {",
       "property": "A known mission is answered as unknown (the opposite edge)",
@@ -3714,7 +3714,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 849,
+      "line": 878,
       "before": "if n, _ := result.RowsAffected(); n == 0 {",
       "after": "if n, _ := result.RowsAffected(); n == 0 && false {",
       "property": "Lifting an exclusion that is not there is answered 404",
@@ -3729,7 +3729,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 849,
+      "line": 878,
       "before": "if n, _ := result.RowsAffected(); n == 0 {",
       "after": "if n, _ := result.RowsAffected(); n == 0 || true {",
       "property": "A lifted exclusion is answered 404 (the opposite edge)",
@@ -3744,7 +3744,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 844,
+      "line": 873,
       "before": "AND state = 'excluded'",
       "after": "",
       "summary": "the state test is removed from the lift's DELETE, so the exclusion route can delete a verdict",
@@ -3760,7 +3760,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 844,
+      "line": 873,
       "before": "AND state = 'excluded'",
       "after": "AND state = 'graded'",
       "property": "The lift deletes a graded row, not an excluded one (the opposite edge)",
@@ -3775,7 +3775,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 818,
+      "line": 847,
       "before": "suggestions = NULL, signals = NULL, ",
       "after": "",
       "summary": "the upsert leaves the replaced verdict's suggestions and signals on the excluded row",
@@ -3791,7 +3791,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 817,
+      "line": 846,
       "before": "summary = excluded.summary,",
       "after": "summary = summary,",
       "property": "The note replaces the summary of the row it excludes (the opposite edge)",
@@ -3866,7 +3866,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 818,
+      "line": 847,
       "before": "signals = NULL, graded_by = 'operator'",
       "after": "signals = NULL, graded_by = 'operator', graded_at = CURRENT_TIMESTAMP",
       "summary": "the exclusion stamps graded_at with the current time, which triageRunLastActivitySQL reads as run activity",
@@ -3882,7 +3882,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 818,
+      "line": 847,
       "before": "signals = NULL, graded_by = 'operator'",
       "after": "signals = NULL, graded_by = 'operator', graded_at = NULL",
       "property": "An exclusion keeps the graded_at of the verdict it replaces, so the row still says when that verdict was written (the opposite edge: it clears the time)",
@@ -3927,7 +3927,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 829,
+      "line": 858,
       "before": "nullStringPtr(prevState)",
       "after": "nil",
       "property": "The response names the state the row held before, when it held one",
@@ -3942,7 +3942,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 829,
+      "line": 858,
       "before": "nullStringPtr(prevState)",
       "after": "prevState.String",
       "property": "A mission with no row is answered previous_state null, not an empty string (the opposite edge)",
@@ -3957,7 +3957,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 830,
+      "line": 859,
       "before": "nullStringPtr(prevGrade)",
       "after": "nil",
       "property": "The response names the grade the row held before, when it held one",
@@ -3972,7 +3972,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 830,
+      "line": 859,
       "before": "nullStringPtr(prevGrade)",
       "after": "prevGrade.String",
       "property": "A mission with no row is answered previous_grade null, not an empty string (the opposite edge)",
@@ -3987,7 +3987,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 708,
+      "line": 711,
       "before": "p.Excluded++",
       "after": "p.Excluded += 0",
       "summary": "the excluded arm increments nothing, so an excluded mission is counted nowhere",
@@ -4003,7 +4003,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 712,
+      "line": 715,
       "before": "p.Waiting++",
       "after": "p.Waiting++; p.Excluded++",
       "property": "A waiting mission is never counted under excluded (the opposite branch)",
@@ -4018,7 +4018,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 126,
+      "line": 127,
       "before": "WHERE state = 'pending' AND attempts >= ?",
       "after": "WHERE state IN ('pending', 'excluded') AND attempts >= ?",
       "property": "The claim sweep's skip leaves an excluded row alone, though its attempts are spent",
@@ -4033,7 +4033,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 126,
+      "line": 127,
       "before": "WHERE state = 'pending' AND attempts >= ?",
       "after": "WHERE state = 'excluded' AND attempts >= ?",
       "property": "The claim sweep still marks a spent pending claim skipped (the opposite edge)",
@@ -4182,6 +4182,430 @@
       "package": "./internal/store",
       "killers": [
         "TestRestoreForeignKeysLogs/open_connection_logs_nothing"
+      ]
+    },
+    {
+      "id": "CLAIM-NULL-COALESCE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 144,
+      "before": "COALESCE(`+gradableSQL+`, 0), g.state FROM missions m",
+      "after": "`+gradableSQL+`, g.state FROM missions m",
+      "property": "An explicit claim of an unfinished mission with no outcome is refused with 409, not a 500 from scanning NULL into a bool",
+      "mirror": "CLAIM-NULL-ADMIT",
+      "package": "./internal/api",
+      "killers": [
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_409"
+      ]
+    },
+    {
+      "id": "CLAIM-NULL-ADMIT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 144,
+      "before": "COALESCE(`+gradableSQL+`, 0), g.state FROM missions m",
+      "after": "COALESCE(`+gradableSQL+`, 1), g.state FROM missions m",
+      "property": "An unfinished mission with no outcome counts as gradable, so an explicit claim admits it (the opposite edge of CLAIM-NULL-COALESCE)",
+      "mirror": "CLAIM-NULL-COALESCE",
+      "package": "./internal/api",
+      "killers": [
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_409",
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_writes_no_row"
+      ]
+    },
+    {
+      "id": "DEL-EXCL-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 768,
+      "before": "if state.Valid && state.String == \"excluded\" {",
+      "after": "if state.Valid && state.String == \"\" {",
+      "property": "A regrade of an excluded mission is refused with 409 and its row is kept",
+      "mirror": "DEL-GRADED-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/excluded_refused_409",
+        "TestRegradeRefusesExcludedMission/excluded_row_kept"
+      ]
+    },
+    {
+      "id": "DEL-GRADED-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 768,
+      "before": "if state.Valid && state.String == \"excluded\" {",
+      "after": "if state.Valid && state.String == \"graded\" {",
+      "property": "A regrade of a graded verdict is still admitted (the opposite edge of DEL-EXCL-GUARD)",
+      "mirror": "DEL-EXCL-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/graded_verdict_still_deleted"
+      ]
+    },
+    {
+      "id": "HUD-UNGRADED-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 84,
+      "before": "IS NULL AND (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) IS NOT 'excluded'",
+      "after": "IS NULL",
+      "property": "grade=ungraded omits an excluded mission",
+      "mirror": "HUD-UNGRADED-NOROW",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/ungraded_drops_excluded"
+      ]
+    },
+    {
+      "id": "HUD-UNGRADED-NOROW",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 84,
+      "before": "IS NOT 'excluded'",
+      "after": "IS NOT NULL",
+      "property": "grade=ungraded still lists a mission with no grade row (the opposite edge of HUD-UNGRADED-EXCL)",
+      "mirror": "HUD-UNGRADED-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/ungraded_keeps_unscored"
+      ]
+    },
+    {
+      "id": "HUD-NA-MATCH",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 86,
+      "before": "m.id) = 'excluded'\")",
+      "after": "m.id) = 'graded'\")",
+      "property": "grade=na lists the excluded missions",
+      "mirror": "HUD-NA-OVERMATCH",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_lists_excluded",
+        "TestHUDGradeFilterAndNoteForExcluded/na_synonym_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NA-OVERMATCH",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 86,
+      "before": "m.id) = 'excluded'\")",
+      "after": "m.id) IS NOT NULL\")",
+      "property": "grade=na lists no mission that is not excluded (the opposite edge of HUD-NA-MATCH)",
+      "mirror": "HUD-NA-MATCH",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_omits_other_states"
+      ]
+    },
+    {
+      "id": "HUD-NA-ALIAS-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 85,
+      "before": "strings.EqualFold(v, \"na\"),",
+      "after": "strings.EqualFold(v, \"nx\"),",
+      "property": "grade=na is accepted as the N/A filter",
+      "mirror": "HUD-NA-ALIAS-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_lists_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NA-ALIAS-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 85,
+      "before": "strings.EqualFold(v, \"excluded\"):",
+      "after": "strings.EqualFold(v, \"exclusion\"):",
+      "property": "grade=excluded is accepted as the synonym of the N/A filter (the other spelling of HUD-NA-ALIAS-NA)",
+      "mirror": "HUD-NA-ALIAS-NA",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_synonym_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NOTE-STATE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 97,
+      "before": "g.state = 'excluded') AS excluded_note",
+      "after": "g.state = 'graded') AS excluded_note",
+      "property": "The HUD list row carries the operator's note for an excluded mission",
+      "mirror": "HUD-NOTE-ALL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_on_excluded",
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_null_on_graded"
+      ]
+    },
+    {
+      "id": "HUD-NOTE-ALL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 97,
+      "before": "AND g.state = 'excluded') AS excluded_note",
+      "after": ") AS excluded_note",
+      "property": "A graded row carries no note: the list note is only for excluded rows (the opposite edge of HUD-NOTE-STATE)",
+      "mirror": "HUD-NOTE-STATE",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_null_on_graded"
+      ]
+    },
+    {
+      "id": "UI-HUD-NA-OPTION",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 367,
+      "before": "<option value=\"na\">N/A</option>",
+      "after": "<option value=\"nx\">N/A</option>",
+      "property": "The HUD grade filter offers N/A, which lists the excluded missions",
+      "mirror": "UI-HUD-UNGRADED-OPTION",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_filter_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-UNGRADED-OPTION",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 367,
+      "before": "<option value=\"ungraded\">Ungraded</option>",
+      "after": "<option value=\"ungradedx\">Ungraded</option>",
+      "property": "The HUD grade filter still offers Ungraded beside N/A (the other non-letter option)",
+      "mirror": "UI-HUD-NA-OPTION",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_filter_ungraded"
+      ]
+    },
+    {
+      "id": "UI-HUD-LIST-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 513,
+      "before": "m.grade_state === 'excluded' ? naBadge('', m.excluded_note)",
+      "after": "m.grade_state === 'insufficient' ? naBadge('', m.excluded_note)",
+      "property": "An excluded mission reads N/A in its HUD list row",
+      "mirror": "UI-HUD-LIST-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_list_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-LIST-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 513,
+      "before": "m.grade ? gradeBadge(m.grade) + ' ' :",
+      "after": "m.grade ? gradeBadge('N/A') + ' ' :",
+      "property": "A graded mission keeps its letter in its HUD list row (the opposite edge of UI-HUD-LIST-NA)",
+      "mirror": "UI-HUD-LIST-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_list_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-HEADER-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 605,
+      "before": "d.grade?.state === 'excluded' ? naBadge('', d.grade.summary)",
+      "after": "d.grade?.state === 'insufficient' ? naBadge('', d.grade.summary)",
+      "property": "An excluded mission reads N/A in its HUD header, with its note",
+      "mirror": "UI-HUD-HEADER-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_header_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-HEADER-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 605,
+      "before": "d.grade?.grade ? gradeBadge(d.grade.grade) :",
+      "after": "d.grade?.grade ? gradeBadge('N/A') :",
+      "property": "A graded mission keeps its letter in its HUD header (the opposite edge of UI-HUD-HEADER-NA)",
+      "mirror": "UI-HUD-HEADER-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_header_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-BADGE-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 685,
+      "before": "g.state === 'excluded' ? naBadge('lg')",
+      "after": "g.state === 'insufficient' ? naBadge('lg')",
+      "property": "An excluded mission's Grade section shows a large N/A badge",
+      "mirror": "UI-HUD-BADGE-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_grade_badge_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-BADGE-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 685,
+      "before": "g.grade ? gradeBadge(g.grade, 'lg solid') :",
+      "after": "g.grade ? gradeBadge('N/A', 'lg solid') :",
+      "property": "A graded mission's Grade section keeps its large letter badge (the opposite edge of UI-HUD-BADGE-NA)",
+      "mirror": "UI-HUD-BADGE-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_badge_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-TAG-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 687,
+      "before": "g.state === 'excluded' ? '<span class=\"tag\">N/A</span>'",
+      "after": "g.state === 'excluded' ? '<span class=\"tag\">n/e</span>'",
+      "property": "An excluded mission's Grade section carries the N/A tag",
+      "mirror": "UI-HUD-TAG-INSUFF",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_grade_tag_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-TAG-INSUFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 687,
+      "before": "g.state === 'insufficient' ? '<span class=\"tag\">not enough evidence</span>'",
+      "after": "g.state === 'insufficient' ? '<span class=\"tag\">N/A</span>'",
+      "property": "An insufficient mission keeps the not-enough-evidence tag, not N/A (the opposite edge of UI-HUD-TAG-NA)",
+      "mirror": "UI-HUD-TAG-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_grade_tag_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-CHIP-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 532,
+      "before": "['excluded', 'N/A']",
+      "after": "['excluded', 'n/a']",
+      "property": "The Performance page has an N/A filter chip",
+      "mirror": "UI-PERF-CHIP-INSUFF",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_chip_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-CHIP-INSUFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 532,
+      "before": "['insufficient', 'n/e']",
+      "after": "['insufficient', 'N/A']",
+      "property": "The n/e filter chip keeps its label, not N/A (the opposite edge of UI-PERF-CHIP-NA)",
+      "mirror": "UI-PERF-CHIP-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_chip_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-HARNESS-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 473,
+      "before": "h.excluded ? `${h.excluded} N/A` : ''",
+      "after": "h.excluded ? `${h.excluded} NA` : ''",
+      "property": "Each harness subline on the Performance page names its N/A count",
+      "mirror": "UI-PERF-HARNESS-NE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_harness_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-HARNESS-NE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 473,
+      "before": "h.insufficient ? `${h.insufficient} n/e` : ''",
+      "after": "h.insufficient ? `${h.insufficient} N/A` : ''",
+      "property": "Each harness subline keeps its n/e count, not N/A (the opposite edge of UI-PERF-HARNESS-NA)",
+      "mirror": "UI-PERF-HARNESS-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_harness_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-ROW-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 488,
+      "before": "g.state === 'excluded' ? naBadge()",
+      "after": "g.state === 'insufficient' ? naBadge()",
+      "property": "An excluded mission's grade row reads N/A",
+      "mirror": "UI-PERF-ROW-NE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_row_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-ROW-NE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 488,
+      "before": "'<span class=\"tag\">n/e</span>'",
+      "after": "'<span class=\"tag\">N/A</span>'",
+      "property": "An insufficient mission's grade row keeps the n/e tag (the opposite edge of UI-PERF-ROW-NA)",
+      "mirror": "UI-PERF-ROW-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_row_insufficient"
       ]
     }
   ]
