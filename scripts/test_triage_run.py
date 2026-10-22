@@ -1775,6 +1775,18 @@ class HelpText(TriageRunCase):
         self.assertIn("Exit codes:", proc.stdout)
         self.assertIn("64 usage error.", proc.stdout)
 
+    def test_help_alone_in_either_spelling(self):
+        """Path: `--help` and `-h`, each as the only argument, run through run_help (the copied script as a subprocess).
+
+        The two exit codes are compared as one pair, so the message of a failure
+        says which spelling failed. Mutants, each first killed here with its own
+        pair: GUARD-HELP-SKIP-FIRST (the first argument is not looked at, so
+        both fail), GUARD-HELP-H-OFF (`-h` is not help) and GUARD-HELP-LONG-OFF
+        (`--help` is not help).
+        """
+        codes = tuple(self.run_help(arg).returncode for arg in ("--help", "-h"))
+        self.assertEqual(codes, (0, 0), "exit codes of `--help` alone and `-h` alone")
+
     def test_help_after_a_kind_prints_the_exit_codes(self):
         """Path: `grade --help` prints the same header, through the Exit codes paragraph.
         """
