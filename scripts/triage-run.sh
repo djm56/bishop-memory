@@ -53,10 +53,10 @@
 #                             (derived from /v1/harnesses memory_root, two levels up).
 #                             The grader works from the database only and gets none.
 #
-# grade flags: --mission names the missions to grade (each must be finished);
-# --regrade first deletes their existing verdicts (DELETE /v1/mission-grades/ID),
-# which is the only way a graded mission is graded again. --regrade needs
-# --mission.
+# grade flags: --mission names the missions to grade (each must be finished); an
+# excluded (N/A) one is logged as skipped, never deleted or claimed. --regrade
+# first deletes their existing verdicts (DELETE /v1/mission-grades/ID), which is
+# the only way a graded mission is graded again. --regrade needs --mission.
 #   CLAUDE_BIN                default: `claude` on PATH
 #   OPENCODE_BIN              default: `opencode` on PATH
 #
@@ -73,10 +73,10 @@
 # BISHOP_MEMORY_URL value in the file is a default; a variable already set in
 # the environment wins, and a flag on the command line wins over both.
 #
-# Exit codes: 0 ran, or there was nothing to do; 1 the agent run failed or timed
-# out; 2 the guard checked the agent and refused it, or a precondition the run
-# needs was not met; 4 the guard could not finish checking the agent, so nothing
-# ran; 64 usage error.
+# Exit codes: 0 ran, or there was nothing to do (every named mission excluded
+# included); 1 the agent run failed or timed out; 2 the guard checked the agent
+# and refused it, or a precondition the run needs was not met; 4 the guard, or the
+# --mission exclusion check, could not finish, so nothing ran; 64 usage error.
 
 set -euo pipefail
 
@@ -609,6 +609,35 @@ ids = [m.strip() for m in sys.stdin.read().split(",") if m.strip()]
 if not 1 <= len(ids) <= 10:
     sys.exit("name 1-10 missions")
 print(json.dumps(ids))')" || { log "[grade] --mission must name 1-10 mission ids; nothing run"; exit 64; }
+    # An excluded (N/A) mission is the operator's decision, not a grade to redo:
+    # DELETE answers 409 for it, and one excluded id in a claim refuses the whole
+    # batch. The HUD list gives every mission's grade_state and has no row cap, so
+    # one read answers for all the named missions. It runs before any DELETE or
+    # claim; if it fails, nothing is deleted or claimed. Python prints each excluded
+    # mission on its own line, then the kept list as the last line.
+    lookup_err="$(mktemp -t triage-lookup-XXXXXX)"
+    LOOKUP="$(api_curl -fsS "$URL/v1/hud/missions?grade=excluded" 2>>"$lookup_err" | python3 -c '
+import json, sys
+named = json.loads(sys.argv[1])
+body = json.load(sys.stdin)
+if not isinstance(body, dict) or not isinstance(body.get("missions"), list):
+    sys.exit("the HUD list has no missions array")
+excluded = {m.get("id") for m in body["missions"] if isinstance(m, dict) and m.get("grade_state") == "excluded"}
+for m in named:
+    if m in excluded:
+        print(m)
+print(json.dumps([m for m in named if m not in excluded]))' "$MISSION_JSON" 2>>"$lookup_err")" || { log "[grade] could not check whether the named missions are excluded: $(flat "$lookup_err"); nothing deleted or claimed; nothing run"; rm -f "$lookup_err"; exit 4; }
+    rm -f "$lookup_err"
+    KEPT_JSON="$(printf '%s\n' "$LOOKUP" | tail -n 1)"
+    EXCLUDED_IDS="$(printf '%s\n' "$LOOKUP" | sed '$d')"
+    while IFS= read -r m; do
+      if [[ -n "$m" ]]; then log "[grade] skipping $m: excluded (N/A) by the operator"; fi
+    done <<<"$EXCLUDED_IDS"
+    MISSION_JSON="$KEPT_JSON"
+    if [[ "$MISSION_JSON" == "[]" ]]; then
+      log "[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run"
+      exit 0
+    fi
     # --regrade: the operator reopening missions, here and nowhere else.
     if [[ "$REGRADE" -eq 1 ]]; then
       for m in $(printf '%s' "$MISSION_JSON" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do
