@@ -61,7 +61,8 @@ lessons into new briefs. Status: phase 0, stages 1b, 2 and 3 shipped (see
 [Shipped](#shipped)). Open: stage 1a (the fixed verdict line in the agent and
 skill definitions, waiting on ratification of decision P3); phase 2's
 Library, Activity, global search, filters in the URL, operator grade override
-(including an N/A, excluded state for test missions that should not count),
+(the N/A, excluded state for test missions that should not count: in progress
+on branch feat/grade-excluded, PR pending),
 operator notes, park or close from the HUD, and the rest of the Trends work;
 phase 3 (cost
 and usage) and phase 4 (retrieval log, directive citations, git deliverables,
