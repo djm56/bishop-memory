@@ -21,17 +21,19 @@ Most missions should land on **B** or **C**. Findings are not counted against a 
 
 A mission whose record is too thin to judge (no debrief and no steps) gets **not enough evidence** instead of a letter.
 
+**N/A** is not a grade. The operator sets it on a mission that should not count, such as a test mission, and the grader never grades it. See [Setting a mission aside](#setting-a-mission-aside-na).
+
 ## Where grades appear
 
-**Mission HUD.** Each graded mission shows its letter in the mission list and in its header, and a **Grade** section under the tiles: the letter, **Why** (the summary), **Suggestions**, and the counts the grade rests on. The list has a grade filter, including **Ungraded**.
+**Mission HUD.** Each graded mission shows its letter in the mission list and in its header, and a **Grade** section under the tiles: the letter, **Why** (the summary), **Suggestions**, and the counts the grade rests on. A mission the operator has set aside shows **N/A** in place of a letter: in the list its note is the tooltip, and in the Grade section the note is under **Why**. The list has a grade filter, including **Ungraded** and **N/A**.
 
 ![A mission's grade on the HUD, dark theme](images/missions-dark.png)
 
 **Performance page** (`/performance`, the third link in the page switch):
 
-- **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside (not enough evidence, or skipped).
-- **Harnesses** — one row per harness: its average letter and score, its latest grades newest first (each opens the mission), and **improving**, **slipping** or **steady** when its five newest grades differ from the five before them by a third of a grade or more (a dash with fewer than six). Click a row to filter the grades below to that harness; click it again to clear. **Display…** hides harnesses you do not want to see, such as test harnesses: a hidden harness drops out of the rows, the summary and the grade list, nothing is deleted, and the choice is kept in this browser.
-- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
+- **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside (not enough evidence, skipped, or N/A).
+- **Harnesses** — one row per harness: its average letter and score, a count of its N/A missions when it has any, its latest grades newest first (each opens the mission), and **improving**, **slipping** or **steady** when its five newest grades differ from the five before them by a third of a grade or more (a dash with fewer than six). Click a row to filter the grades below to that harness; click it again to clear. **Display…** hides harnesses you do not want to see, such as test harnesses: a hidden harness drops out of the rows, the summary and the grade list, nothing is deleted, and the choice is kept in this browser.
+- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count; the **N/A** button lists the set-aside missions). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
 
 The average counts A as 5 down to F as 0 and turns the result back into the nearest letter.
 
@@ -67,6 +69,41 @@ A run with nothing waiting exits at once without starting an agent. Each run mak
 - A grade, or a "not enough evidence" verdict, is final. A graded mission is never picked up again on its own.
 - A mission a run claimed but did not grade (the run failed or timed out) is retried by **one** later run. If that one fails too, the mission is marked **skipped** and left alone.
 - The only way to grade a mission again is `REGRADE=1` with its id, or `DELETE /v1/mission-grades/<id>`. No agent can do either.
+- An excluded (N/A) mission is never claimed. A run that names one skips it with a log line and leaves it alone; `DELETE /v1/mission-grades/<id>` answers 409 for it. Lift the exclusion first, and the nightly grader can claim the mission again.
+
+## Setting a mission aside (N/A)
+
+Only the operator sets this. No MCP tool reaches these routes. Both are on the HTTP API under `/v1/mission-grades/:missionID/exclusion`; the operator's side of the service is in [Developer: HTTP API](Developer-HTTP-API#mission-grades-operator-na).
+
+```sh
+# set aside: the note says why, and is required (not blank, at most 700 characters)
+curl -fsS -X PUT -H "Authorization: Bearer $BISHOP_MEMORY_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"note":"test mission, not a real run"}' "$BISHOP_MEMORY_URL/v1/mission-grades/mission-20261009-03/exclusion"
+
+# lift it: the mission is ungraded again and the nightly grader can claim it
+curl -fsS -X DELETE -H "Authorization: Bearer $BISHOP_MEMORY_API_KEY" \
+  "$BISHOP_MEMORY_URL/v1/mission-grades/mission-20261009-03/exclusion"
+```
+
+- The mission must be finished. An unknown mission answers 404; an unfinished one answers 409.
+- Setting replaces any existing row, whether it held a verdict, a claim or a skip. The response reports the `previous_state` and `previous_grade` it replaced.
+- An excluded mission is left out of the averages, the distribution and the trend, and counted under N/A on the Performance page.
+- The grader never claims it, an explicit claim naming it refuses the whole batch with 409, and a grader's verdict never overwrites it.
+- A mission set aside by hand before this route existed (`state = 'insufficient'` with `grade` NULL) is converted by the same PUT. That workaround is superseded by the route.
+
+### Upgrading a live database
+
+A database created before this change is widened the first time memoryd starts after the upgrade. The `mission_grades` table is rebuilt once, in one transaction, keeping every row, and the rebuild is idempotent after that. If the rebuild fails, it rolls back, memoryd logs a `WARNING` and keeps running, and the exclusion route answers 500 until the rebuild succeeds.
+
+Back up the database before restarting the service. `memoryd backup` writes a consistent copy and refuses a target that already exists:
+
+```sh
+DB_PATH=data/memory.db bin/memoryd backup data/memory-before-na.db
+# or, with the sqlite3 command line tool:
+sqlite3 data/memory.db ".backup data/memory-before-na.db"
+```
+
+The migration runs only when the operator restarts memoryd, so nothing changes until then.
 
 ## Settings
 

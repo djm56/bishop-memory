@@ -65,9 +65,9 @@ Above the list:
 - **Search** matches the mission id and title, and runs a full-text search over the mission's brief, progress and debrief. It needs those documents imported (see [How data gets there](#how-data-gets-there)).
 - **Harness** narrows to one harness; each option shows its mission count.
 - **Status** narrows to `in-progress`, `blocked`, `complete` or `not-started`, or to **stale** missions of any unfinished status.
-- **Grade** narrows to one [mission grade](Mission-Grading), A to F, or to **Ungraded**.
+- **Grade** narrows to one [mission grade](Mission-Grading), A to F, to **Ungraded**, or to **N/A** (missions the operator has set aside).
 
-The harness, status and grade filters are remembered in the browser. Search is not. A graded mission shows its letter beside its id, and the header adds the average grade of the missions shown.
+The harness, status and grade filters are remembered in the browser. Search is not. A graded mission shows its letter beside its id, a set-aside mission shows **N/A** there, and the header adds the average grade of the missions shown.
 
 Click a mission to open it on the right. With no `#` in the URL the newest mission opens.
 
