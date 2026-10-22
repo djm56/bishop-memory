@@ -740,3 +740,45 @@ func TestExcludedRowsInListAndHUD(t *testing.T) {
 		}
 	})
 }
+
+// TestExplicitClaimOfUnfinishedMissionRefused names an unfinished mission that
+// has no outcome in a claim. Its gradable test is NULL, which must not reach a
+// bool scan. The claim must refuse it with the same 409 it gives any unfinished
+// mission. Each subtest builds its own database.
+func TestExplicitClaimOfUnfinishedMissionRefused(t *testing.T) {
+	const open, finished = "mission-20261022-71", "mission-20261022-72"
+
+	t.Run("unfinished_null_outcome_409", func(t *testing.T) {
+		router, db := newTriageTestRouter(t)
+		seedOpenMission(t, db, open)
+		code, out := do(t, router, http.MethodPost, "/v1/mission-grades/claim", map[string]any{"mission_ids": []string{open}})
+		if code != http.StatusConflict {
+			t.Fatalf("claim of an unfinished mission with no outcome = %d %v, want 409", code, out)
+		}
+		refused, _ := out["refused"].([]any)
+		if len(refused) != 1 {
+			t.Fatalf("refused = %v, want one refusal for %s", refused, open)
+		}
+		if got, _ := refused[0].(map[string]any); got["mission_id"] != open || got["reason"] != "mission is not finished" {
+			t.Fatalf("refusal = %v, want %s refused as not finished", got, open)
+		}
+	})
+
+	t.Run("unfinished_null_outcome_writes_no_row", func(t *testing.T) {
+		router, db := newTriageTestRouter(t)
+		seedOpenMission(t, db, open)
+		do(t, router, http.MethodPost, "/v1/mission-grades/claim", map[string]any{"mission_ids": []string{open}})
+		if row := gradeRowOf(t, db, open); row != nil {
+			t.Fatalf("a refused claim wrote a row for %s: %v", open, row)
+		}
+	})
+
+	// Control: the same route claims a finished mission, so the refusal above
+	// comes from the gradable test and not from a claim that refuses everything.
+	t.Run("finished_mission_still_claimed", func(t *testing.T) {
+		router, _ := finishedFixture(t, finished)
+		if ids := claimIDs(t, router, map[string]any{"mission_ids": []string{finished}}); !hasID(ids, finished) {
+			t.Fatalf("claim of finished mission %s returned %v, want it claimed", finished, ids)
+		}
+	})
+}

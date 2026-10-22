@@ -137,8 +137,10 @@ func claimGradesHandler(db *sql.DB) gin.HandlerFunc {
 				id = strings.TrimSpace(id)
 				var gradable bool
 				var state sql.NullString
+				// COALESCE keeps the gradable test from yielding NULL for an
+				// unfinished mission with no outcome, which would not scan into a bool.
 				err := tx.QueryRowContext(ctx, `
-					SELECT `+gradableSQL+`, g.state FROM missions m
+					SELECT COALESCE(`+gradableSQL+`, 0), g.state FROM missions m
 					  LEFT JOIN mission_grades g ON g.mission_id = m.id WHERE m.id = ?`, id).Scan(&gradable, &state)
 				switch {
 				case errors.Is(err, sql.ErrNoRows):
