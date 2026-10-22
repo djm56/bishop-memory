@@ -1402,12 +1402,15 @@ class LayeredConfig(TriageRunCase):
     def test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode(self):
         """Path: the config for each kind is parsed, and the one MCP server is read as OpenCode v2 reads it.
 
-        v2 reads MCP servers from `mcp.servers`, routes a server's tools through
-        Code Mode unless `codemode` is false (so the model cannot call them by
-        name), and has no `enabled` key (a server is on unless `disabled` is
-        true). The legacy shape `mcp.<name>` is rewritten into `mcp.servers` by
-        OpenCode, and the rewrite drops `codemode`. Each assertion carries its
-        own message. Mutants, each with its mirror: GUARD-MCP-LEGACY-SHAPE and
+        v2 reads MCP servers from `mcp.servers` and routes a server's tools
+        through Code Mode unless `codemode` is false (so the model cannot call
+        them by name). The legacy shape `mcp.<name>` is rewritten into
+        `mcp.servers` by OpenCode, and the rewrite drops `codemode`. Observed on
+        2.0.32: the config listing carries `disabled` and drops `enabled`
+        (LayeredConfigRealOpenCode.test_real_opencode_lists_disabled_and_drops_enabled),
+        so the two assertions on those keys keep a dead key and a disabled flag
+        out of the config; not observed: what a live session does with
+        `disabled`. Each assertion carries its own message. Mutants, each with its mirror: GUARD-MCP-LEGACY-SHAPE and
         GUARD-MCP-LEGACY-ALSO (the shape); GUARD-MCP-CODEMODE-DROP and
         GUARD-MCP-CODEMODE-TRUE (codemode); GUARD-MCP-ENABLED-KEY and
         GUARD-MCP-DISABLED-TRUE (the server is on); GUARD-MCP-COMMAND-STR and
@@ -1426,7 +1429,7 @@ class LayeredConfig(TriageRunCase):
                 server = mcp["servers"]["bishop-triage"]
                 self.assertIn("codemode", server, "kind=%s: the server sets no codemode, so v2 routes its tools through Code Mode" % kind)
                 self.assertIs(server["codemode"], False, "kind=%s: codemode is not the JSON false" % kind)
-                self.assertNotIn("enabled", server, "kind=%s: the server carries an `enabled` key, which v2 does not have" % kind)
+                self.assertNotIn("enabled", server, "kind=%s: the server carries an `enabled` key, which the 2.0.32 listing drops (observed)" % kind)
                 self.assertIsNot(server.get("disabled"), True, "kind=%s: the server is disabled" % kind)
                 self.assertIsInstance(server["command"], list, "kind=%s: command is not an argv list" % kind)
                 self.assertEqual([os.path.realpath(c) for c in server["command"]], [os.path.realpath(mcpd)],
@@ -1524,7 +1527,8 @@ class LayeredConfigRealOpenCode(TriageRunCase):
         with a non-zero exit. The control is the same call with a numeric
         `steps`, which must come back CHECKED: a probe that reports every call as
         FAILED fails here, not only a probe that reports none. A host with no
-        opencode skips the test.
+        opencode skips the test. Mutants: GUARD-OCPROBE-NOMATCH-SKIP and
+        GUARD-OCPROBE-MATCH-NONE.
         """
         carried = {"agent": {"probe-agent": {"steps": 7}}}
         dropped = {"agent": {"probe-agent": {"steps": "seven"}}}
@@ -1558,18 +1562,20 @@ class ConfigProbeClassification(unittest.TestCase):
     NOT_JSON = "echo x"
     REFUSES = "echo 'refused: bad mcp' >&2; exit 3"
     BROKEN = "echo 'no writable home' >&2; exit 3"
+    CONTROL_BROKEN = "echo 'control could not start' >&2; exit 4"
     HANGS = "exec sleep 600"
 
     # name, layered-config answer, control answer, status, strings the reason holds, documents returned
     CASES = (
         ("carried", OK, EMPTY_LIST, probe.CHECKED, (), 1),
         ("carried-by-two-documents", TWICE, EMPTY_LIST, probe.CHECKED, (), 2),
-        ("other-step-cap", OTHER_STEPS, EMPTY_LIST, probe.FAILED, ("lists no document with step cap 7",), 0),
         ("empty-list", EMPTY_LIST, EMPTY_LIST, probe.FAILED, ("lists no document", "documents listed: 0"), 0),
+        ("other-step-cap", OTHER_STEPS, EMPTY_LIST, probe.FAILED, ("lists no document with step cap 7",), 0),
         ("not-a-list", NOT_A_LIST, EMPTY_LIST, probe.FAILED, ("lists no document", "documents listed: dict"), 0),
         ("not-json", NOT_JSON, EMPTY_LIST, probe.COULD_NOT_CHECK, ("not JSON", "'x\\n'"), 0),
         ("refused-where-control-runs", REFUSES, EMPTY_LIST, probe.FAILED, ("exited 3", "refused the layered config", "refused: bad mcp"), 0),
-        ("exit-where-control-exits", BROKEN, BROKEN, probe.COULD_NOT_CHECK, ("exited 3", "does not run on this host", "no writable home"), 0),
+        ("exit-where-control-exits", BROKEN, CONTROL_BROKEN, probe.COULD_NOT_CHECK,
+         ("exited 3", "empty config it exited 4", "does not run on this host", "no writable home", "control could not start"), 0),
         ("exit-where-control-hangs", REFUSES, HANGS, probe.COULD_NOT_CHECK, ("exited 3", "did not answer within 1 seconds"), 0),
         ("no-answer", HANGS, EMPTY_LIST, probe.COULD_NOT_CHECK, ("did not answer within 1 seconds",), 0),
     )
@@ -1599,10 +1605,15 @@ class ConfigProbeClassification(unittest.TestCase):
         cases are the positive controls for the rest: a probe that reports every
         call as FAILED or as COULD_NOT_CHECK fails them. Mutants, each with its
         mirror: GUARD-OCPROBE-NONZERO-SKIP and GUARD-OCPROBE-NONZERO-FAIL (a
-        non-zero exit); GUARD-OCPROBE-NOMATCH-SKIP and GUARD-OCPROBE-NOTJSON-FAIL
-        (JSON that lists no document, and output that is not JSON);
-        GUARD-OCPROBE-TIMEOUT-FAIL and GUARD-OCPROBE-TIMEOUT-PASS (no answer in
-        time).
+        non-zero exit, with the control); GUARD-OCPROBE-NOMATCH-SKIP and
+        GUARD-OCPROBE-NOTJSON-FAIL (JSON that lists no document, and output
+        that is not JSON); GUARD-OCPROBE-MATCH-ANY and GUARD-OCPROBE-MATCH-NONE
+        (the step cap that finds the document); GUARD-OCPROBE-ONE-EXACT and
+        GUARD-OCPROBE-ZERO-OK (how many documents may carry it);
+        GUARD-OCPROBE-TIMEOUT-REFUSED and GUARD-OCPROBE-UNSTARTABLE-REFUSED (no
+        answer read as a refusal here, no start read as one in the next test);
+        GUARD-OCPROBE-STDERR-OFF and GUARD-OCPROBE-CONTROL-STDERR-OFF (the
+        stderr in the reasons).
         """
         for name, layered, control, status, strings, documents in self.CASES:
             with self.subTest(case=name):
@@ -1616,13 +1627,15 @@ class ConfigProbeClassification(unittest.TestCase):
     def test_probe_config_could_not_check_without_a_usable_binary(self):
         """Path: probe_config is called with no binary, and with a path that is a file but not executable.
 
-        Neither is reported as a pass or a failure of the config.
+        Neither is reported as a pass or a failure of the config. Mutants:
+        GUARD-OCPROBE-NOBIN-OFF and GUARD-OCPROBE-NOBIN-ALWAYS (no binary);
+        GUARD-OCPROBE-UNSTARTABLE-REFUSED (the file that cannot be started).
         """
         path = os.path.join(self.tmp, "not-executable")
         with open(path, "w") as fh:
             fh.write("#!/bin/sh\n")
         os.chmod(path, 0o644)
-        for name, binary, text in (("none", None, "no opencode on PATH"), ("not-executable", path, "could not be started")):
+        for name, binary, text in (("none", None, "no opencode on PATH"), ("not-executable", path, "api --standalone could not be started")):
             with self.subTest(binary=name):
                 got, reason, infos = probe.probe_config(binary, self.CONFIG, self.AGENT, self.STEPS, self.tmp, timeout=1)
                 self.assertEqual(got, probe.COULD_NOT_CHECK, "binary=%s: status %s, reason: %s" % (name, got, reason))

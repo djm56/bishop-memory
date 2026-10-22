@@ -2866,7 +2866,7 @@
       "line": 742,
       "before": "\"codemode\": False,",
       "after": "\"codemode\": False, \"enabled\": True,",
-      "property": "The server carries no `enabled` key, which v2 does not have; the mutant adds one",
+      "property": "The server carries no `enabled` key, which the 2.0.32 listing drops (observed); the mutant adds one",
       "mirror": "GUARD-MCP-DISABLED-TRUE",
       "suite": "scripts/test_triage_run.py",
       "killers": [
@@ -2881,7 +2881,7 @@
       "line": 742,
       "before": "\"codemode\": False,",
       "after": "\"codemode\": False, \"disabled\": True,",
-      "property": "The server is not disabled; the mutant sets `disabled` true, which turns a v2 server off",
+      "property": "The server is not disabled; the mutant sets `disabled` true, which the 2.0.32 listing carries (observed; what a live session does with it is not)",
       "mirror": "GUARD-MCP-ENABLED-KEY",
       "suite": "scripts/test_triage_run.py",
       "killers": [
@@ -2977,6 +2977,219 @@
       "suite": "scripts/test_triage_run.py",
       "killers": [
         "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NONZERO-SKIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 119,
+      "before": "if chow == \"exited\" and crc == 0:",
+      "after": "if False:",
+      "property": "A non-zero exit on the layered config, where an empty config runs, is a failure; the mutant reads it as could-not-check, the old test's skip",
+      "mirror": "GUARD-OCPROBE-NONZERO-FAIL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NONZERO-FAIL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 119,
+      "before": "if chow == \"exited\" and crc == 0:",
+      "after": "if True:",
+      "property": "A non-zero exit where the empty config also exits non-zero or does not answer is could-not-check; the mutant reads it as a failure without the control",
+      "mirror": "GUARD-OCPROBE-NONZERO-SKIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NOMATCH-SKIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 132,
+      "before": "return FAILED, (\"opencode api --standalone exited 0 with JSON",
+      "after": "return COULD_NOT_CHECK, (\"opencode api --standalone exited 0 with JSON",
+      "property": "Exit 0 and valid JSON that lists no document with the step cap is a failure; the mutant reads it as could-not-check, the old test's skip",
+      "mirror": "GUARD-OCPROBE-NOTJSON-FAIL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary",
+        "LayeredConfigRealOpenCode.test_real_opencode_that_drops_the_config_is_a_failure_and_not_a_skip"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NOTJSON-FAIL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 128,
+      "before": "return COULD_NOT_CHECK, \"opencode api --standalone printed",
+      "after": "return FAILED, \"opencode api --standalone printed",
+      "property": "Exit 0 and output that is not JSON is could-not-check; the mutant reads it as a failure",
+      "mirror": "GUARD-OCPROBE-NOMATCH-SKIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-MATCH-ANY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 100,
+      "before": ".get(\"steps\") == steps]",
+      "after": ".get(\"steps\") is not None]",
+      "property": "A document is the layered config's when it lists the agent with the step cap given; the mutant takes any document that lists the agent with a step cap",
+      "mirror": "GUARD-OCPROBE-MATCH-NONE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-MATCH-NONE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 100,
+      "before": ".get(\"steps\") == steps]",
+      "after": ".get(\"steps\") != steps]",
+      "property": "A document with the step cap given is found; the mutant finds only documents with another step cap",
+      "mirror": "GUARD-OCPROBE-MATCH-ANY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary",
+        "LayeredConfigRealOpenCode.test_real_opencode_that_drops_the_config_is_a_failure_and_not_a_skip"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-ONE-EXACT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 130,
+      "before": "if not infos:",
+      "after": "if len(infos) != 1:",
+      "property": "More than one document with the step cap is checked, each of them; the mutant fails unless there is exactly one",
+      "mirror": "GUARD-OCPROBE-ZERO-OK",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-ZERO-OK",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 130,
+      "before": "if not infos:",
+      "after": "if False:",
+      "property": "No document with the step cap is a failure; the mutant reports it as checked with nothing to check",
+      "mirror": "GUARD-OCPROBE-ONE-EXACT",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-TIMEOUT-REFUSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 80,
+      "before": "return \"timeout\", None, \"\", \"\"",
+      "after": "return \"exited\", 124, \"\", \"\"",
+      "property": "A run that does not answer in time is could-not-check; the mutant reports it as an exit with code 124, which the probe then reads as a refusal",
+      "mirror": "GUARD-OCPROBE-UNSTARTABLE-REFUSED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-UNSTARTABLE-REFUSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 74,
+      "before": "return \"unstartable\", None, \"\", str(exc)",
+      "after": "return \"exited\", 126, \"\", str(exc)",
+      "property": "A binary that cannot be started is could-not-check; the mutant reports it as an exit with code 126, which the probe then reads as a refusal",
+      "mirror": "GUARD-OCPROBE-TIMEOUT-REFUSED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_could_not_check_without_a_usable_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-STDERR-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 121,
+      "before": "% (rc, flat(err))), []",
+      "after": "% (rc, \"\")), []",
+      "property": "The reason for a refusal carries the layered run's stderr; the mutant leaves it out",
+      "mirror": "GUARD-OCPROBE-CONTROL-STDERR-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-CONTROL-STDERR-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 124,
+      "before": "flat(cerr)",
+      "after": "\"\"",
+      "property": "The reason for a binary that does not run carries the control run's stderr; the mutant leaves it out",
+      "mirror": "GUARD-OCPROBE-STDERR-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NOBIN-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 111,
+      "before": "if binary is None:",
+      "after": "if False:",
+      "property": "No binary is could-not-check; the mutant never takes that branch, so the probe starts a command that is not there",
+      "mirror": "GUARD-OCPROBE-NOBIN-ALWAYS",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_could_not_check_without_a_usable_binary"
+      ]
+    },
+    {
+      "id": "GUARD-OCPROBE-NOBIN-ALWAYS",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/opencode_config_probe.py",
+      "line": 111,
+      "before": "if binary is None:",
+      "after": "if True:",
+      "property": "A binary that is there is run; the mutant reports every binary as absent",
+      "mirror": "GUARD-OCPROBE-NOBIN-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "ConfigProbeClassification.test_probe_config_classifies_each_answer_of_the_binary",
+        "ConfigProbeClassification.test_probe_config_could_not_check_without_a_usable_binary"
       ]
     },
     {
