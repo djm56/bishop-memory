@@ -223,6 +223,7 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 				seedGradeRow(t, db, tc.setup, id)
 			}
 
+			before := gradeRowOf(t, db, id)
 			out := excludeMission(t, router, id, "  test mission  ")
 			if out["state"] != "excluded" || out["previous_state"] != tc.state || out["previous_grade"] != tc.grade {
 				t.Fatalf("response = %v; want state excluded, previous_state %v, previous_grade %v",
@@ -235,8 +236,13 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 			if row["state"] != "excluded" || row["grade"] != nil || row["suggestions"] != nil || row["signals"] != nil {
 				t.Errorf("row = %v; an excluded row must hold no grade, suggestions or signals", row)
 			}
-			if row["summary"] != "test mission" || row["graded_by"] != "operator" || row["graded_at"] == nil {
-				t.Errorf("row = %v; want the trimmed note in summary, graded_by operator, graded_at set", row)
+			// graded_at is left as it was: the exclusion writes no timestamp of its own.
+			var priorAt any
+			if before != nil {
+				priorAt = before["graded_at"]
+			}
+			if row["summary"] != "test mission" || row["graded_by"] != "operator" || row["graded_at"] != priorAt {
+				t.Errorf("row = %v; want the trimmed note in summary, graded_by operator, graded_at as it was (%v)", row, priorAt)
 			}
 
 			if code, out := do(t, router, http.MethodDelete, exclusionPath(id), nil); code != http.StatusOK {
@@ -247,6 +253,70 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 			}
 		})
 	}
+}
+
+// runActivity reads one triage run from GET /v1/triage/runs and returns its
+// last_activity_at and its stale flag. It fails the test when the run is absent.
+func runActivity(t *testing.T, router *gin.Engine, runID int64) (string, bool) {
+	t.Helper()
+	code, out := do(t, router, http.MethodGet, "/v1/triage/runs", nil)
+	if code != http.StatusOK {
+		t.Fatalf("GET /v1/triage/runs = %d %v", code, out)
+	}
+	for _, r := range out["runs"].([]any) {
+		run := r.(map[string]any)
+		if run["id"] == float64(runID) {
+			return run["last_activity_at"].(string), run["stale"].(bool)
+		}
+	}
+	t.Fatalf("run %d is not in the list", runID)
+	return "", false
+}
+
+// TestExclusionLeavesRunLivenessAlone checks that excluding a mission does not
+// move the last activity of the triage run that claimed it. A run's last
+// activity is the newest time on any row it holds, so excluding the claim of a
+// hung run must leave that run idle, not make it look alive for another thirty
+// minutes. Every subtest builds its own database.
+func TestExclusionLeavesRunLivenessAlone(t *testing.T) {
+	const claimedAt = "2026-10-01 09:30:00"
+	setup := func(t *testing.T) (*gin.Engine, int64, string) {
+		t.Helper()
+		id := "mission-20261022-61"
+		router, db := finishedFixture(t, id)
+		res, err := db.Exec(`INSERT INTO triage_runs (kind, status, started_at) VALUES ('grade', 'running', '2026-10-01 09:00:00')`)
+		if err != nil {
+			t.Fatalf("seed run: %v", err)
+		}
+		runID, err := res.LastInsertId()
+		if err != nil {
+			t.Fatalf("read run id: %v", err)
+		}
+		// created_at is set too: the row's creation time counts as run activity,
+		// and would otherwise read the wall clock.
+		seedGradeRow(t, db, `INSERT INTO mission_grades (mission_id, state, run_id, attempts, claimed_at, created_at) VALUES (?, 'pending', ?, 1, ?, ?)`,
+			id, runID, claimedAt, claimedAt)
+		return router, runID, id
+	}
+
+	t.Run("claim_is_activity", func(t *testing.T) {
+		// Control: the claim time is the run's last activity, so the run is
+		// visible here and the absence in the next subtest is not an empty list.
+		router, runID, _ := setup(t)
+		if last, stale := runActivity(t, router, runID); last != claimedAt || !stale {
+			t.Fatalf("run %d before the exclusion: last activity %q stale %v, want %q stale true",
+				runID, last, stale, claimedAt)
+		}
+	})
+
+	t.Run("exclusion_does_not_move_last_activity", func(t *testing.T) {
+		router, runID, id := setup(t)
+		excludeMission(t, router, id, "set aside while claimed")
+		if last, stale := runActivity(t, router, runID); last != claimedAt || !stale {
+			t.Fatalf("run %d after the exclusion: last activity %q stale %v, want %q stale true",
+				runID, last, stale, claimedAt)
+		}
+	})
 }
 
 // TestExcludedMissionIsNeverClaimed checks the claim and the waiting count

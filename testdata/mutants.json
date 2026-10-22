@@ -3714,7 +3714,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 847,
+      "line": 849,
       "before": "if n, _ := result.RowsAffected(); n == 0 {",
       "after": "if n, _ := result.RowsAffected(); n == 0 && false {",
       "property": "Lifting an exclusion that is not there is answered 404",
@@ -3729,7 +3729,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 847,
+      "line": 849,
       "before": "if n, _ := result.RowsAffected(); n == 0 {",
       "after": "if n, _ := result.RowsAffected(); n == 0 || true {",
       "property": "A lifted exclusion is answered 404 (the opposite edge)",
@@ -3744,7 +3744,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 842,
+      "line": 844,
       "before": "AND state = 'excluded'",
       "after": "",
       "summary": "the state test is removed from the lift's DELETE, so the exclusion route can delete a verdict",
@@ -3760,7 +3760,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 842,
+      "line": 844,
       "before": "AND state = 'excluded'",
       "after": "AND state = 'graded'",
       "property": "The lift deletes a graded row, not an excluded one (the opposite edge)",
@@ -3775,7 +3775,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 815,
+      "line": 818,
       "before": "suggestions = NULL, signals = NULL, ",
       "after": "",
       "summary": "the upsert leaves the replaced verdict's suggestions and signals on the excluded row",
@@ -3791,7 +3791,7 @@
       "status": "active",
       "language": "go",
       "file": "internal/api/grades.go",
-      "line": 814,
+      "line": 817,
       "before": "summary = excluded.summary,",
       "after": "summary = summary,",
       "property": "The note replaces the summary of the row it excludes (the opposite edge)",
@@ -3859,6 +3859,37 @@
       "package": "./cmd/mcpd",
       "killers": [
         "TestMCPToolsNeverReachOperatorExclusionRoutes/triage_profile_reaches_grade_write"
+      ]
+    },
+    {
+      "id": "W2-BUMP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 818,
+      "before": "signals = NULL, graded_by = 'operator'",
+      "after": "signals = NULL, graded_by = 'operator', graded_at = CURRENT_TIMESTAMP",
+      "summary": "the exclusion stamps graded_at with the current time, which triageRunLastActivitySQL reads as run activity",
+      "property": "An exclusion writes no graded_at, so it moves no run's last activity",
+      "mirror": "W2-ERASE",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionLeavesRunLivenessAlone/exclusion_does_not_move_last_activity"
+      ]
+    },
+    {
+      "id": "W2-ERASE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 818,
+      "before": "signals = NULL, graded_by = 'operator'",
+      "after": "signals = NULL, graded_by = 'operator', graded_at = NULL",
+      "property": "An exclusion keeps the graded_at of the verdict it replaces, so the row still says when that verdict was written (the opposite edge: it clears the time)",
+      "mirror": "W2-BUMP",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
       ]
     }
   ]

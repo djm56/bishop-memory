@@ -759,11 +759,11 @@ func deleteGradeHandler(db *sql.DB) gin.HandlerFunc {
 // setExclusionHandler handles PUT /v1/mission-grades/:missionID/exclusion: the
 // operator sets a finished mission aside as N/A. The mission's row becomes
 // state 'excluded' with grade, suggestions and signals NULL, the note in
-// summary, graded_by 'operator' and graded_at now. A row that held a verdict,
-// a claim or a skip is overwritten. The response names the state and grade
-// the row held before, both null when there was no row. Refused with 404 for
-// an unknown mission and 409 for one the grader could not grade. No mcpd
-// profile registers it.
+// summary and graded_by 'operator'. graded_at is not written; it keeps the
+// value the row had. A row that held a verdict, a claim or a skip is
+// overwritten. The response names the state and grade the row held before,
+// both null when there was no row. Refused with 404 for an unknown mission
+// and 409 for one the grader could not grade. No mcpd profile registers it.
 func setExclusionHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -807,13 +807,15 @@ func setExclusionHandler(db *sql.DB) gin.HandlerFunc {
 			return
 		}
 
+		// graded_at is never written here. triageRunLastActivitySQL reads it as
+		// the grader's activity, so an operator's N/A must not make a hung run
+		// look alive. An excluded row keeps the graded_at of any verdict it replaced.
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO mission_grades (mission_id, state, grade, summary, graded_by, graded_at)
-			VALUES (?, 'excluded', NULL, ?, 'operator', CURRENT_TIMESTAMP)
+			INSERT INTO mission_grades (mission_id, state, grade, summary, graded_by)
+			VALUES (?, 'excluded', NULL, ?, 'operator')
 			ON CONFLICT(mission_id) DO UPDATE SET
 			  state = 'excluded', grade = NULL, summary = excluded.summary,
-			  suggestions = NULL, signals = NULL, graded_by = 'operator',
-			  graded_at = CURRENT_TIMESTAMP`, id, note); err != nil {
+			  suggestions = NULL, signals = NULL, graded_by = 'operator'`, id, note); err != nil {
 			internalError(c, err)
 			return
 		}
