@@ -1,8 +1,11 @@
 package store
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -399,6 +402,78 @@ func TestEnsureMissionGradeExcludedRebuildFailure(t *testing.T) {
 		}
 		if fk := scalarInt(t, db, `PRAGMA foreign_keys`); fk != 1 {
 			t.Fatalf("foreign_keys after a successful rebuild = %d, want 1", fk)
+		}
+	})
+}
+
+// TestRestoreForeignKeysLogs checks the log line restoreForeignKeys writes when
+// the restore cannot run. The rebuild cannot reach that line from outside, since
+// nothing in the store makes the PRAGMA fail, so each subtest calls
+// restoreForeignKeys directly on a connection it has prepared. The only input
+// that differs between the subtests is that connection: a closed one makes
+// ExecContext return sql.ErrConnDone, and an open one lets the restore succeed.
+// Each subtest captures the standard logger and puts it back when it ends.
+func TestRestoreForeignKeysLogs(t *testing.T) {
+	// capture sends the standard logger to a buffer until the subtest ends.
+	capture := func(t *testing.T) *bytes.Buffer {
+		t.Helper()
+		var buf bytes.Buffer
+		previous := log.Writer()
+		log.SetOutput(&buf)
+		t.Cleanup(func() { log.SetOutput(previous) })
+		return &buf
+	}
+	// connection returns one pooled connection from a fresh database. The
+	// caller closes it when it has finished with it.
+	connection := func(t *testing.T) *sql.Conn {
+		t.Helper()
+		db, err := Open(filepath.Join(t.TempDir(), "restore.db"))
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		conn, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatalf("get connection: %v", err)
+		}
+		return conn
+	}
+
+	t.Run("closed_connection_logs_failure", func(t *testing.T) {
+		conn := connection(t)
+		if err := conn.Close(); err != nil {
+			t.Fatalf("close connection: %v", err)
+		}
+		buf := capture(t)
+		restoreForeignKeys(context.Background(), conn)
+		got := buf.String()
+		if !strings.Contains(got, "mission_grades rebuild: restoring foreign keys") {
+			t.Fatalf("a failed restore was not logged; log = %q", got)
+		}
+		if !strings.Contains(got, sql.ErrConnDone.Error()) {
+			t.Fatalf("the logged restore failure does not carry %q; log = %q", sql.ErrConnDone.Error(), got)
+		}
+	})
+
+	t.Run("open_connection_logs_nothing", func(t *testing.T) {
+		conn := connection(t)
+		defer conn.Close()
+		ctx := context.Background()
+		// Foreign keys start off, so the restore has something to turn on.
+		if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			t.Fatalf("turn foreign keys off: %v", err)
+		}
+		buf := capture(t)
+		restoreForeignKeys(ctx, conn)
+		if got := buf.String(); got != "" {
+			t.Fatalf("a successful restore logged %q, want nothing", got)
+		}
+		var fk int
+		if err := conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk); err != nil {
+			t.Fatalf("read foreign_keys: %v", err)
+		}
+		if fk != 1 {
+			t.Fatalf("foreign_keys after the restore = %d, want 1", fk)
 		}
 	})
 }

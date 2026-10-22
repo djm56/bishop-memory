@@ -4152,6 +4152,36 @@
       "reason": "Not a separate fault. The rebuild's own PRAGMA foreign_keys = OFF (mission_grades.go:95) runs before the restore is deferred, so a restore that never runs leaves the same value on every exit, with the same failure text under each killer as a restore that writes OFF. The path faults are W1-FK-SUCCESS-ONLY and W1-FK-FAILURE-ONLY.",
       "property": "Every exit from the rebuild restores foreign keys (no restore runs)",
       "mirror": "W1-FK-OFF"
+    },
+    {
+      "id": "W1-LOG",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 158,
+      "before": "log.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)",
+      "after": "_ = log.Writer()",
+      "property": "A failed restore of foreign keys is logged, so the one silent loss of enforcement is visible",
+      "mirror": "W1-LOG-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestRestoreForeignKeysLogs/closed_connection_logs_failure"
+      ]
+    },
+    {
+      "id": "W1-LOG-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 157,
+      "before": "err != nil {",
+      "after": "err == nil {",
+      "property": "A successful restore is logged and a failed one is not (the opposite branch of W1-LOG)",
+      "mirror": "W1-LOG",
+      "package": "./internal/store",
+      "killers": [
+        "TestRestoreForeignKeysLogs/open_connection_logs_nothing"
+      ]
     }
   ]
 }
