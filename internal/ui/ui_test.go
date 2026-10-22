@@ -642,22 +642,41 @@ func TestNAGradeSourceText(t *testing.T) {
 	}
 }
 
-// TestNAGradeTagAbsent asserts that the HUD page carries no N/A tag element. An
-// excluded mission's Grade section shows the large N/A badge alone; a second N/A
-// tag beside it was the duplicate this change removed. The control subtest
-// requires the not-enough-evidence tag in the same page source, so the absence
-// cannot pass merely because the whole page lacks tags.
+// naTagElement matches a span whose class list holds `tag` and whose text is
+// N/A, in either quote style and with any spacing or case.
+var naTagElement = regexp.MustCompile(`(?i)<span\b[^>]*\bclass\s*=\s*["'][^"']*\btag\b[^"']*["'][^>]*>\s*N/A\s*</span>`)
+
+// TestNAGradeTagAbsent asserts that the Grade section of the HUD mission view
+// carries no N/A tag element. An excluded mission's Grade section shows the large
+// N/A badge alone; a second N/A tag beside it was the duplicate this change
+// removed. The section is the source text from the verdict card's opening
+// (`<h3>Grade</h3><div class="card verdict">`) to the next `</section>`; the
+// other two Grade sections, for a pending and a skipped mission, hold no verdict
+// card and are not searched. The absence is a regexp (naTagElement), so another
+// quote style or spacing is caught, and a tag elsewhere on the page is not
+// counted. The control subtest requires the not-enough-evidence tag inside that
+// same section, so the absence cannot pass merely because the section is empty
+// or the section markers matched nothing.
 func TestNAGradeTagAbsent(t *testing.T) {
 	missions := serve(t, MissionsPageHandler()).Body.String()
+	start := strings.Index(missions, `<h3>Grade</h3><div class="card verdict">`)
+	if start < 0 {
+		t.Fatal("missions page has no Grade verdict card, so the Grade section cannot be searched")
+	}
+	end := strings.Index(missions[start:], `</section>`)
+	if end < 0 {
+		t.Fatal("the Grade verdict card has no closing </section>, so the Grade section cannot be searched")
+	}
+	section := missions[start : start+end]
 	t.Run("control_insufficient_tag_renders", func(t *testing.T) {
 		needle := `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`
-		if !strings.Contains(missions, needle) {
-			t.Fatalf("missions page does not contain %q", needle)
+		if !strings.Contains(section, needle) {
+			t.Fatalf("the Grade section does not contain %q", needle)
 		}
 	})
 	t.Run("hud_grade_tag_na_absent", func(t *testing.T) {
-		if strings.Contains(missions, `<span class="tag">N/A</span>`) {
-			t.Fatalf("missions page carries a N/A tag element; the Grade section must show the large N/A badge only")
+		if found := naTagElement.FindString(section); found != "" {
+			t.Fatalf("the Grade section carries a N/A tag element %q; it must show the large N/A badge only", found)
 		}
 	})
 }
