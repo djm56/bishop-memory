@@ -109,12 +109,28 @@ Back up the database before restarting the service, at the `DB_PATH` the running
 
 The settings file does not carry `DB_PATH` on either install: `memoryd.env` holds the host, port, environment and TLS paths only (`scripts/install.sh:120-127`).
 
+On a Mac, from the checkout:
+
 ```sh
-# DB_PATH as the running service has it, for example data/memory.db in the checkout on a Mac
-DB_PATH=<path from above> bin/memoryd backup data/memory-before-na.db
+export DB_PATH=data/memory.db
+: "${DB_PATH:?set DB_PATH first}"
+bin/memoryd backup data/memory-before-na.db
 # or, with the sqlite3 command line tool:
 sqlite3 "$DB_PATH" ".backup data/memory-before-na.db"
+# the copy must hold the tables, not be empty: this lists mission_grades
+sqlite3 data/memory-before-na.db ".tables"
 ```
+
+On Linux the database is in the service user's StateDirectory (`scripts/bishop-memory.service:68`), so run the backup as that user and keep the target inside that directory. The unit's own comment uses `sudo -u bishop-memory env DB_PATH=... <bin>/memoryd keys add` (`scripts/bishop-memory.service:73`), and `scripts/install.sh:176` runs the same pattern with `runuser -u`. `<install root>` is the directory the unit runs `bin/memoryd` from (`scripts/bishop-memory.service:54`):
+
+```sh
+export DB_PATH=/var/lib/bishop-memory/memory.db
+: "${DB_PATH:?set DB_PATH first}"
+sudo -u bishop-memory env DB_PATH="$DB_PATH" <install root>/bin/memoryd backup /var/lib/bishop-memory/memory-before-na.db
+sudo -u bishop-memory sqlite3 /var/lib/bishop-memory/memory-before-na.db ".tables"
+```
+
+If the `.tables` line prints nothing, the copy is empty. Do not restart until it lists `mission_grades`.
 
 The migration runs only when the operator restarts memoryd, so nothing changes until then.
 
