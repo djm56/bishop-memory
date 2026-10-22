@@ -3646,7 +3646,7 @@
       "mirror": "NOTE-GUARD-OFF",
       "package": "./internal/api",
       "killers": [
-        "TestExclusionRouteRefusals/accepts_700_char_note"
+        "TestExclusionRouteRefusals/accepts_note_with_text"
       ]
     },
     {
@@ -3676,7 +3676,7 @@
       "mirror": "GRADABLE-OFF",
       "package": "./internal/api",
       "killers": [
-        "TestExclusionRouteRefusals/accepts_700_char_note"
+        "TestExclusionRouteRefusals/accepts_finished_mission"
       ]
     },
     {
@@ -3706,7 +3706,7 @@
       "mirror": "UNKNOWN-OFF",
       "package": "./internal/api",
       "killers": [
-        "TestExclusionRouteRefusals/accepts_700_char_note"
+        "TestExclusionRouteRefusals/accepts_known_mission"
       ]
     },
     {

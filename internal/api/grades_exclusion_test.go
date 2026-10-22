@@ -147,17 +147,39 @@ func TestExclusionRouteRefusals(t *testing.T) {
 		})
 	}
 
-	// Controls: the same routes admit what the refusals turn away.
-	t.Run("accepts_700_char_note", func(t *testing.T) {
-		router, db := finishedFixture(t, finished)
-		code, out := do(t, router, http.MethodPut, exclusionPath(finished),
-			map[string]any{"note": strings.Repeat("n", 700)})
+	// admitted sends the finished mission a PUT with the note, and fails the
+	// test unless the route answers 200 and leaves the row excluded. The
+	// property is named in the message, so a control that fails names the
+	// property it checks.
+	admitted := func(t *testing.T, router *gin.Engine, db *sql.DB, note, property string) {
+		t.Helper()
+		code, out := do(t, router, http.MethodPut, exclusionPath(finished), map[string]any{"note": note})
 		if code != http.StatusOK {
-			t.Fatalf("a 700-character note was refused: %d %v", code, out)
+			t.Fatalf("%s was refused: %d %v", property, code, out)
 		}
 		if row := gradeRowOf(t, db, finished); row == nil || row["state"] != "excluded" {
-			t.Fatalf("row after a 700-character note = %v, want state excluded", row)
+			t.Fatalf("row after %s = %v, want state excluded", property, row)
 		}
+	}
+
+	// Controls: the same routes admit what the refusals turn away. Each
+	// guard has a control subtest of its own, so a mutant that breaks one
+	// guard fails the control named for it.
+	t.Run("accepts_note_with_text", func(t *testing.T) {
+		router, db := finishedFixture(t, finished)
+		admitted(t, router, db, "n", "a note with text")
+	})
+	t.Run("accepts_finished_mission", func(t *testing.T) {
+		router, db := finishedFixture(t, finished)
+		admitted(t, router, db, "n", "a finished mission")
+	})
+	t.Run("accepts_known_mission", func(t *testing.T) {
+		router, db := finishedFixture(t, finished)
+		admitted(t, router, db, "n", "a known mission")
+	})
+	t.Run("accepts_700_char_note", func(t *testing.T) {
+		router, db := finishedFixture(t, finished)
+		admitted(t, router, db, strings.Repeat("n", 700), "a 700-character note")
 	})
 
 	// The two lift subtests check one property each, so a lift that answers
@@ -234,9 +256,14 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 
 			before := gradeRowOf(t, db, id)
 			out := excludeMission(t, router, id, "  test mission  ")
-			if out["state"] != "excluded" || out["previous_state"] != tc.state || out["previous_grade"] != tc.grade {
-				t.Fatalf("response = %v; want state excluded, previous_state %v, previous_grade %v",
-					out, tc.state, tc.grade)
+			if out["state"] != "excluded" {
+				t.Fatalf("response state = %#v, want excluded; response %v", out["state"], out)
+			}
+			if out["previous_state"] != tc.state {
+				t.Fatalf("response previous_state = %#v, want %#v; response %v", out["previous_state"], tc.state, out)
+			}
+			if out["previous_grade"] != tc.grade {
+				t.Fatalf("response previous_grade = %#v, want %#v; response %v", out["previous_grade"], tc.grade, out)
 			}
 			row := gradeRowOf(t, db, id)
 			if row == nil {
@@ -250,8 +277,14 @@ func TestExclusionRouteReportsWhatItReplaced(t *testing.T) {
 			if before != nil {
 				priorAt = before["graded_at"]
 			}
-			if row["summary"] != "test mission" || row["graded_by"] != "operator" || row["graded_at"] != priorAt {
-				t.Errorf("row = %v; want the trimmed note in summary, graded_by operator, graded_at as it was (%v)", row, priorAt)
+			if row["summary"] != "test mission" {
+				t.Errorf("row summary = %#v, want the trimmed note %q", row["summary"], "test mission")
+			}
+			if row["graded_by"] != "operator" {
+				t.Errorf("row graded_by = %#v, want %q", row["graded_by"], "operator")
+			}
+			if row["graded_at"] != priorAt {
+				t.Errorf("row graded_at = %#v, want %#v, the time the replaced verdict held", row["graded_at"], priorAt)
 			}
 
 			if code, out := do(t, router, http.MethodDelete, exclusionPath(id), nil); code != http.StatusOK {
