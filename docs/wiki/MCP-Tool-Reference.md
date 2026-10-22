@@ -1105,7 +1105,7 @@ Claim up to 10 finished missions that have no grade and return a grading packet 
 
 **Route:** ``
 
-Write the verdicts for missions you claimed. Each item: {mission_id, grade: A|B|C|D|E|F, summary, suggestions} or {mission_id, insufficient: true, summary} when the packet does not hold enough to grade. A verdict is final; an unclaimed mission or one that already has a verdict is skipped and reported.
+Write the verdicts for missions you claimed. Each item: {mission_id, grade: A|B|C|D|E|F, summary, suggestions} or {mission_id, insufficient: true, summary} when the packet does not hold enough to grade. A verdict is final; an unclaimed mission, one that already has a verdict, or one the operator has set aside as N/A is skipped and reported.
 
 | Argument | Type | Required | Meaning |
 |---|---|---|---|

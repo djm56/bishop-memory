@@ -31,9 +31,9 @@ A mission whose record is too thin to judge (no debrief and no steps) gets **not
 
 **Performance page** (`/performance`, the third link in the page switch):
 
-- **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside (not enough evidence, skipped, or N/A).
+- **Summary** — the average grade and score out of 5, an A–F distribution bar over every graded mission, how many are waiting, and how many were set aside, which means the missions that carry no letter and are not waiting (the count is the sum of the insufficient, skipped and excluded rows, `internal/ui/performance.html:540`).
 - **Harnesses** — one row per harness: its average letter and score, a count of its N/A missions when it has any, its latest grades newest first (each opens the mission), and **improving**, **slipping** or **steady** when its five newest grades differ from the five before them by a third of a grade or more (a dash with fewer than six). Click a row to filter the grades below to that harness; click it again to clear. **Display…** hides harnesses you do not want to see, such as test harnesses: a hidden harness drops out of the rows, the summary and the grade list, nothing is deleted, and the choice is kept in this browser.
-- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count; the **N/A** button lists the set-aside missions). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
+- **Grades** — every verdict, newest first, 20 to a page, filtered by harness and by grade with the buttons above the list (each shows its count; the **N/A** button, shown only when a mission is set aside or the N/A filter is active, lists the set-aside missions). **Full verdict** expands a long summary and **Suggestions** shows what to change next time.
 
 The average counts A as 5 down to F as 0 and turns the result back into the nearest letter.
 
@@ -76,12 +76,16 @@ A run with nothing waiting exits at once without starting an agent. Each run mak
 Only the operator sets this. No MCP tool reaches these routes. Both are on the HTTP API under `/v1/mission-grades/:missionID/exclusion`; the operator's side of the service is in [Developer: HTTP API](Developer-HTTP-API#mission-grades-operator-na).
 
 ```sh
+# the key stays off the command line: curl reads it from a mode-600 header file
+. ~/.config/bishop-memory/client.env
+(umask 077 && printf 'Authorization: Bearer %s\n' "$BISHOP_MEMORY_API_KEY" > ~/.config/bishop-memory/auth.header)
+
 # set aside: the note says why, and is required (not blank, at most 700 characters)
-curl -fsS -X PUT -H "Authorization: Bearer $BISHOP_MEMORY_API_KEY" -H 'Content-Type: application/json' \
+curl -fsS -X PUT -H @"$HOME/.config/bishop-memory/auth.header" -H 'Content-Type: application/json' \
   -d '{"note":"test mission, not a real run"}' "$BISHOP_MEMORY_URL/v1/mission-grades/mission-20261009-03/exclusion"
 
 # lift it: the mission is ungraded again and the nightly grader can claim it
-curl -fsS -X DELETE -H "Authorization: Bearer $BISHOP_MEMORY_API_KEY" \
+curl -fsS -X DELETE -H @"$HOME/.config/bishop-memory/auth.header" \
   "$BISHOP_MEMORY_URL/v1/mission-grades/mission-20261009-03/exclusion"
 ```
 
@@ -96,6 +100,8 @@ curl -fsS -X DELETE -H "Authorization: Bearer $BISHOP_MEMORY_API_KEY" \
 A database created before this change is widened the first time memoryd starts after the upgrade. The `mission_grades` table is rebuilt once, in one transaction, keeping every row, and the rebuild is idempotent after that. If the rebuild fails, it rolls back, memoryd logs a `WARNING` and keeps running, and the exclusion route answers 500 until the rebuild succeeds.
 
 Back up the database before restarting the service. `memoryd backup` writes a consistent copy and refuses a target that already exists:
+
+Use the `DB_PATH` your service runs with. The launchd install on a Mac runs with `DB_PATH=data/memory.db` in the checkout; a server install keeps its database elsewhere, so take the path from the settings in its `memoryd.env`.
 
 ```sh
 DB_PATH=data/memory.db bin/memoryd backup data/memory-before-na.db

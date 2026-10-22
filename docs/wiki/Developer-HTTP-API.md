@@ -308,8 +308,8 @@ The operator's routes under `/v1/mission-grades`, and the claim route, which the
 | `PUT /v1/mission-grades/:missionID/exclusion` | `{"note"}`: required, not blank after trimming, at most 700 characters; otherwise 400 | 200 `{"mission_id","state":"excluded","previous_state","previous_grade"}`; 404 `mission not found`; 409 for an unfinished mission; 500 while the `mission_grades` rebuild has not succeeded |
 | `DELETE /v1/mission-grades/:missionID/exclusion` | | 200 `{"mission_id","deleted":true}`; 404 `mission is not excluded` for a mission that is not excluded |
 | `DELETE /v1/mission-grades/:missionID` | | 409 `mission is excluded; …` for an excluded mission, which keeps its row |
-| `POST /v1/mission-grades/claim` | `{"mission_ids"}` or `{"limit"}` | With `mission_ids`, 409 `some missions cannot be claimed` and a `refused` list if any named mission is excluded, unfinished or already has a verdict; the whole batch is refused |
-| `GET /v1/mission-grades` | `?state=`, `?grade=` | Without `state`, the list holds `graded`, `insufficient` and `excluded` rows; an excluded row has a null `grade` |
+| `POST /v1/mission-grades/claim` | `{"mission_ids"}` or `{"limit"}` | With `mission_ids`, 409 `some missions cannot be claimed` and a `refused` list if any named mission is excluded, unknown (`no such mission`), unfinished or already has a verdict; the whole batch is refused |
+| `GET /v1/mission-grades` | `?state=`, `?grade=` | Without `state`, the list holds the rows that carry a grade or an exclusion, which is the set named in the `WHERE` at `internal/api/grades.go:612` (`graded`, `insufficient` and `excluded`; pending and skipped rows need `?state=`); an excluded row has a null `grade` |
 
 The PUT does not set `graded_at`, so a hung run stays idle. An explicit claim of an unfinished mission with no outcome answers 409, not 500.
 
