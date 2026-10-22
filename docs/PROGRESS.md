@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-22, against `main` at `7fc76ba`. PR #12 (squash-merge `7fc76ba`, "Triage runner on OpenCode v2") is on `main`, and its items are in Triage & grading. Before it, against `fc38064`: harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`), and the `[flight-recorder]` summary fix and the journal cap exit code ship with the change that carries this update. The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked.
+Last updated: 2026-10-22, against `main` at `7fc76ba`. PR #12 (squash-merge `7fc76ba`, "Triage runner on OpenCode v2") is on `main`, and its items are in Triage & grading. Before it, against `fc38064`: harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`), and the `[flight-recorder]` summary fix and the journal cap exit code ship with the change that carries this update. The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked. The operator N/A line under Memory insight is ticked ahead of the squash-merge of `feat/grade-excluded` (mission-20261022-05), written on that branch on purpose: it is true once that merge lands on `main`; the override line stays open.
 
 ## Summary
 
@@ -12,14 +12,14 @@ Last updated: 2026-10-22, against `main` at `7fc76ba`. PR #12 (squash-merge `7fc
 |------------|-----:|------------:|--:|
 | Network deployment | 11 | 11 | 50% |
 | PostgreSQL | 0 | 5 | 0% |
-| Memory insight | 7 | 14 | 33% |
+| Memory insight | 8 | 14 | 36% |
 | Mission HUD | 17 | 6 | 74% |
 | Triage & grading | 11 | 19 | 37% |
 | Reconciler | 5 | 10 | 33% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 8 | 2 | 80% |
 | Harness portability | 1 | 7 | 13% |
-| **Total** | **62** | **78** | **44%** |
+| **Total** | **63** | **78** | **45%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -102,7 +102,8 @@ Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md)
 - [ ] Phase 2: trends on `/performance` (partial: the grade trend shipped in `c83fdbf`; fix rounds and findings per week have not been built) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: global search across missions, findings, patterns and directives ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: filters in the URL (unverified: not inspected) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
-- [ ] Phase 2: operator agree or override of a grade, with a note, and an N/A (excluded) state for test missions (partial: on branch feat/grade-excluded, PR pending; the N/A state and its operator routes are built there, while the agree or override with a note and the `mission_grades` operator columns are not started) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
+- [x] Phase 2: operator N/A (excluded) state for test missions that should not count, with its `PUT` and `DELETE` routes under `/v1/mission-grades/:missionID/exclusion`, the HUD and Performance labels, and the grader skip — merged from branch feat/grade-excluded (mission-20261022-05) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
+- [ ] Phase 2: operator agree or override of a grade, with a note, and the `mission_grades` operator columns (not started) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: park or close a stale mission from the HUD (unverified: not inspected in the UI) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: operator notes on a mission, `mission_notes` ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 3: cost and usage, `agent_runs`, `model_prices`, `scripts/import-usage.py` ([§5](plans/MEMORY-INSIGHT-PLAN.md#5-phase-3--cost-and-usage))

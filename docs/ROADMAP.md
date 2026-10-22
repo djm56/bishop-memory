@@ -61,8 +61,7 @@ lessons into new briefs. Status: phase 0, stages 1b, 2 and 3 shipped (see
 [Shipped](#shipped)). Open: stage 1a (the fixed verdict line in the agent and
 skill definitions, waiting on ratification of decision P3); phase 2's
 Library, Activity, global search, filters in the URL, operator grade override
-(the N/A, excluded state for test missions that should not count: in progress
-on branch feat/grade-excluded, PR pending),
+with a note (not started; the N/A state is shipped, see [Shipped](#shipped)),
 operator notes, park or close from the HUD, and the rest of the Trends work;
 phase 3 (cost
 and usage) and phase 4 (retrieval log, directive citations, git deliverables,
@@ -404,6 +403,11 @@ except the operational ones, which name their evidence instead.
 
 **Mission grading and performance**
 
+- Operator N/A for missions that should not count: `mission_grades.state`
+  admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
+  `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
+  N/A on the HUD and the Performance page (merged from branch
+  feat/grade-excluded, mission-20261022-05).
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).
