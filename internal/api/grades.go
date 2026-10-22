@@ -6,7 +6,7 @@
 //	POST   /v1/mission-grades              write verdicts for claimed missions
 //	GET    /v1/mission-grades              list grades (harness, state, grade filters)
 //	GET    /v1/mission-grades/performance  per-harness average, spread and recent grades
-//	DELETE /v1/mission-grades/:missionID   operator only: reopen a mission for regrading
+//	DELETE /v1/mission-grades/:missionID   operator only: reopen a mission for regrading; refused for an excluded one
 //	PUT    /v1/mission-grades/:missionID/exclusion  operator only: set a finished mission aside as N/A
 //	DELETE /v1/mission-grades/:missionID/exclusion  operator only: lift that exclusion
 //
@@ -20,9 +20,10 @@
 // No mission is graded in a loop. Claiming creates the mission's row (state
 // 'pending', attempts + 1); a verdict closes it for good. A claim that is
 // never answered is retried by one later run and then marked 'skipped'. The
-// operator's DELETE routes reopen a mission. The exclusion routes set a mission
-// aside as N/A, and an excluded mission is never claimed. mcpd registers no
-// tool that reaches a DELETE or the exclusion routes.
+// operator's DELETE reopens a mission, but refuses an excluded one, which only
+// the exclusion route's DELETE lifts. The exclusion routes set a mission aside
+// as N/A, and an excluded mission is never claimed. mcpd registers no tool that
+// reaches a DELETE or the exclusion routes.
 package api
 
 import (
@@ -742,17 +743,43 @@ func performanceHandler(db *sql.DB) gin.HandlerFunc {
 // --- Regrade -----------------------------------------------------------------
 
 // deleteGradeHandler handles DELETE /v1/mission-grades/:missionID: the
-// operator reopening a mission for grading. No mcpd profile registers it.
+// operator reopening a mission for grading. It deletes the mission's row in
+// any state except 'excluded'. An excluded row is the operator's N/A, lifted
+// only by DELETE .../exclusion, so this route answers 409 and keeps the row. A
+// mission with no row answers 200 with deleted false. No mcpd profile registers it.
 func deleteGradeHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, err := db.ExecContext(c.Request.Context(),
-			`DELETE FROM mission_grades WHERE mission_id = ?`, c.Param("missionID"))
+		ctx := c.Request.Context()
+		id := c.Param("missionID")
+		tx, err := db.BeginTx(ctx, nil)
 		if err != nil {
 			internalError(c, err)
 			return
 		}
+		defer tx.Rollback()
+
+		// The state check and the delete run in one transaction.
+		var state sql.NullString
+		err = tx.QueryRowContext(ctx, `SELECT state FROM mission_grades WHERE mission_id = ?`, id).Scan(&state)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			internalError(c, err)
+			return
+		}
+		if state.Valid && state.String == "excluded" {
+			c.JSON(http.StatusConflict, gin.H{"error": "mission is excluded; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"})
+			return
+		}
+		result, err := tx.ExecContext(ctx, `DELETE FROM mission_grades WHERE mission_id = ?`, id)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			internalError(c, err)
+			return
+		}
 		n, _ := result.RowsAffected()
-		c.JSON(http.StatusOK, gin.H{"mission_id": c.Param("missionID"), "deleted": n > 0})
+		c.JSON(http.StatusOK, gin.H{"mission_id": id, "deleted": n > 0})
 	}
 }
 

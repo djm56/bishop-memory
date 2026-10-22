@@ -782,3 +782,57 @@ func TestExplicitClaimOfUnfinishedMissionRefused(t *testing.T) {
 		}
 	})
 }
+
+// TestRegradeRefusesExcludedMission checks the operator's DELETE of a mission's
+// grade row against an excluded row. The DELETE must refuse with 409, name the
+// route that lifts the exclusion, and keep the row. A verdict is still deleted
+// by the same route, so the refusal is aimed at the excluded state alone. Each
+// subtest builds its own database.
+func TestRegradeRefusesExcludedMission(t *testing.T) {
+	const id = "mission-20261022-81"
+	const lift = "mission is excluded; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"
+	regradePath := "/v1/mission-grades/" + id
+
+	t.Run("excluded_refused_409", func(t *testing.T) {
+		router, _ := finishedFixture(t, id)
+		excludeMission(t, router, id, "test mission")
+		code, out := do(t, router, http.MethodDelete, regradePath, nil)
+		if code != http.StatusConflict || out["error"] != lift {
+			t.Fatalf("regrade of an excluded mission = %d %v, want 409 %q", code, out, lift)
+		}
+	})
+
+	t.Run("excluded_row_kept", func(t *testing.T) {
+		router, db := finishedFixture(t, id)
+		excludeMission(t, router, id, "test mission")
+		do(t, router, http.MethodDelete, regradePath, nil)
+		if row := gradeRowOf(t, db, id); row == nil || row["state"] != "excluded" || row["summary"] != "test mission" {
+			t.Fatalf("row after a refused regrade = %v, want the excluded row with its note kept", row)
+		}
+	})
+
+	// Control: a verdict is still deleted by the same route.
+	t.Run("graded_verdict_still_deleted", func(t *testing.T) {
+		router, db := finishedFixture(t, id)
+		seedGradeRow(t, db, `INSERT INTO mission_grades (mission_id, state, grade, summary) VALUES (?, 'graded', 'B', 's')`, id)
+		code, out := do(t, router, http.MethodDelete, regradePath, nil)
+		if code != http.StatusOK || out["deleted"] != true {
+			t.Fatalf("regrade of a graded mission = %d %v, want 200 with deleted true", code, out)
+		}
+		if row := gradeRowOf(t, db, id); row != nil {
+			t.Fatalf("row after regrade = %v, want none", row)
+		}
+	})
+
+	// Control: once the exclusion is lifted the mission is no longer refused.
+	// The lift deletes the row, so the regrade reports nothing deleted.
+	t.Run("lifted_mission_not_refused", func(t *testing.T) {
+		router, _ := finishedFixture(t, id)
+		excludeMission(t, router, id, "test mission")
+		do(t, router, http.MethodDelete, exclusionPath(id), nil)
+		code, out := do(t, router, http.MethodDelete, regradePath, nil)
+		if code != http.StatusOK || out["deleted"] != false {
+			t.Fatalf("regrade after the exclusion was lifted = %d %v, want 200 with deleted false", code, out)
+		}
+	})
+}
