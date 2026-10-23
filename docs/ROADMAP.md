@@ -13,8 +13,10 @@ confirm before working on it), **unverified** (the repository cannot confirm
 it; a run or a harness-side check is needed), **accepted** (decided as it
 stands, with no fix planned).
 
-Last checked against the code: 2026-10-20 (status audit of `main` at
-`1c4def9` and the live database). Statuses changed on 2026-10-21 by the live
+Last checked against the code: 2026-10-23 (`main` at `41aa27e`, the N/A grade
+and its live deploy; statuses changed under Shipped and the follow-ups before
+Findings triage). The 2026-10-20 audit of `main` at `1c4def9` and the live
+database still holds for the items not named here. Statuses changed on 2026-10-21 by the live
 redeploy and by operator decisions; they are recorded under Reconciler,
 Harness portability and Shipped. Statuses changed on 2026-10-22 through PR #12
 (squash-merge `7fc76ba`, the OpenCode v2 triage runner); they are recorded under
@@ -82,6 +84,20 @@ from [plan §8](plans/MISSION-HUD-PLAN.md#8-outstanding):
   the live database; the running memoryd process (the binary's sha1 matches
   `b15baa93`; the process has not been inspected); and the closure of triage
   run 89 on the live database. Status: unverified.
+
+**Follow-ups from the N/A grade and its review (mission-20261022-05, 2026-10-23).**
+Each is a one-line item; the detail is in the mission DEBRIEF and FINDINGS
+(2026-10-23 entries), in the harness repository.
+
+- `cmd/mcpd/triage.go:176`: the `grade_write` description, and the skip reason for an excluded mission. Status: open.
+- `internal/api/grades.go:763`: the `RowsAffected` error is discarded. Status: open, low.
+- `internal/store/mission_grades.go`: the rebuild's count and FK-rise guards are untested (`:134-136`, `:141-144`). Status: open.
+- `internal/store/triage_runs.go:82`: the FK restore error is discarded. Status: open, low.
+- `scripts/triage-run.sh`: a run with no `--mission` and no `python3` fails silently under `set -e`. Status: open.
+- The 1-second real-binary tests: the entry under Findings triage above. Status: open, low.
+- `scripts/mutate.py`: the shared-text check reads only the first failure per mirror pair. Status: open; the FINDINGS entry is proposed, not yet ratified.
+- `scripts/check_mutants.py`: a `--reanchor` mode. Status: open; the FINDINGS entry is proposed, not yet ratified.
+- Screenshot negative control: the new `capture.js` assertions are shown to fail only by hand, not in the pipeline (review W2, step A). Status: open.
 
 ## Findings triage
 
@@ -406,7 +422,11 @@ except the operational ones, which name their evidence instead.
 - Operator N/A for missions that should not count: `mission_grades.state`
   admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
   `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
-  N/A on the HUD and the Performance page (PR #13, mission-20261022-05).
+  N/A on the HUD and the Performance page (PR #13, squash-merge `41aa27e`,
+  mission-20261022-05). Deployed to the live service on 2026-10-23 with
+  `scripts/install-daemon.sh`; the `mission_grades` rebuild ran on that start
+  (operator-reported). The override with a note is still open, under Memory
+  insight.
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).

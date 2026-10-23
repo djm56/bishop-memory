@@ -4,7 +4,7 @@ The review page at `http://127.0.0.1:8787/triage` is where findings get decided 
 
 ## Triage and Missions
 
-The **Triage / Missions** switch in the header moves between this page and the [mission HUD](Mission-HUD-Guide) at `/missions`. The two pages share the theme setting.
+The page switch in the header (**Triage**, **Missions**, **Performance**, **Crew**) moves between this page and the other three. The [mission HUD](Mission-HUD-Guide) is the **Missions** page at `/missions`. The pages share the theme setting.
 
 - A finding card that has a mission shows the mission id; it links to `/missions#<mission id>`, that mission on the HUD.
 - `/triage?finding=<id>` (or `?finding=12,13`) opens the Browse tab on just those findings, with a **show all** link back to the full list. The HUD's **Open in triage →** links use it.

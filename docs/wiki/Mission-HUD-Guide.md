@@ -4,11 +4,11 @@ The mission HUD at `http://127.0.0.1:8787/missions` shows the whole history of a
 
 The page only reads. Nothing on it changes a mission, a step or a finding; decisions on findings stay on the [review page](Review-Page-Guide).
 
-![The mission HUD: the mission list on the left, and on the right a completed mission with its header, tiles and brief](images/missions-light.png)
+![The mission HUD: the page switch across the top (Triage, Missions, Performance, Crew), the mission list on the left, and on the right a completed mission with its header, tabs, tiles, the Now block and its Grade section](images/missions-light.png)
 
 ## Moving between Triage and Missions
 
-Both pages carry a **Triage / Missions** switch in the header, and they share the theme setting.
+Every page carries the page switch in the header: **Triage**, **Missions**, **Performance** and **Crew** (`internal/ui/missions.html:349`, `internal/ui/triage.html:314`). The pages share the theme setting.
 
 - A finding on `/missions` has an **Open in triage →** link. It goes to `/triage?finding=<id>`, which opens the Browse tab on just that finding, with a **show all** link back to the full list. `?finding=` also takes a comma-separated list, `?finding=12,13`.
 - A finding card on `/triage` shows its mission id when it has one. The id links to `/missions#<mission id>`.
