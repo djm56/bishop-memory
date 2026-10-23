@@ -1,4 +1,4 @@
-// scripts/screenshots/capture.js — capture the review page and the mission HUD for the docs.
+// scripts/screenshots/capture.js — capture the review page, the mission HUD and the performance page for the docs.
 //
 // Usage: node capture.js <base-url> <output-dir>
 //
@@ -36,7 +36,7 @@ const SHOTS = [
     after: async (page) => { await showMissionHead(page); } },
   // The set-aside mission from demo.json: its Grade section carries the large N/A badge.
   { name: 'missions-na-light', theme: 'light', viewport: DESKTOP, mission: 'Dry run of the release checklist',
-    after: async (page) => { await showMissionSection(page, { heading: 'Grade', must: '.verdict' }); } },
+    after: async (page) => { await showMissionSection(page, { heading: 'Grade', must: '.verdict', text: 'N/A' }); } },
   { name: 'performance-light', theme: 'light', viewport: DESKTOP, page: '/performance' },
   { name: 'performance-dark', theme: 'dark', viewport: DESKTOP, page: '/performance' },
   { name: 'phone-light', theme: 'light', viewport: PHONE, tab: 'pending',
@@ -51,43 +51,60 @@ const SHOTS = [
     } },
 ];
 
+// The lowest edge, in CSS pixels, of the bars that stick to the top of the
+// viewport: the header, and the mission tab bar where it is sticky (on a phone
+// it is static and is not counted). A heading must sit below this edge to be
+// readable in a shot.
+async function stickyCover(page) {
+  return page.evaluate(() => {
+    const bars = [...document.querySelectorAll('header.top, #mtabs')]
+      .filter(el => getComputedStyle(el).position === 'sticky' && el.getClientRects().length > 0);
+    return Math.max(0, ...bars.map(el => parseFloat(getComputedStyle(el).top) + el.offsetHeight));
+  });
+}
+
 // Makes a mission tab current, when one is given, then scrolls the mission view
-// so the section with this heading sits just below the sticky header. The
-// section is found by its heading, never by its position: the panes hide the
-// sections of other tabs, so a position can name a hidden one. The shot fails
-// unless the section is visible and its `must` element is on screen afterwards.
-async function showMissionSection(page, { tab, heading, must }) {
+// so the heading of the section named by `heading` sits just below the sticky
+// bars. The section is found by its heading, never by its position: the panes
+// hide the sections of other tabs, so a position can name a hidden one. The shot
+// fails unless the section is visible, its heading and its `must` element are on
+// screen below the sticky bars, and, when `text` is given, the section contains it.
+async function showMissionSection(page, { tab, heading, must, text }) {
   if (tab) {
     await page.click(`#mtabs button[data-mt="${tab}"]`);
     await page.waitForTimeout(300);
   }
-  await page.evaluate(({ heading, must }) => {
+  const covered = await stickyCover(page);
+  await page.evaluate(({ heading, must, text, covered }) => {
     const sec = [...document.querySelectorAll('#view section.sec')]
       .find(s => (s.querySelector('h3')?.childNodes[0]?.textContent || '').trim() === heading);
     if (!sec || sec.hidden || sec.getClientRects().length === 0) throw new Error(`no visible "${heading}" section`);
-    const header = document.querySelector('header.top').offsetHeight;
-    window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - header - 12);
-    const target = must ? sec.querySelector(must) : sec;
-    const r = target ? target.getBoundingClientRect() : null;
-    if (!r || r.height === 0 || r.top < header || r.top >= window.innerHeight) {
-      throw new Error(`"${heading}" ${must || 'section'} is not on screen after scrolling`);
-    }
-  }, { heading, must });
+    const h3 = sec.querySelector('h3');
+    window.scrollTo(0, h3.getBoundingClientRect().top + window.scrollY - covered - 12);
+    const below = el => {
+      const r = el.getBoundingClientRect();
+      return r.height > 0 && r.top >= covered && r.top < window.innerHeight;
+    };
+    if (!below(h3)) throw new Error(`the "${heading}" heading is clipped by the sticky bars or is off screen`);
+    const target = must ? sec.querySelector(must) : null;
+    if (must && (!target || !below(target))) throw new Error(`"${heading}" ${must} is not on screen below the sticky bars`);
+    if (text && !sec.innerText.includes(text)) throw new Error(`the "${heading}" section does not contain "${text}"`);
+  }, { heading, must, text, covered });
   await page.waitForTimeout(300);
 }
 
-// Scrolls the mission view so its header (#view, which holds the mission head)
-// sits just below the sticky header. Fails unless the head is on screen afterwards.
+// Scrolls the mission view so its head (.head, inside #view) sits just below the
+// sticky bars. Fails unless the head is on screen there afterwards.
 async function showMissionHead(page) {
-  await page.evaluate(() => {
+  const covered = await stickyCover(page);
+  await page.evaluate(covered => {
     const view = document.querySelector('#view');
     const head = view.querySelector('.head');
     if (!head || head.getClientRects().length === 0) throw new Error('no visible mission head');
-    const header = document.querySelector('header.top').offsetHeight;
-    window.scrollTo(0, view.getBoundingClientRect().top + window.scrollY - header - 12);
+    window.scrollTo(0, view.getBoundingClientRect().top + window.scrollY - covered - 12);
     const r = head.getBoundingClientRect();
-    if (r.bottom <= header || r.top >= window.innerHeight) throw new Error('the mission head is not on screen');
-  });
+    if (r.bottom <= covered || r.top >= window.innerHeight) throw new Error('the mission head is not on screen below the sticky bars');
+  }, covered);
   await page.waitForTimeout(300);
 }
 

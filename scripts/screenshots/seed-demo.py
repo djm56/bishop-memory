@@ -211,11 +211,20 @@ def seed_grades(url, demo, db_path):
 def seed_exclusions(url, demo):
     """Set the demo missions named under grades.excluded aside as N/A, through the
     operator's exclusion route. Runs after seed_grades, so the grade run never
-    claims these missions. Returns how many were set aside."""
+    claims these missions. A key that names no demo mission, or an answer other
+    than state 'excluded', stops the run with a message (tc.die). A non-2xx
+    answer stops it too, inside call(). Returns how many exclusions succeeded."""
     spec = (demo.get("grades") or {}).get("excluded", {})
+    ids = demo.get("_mission_ids", {})
+    set_aside = 0
     for key, note in spec.items():
-        call(url, "PUT", f"/v1/mission-grades/{demo['_mission_ids'][key]}/exclusion", {"note": note})
-    return len(spec)
+        if key not in ids:
+            tc.die(f"[seed-demo] grades.excluded names '{key}', which is not the key of a demo mission in missions")
+        answer = call(url, "PUT", f"/v1/mission-grades/{ids[key]}/exclusion", {"note": note})
+        if answer.get("state") != "excluded":
+            tc.die(f"[seed-demo] excluding '{key}' answered {answer!r}, not state excluded")
+        set_aside += 1
+    return set_aside
 
 
 def main():
