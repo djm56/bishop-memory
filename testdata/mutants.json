@@ -9290,6 +9290,36 @@
       "killers": [
         "RunDecidesOnBishopCalls.test_text_in_utf8_that_is_not_ascii_is_read_and_printed"
       ]
+    },
+    {
+      "id": "DEPLOY-ENV-OVERRIDE-IGNORED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-deploy.sh",
+      "line": 50,
+      "before": "DIR=\"${DEPLOY_DIR:-$HOME/bishop-memory-deploy}\"",
+      "after": "DIR=\"$HOME/bishop-memory-deploy\"",
+      "property": "Run without --dir, the script takes its deploy path from DEPLOY_DIR when it is set; the mutant ignores the variable and uses the default under HOME",
+      "mirror": "DEPLOY-FLAG-IGNORED",
+      "suite": "scripts/test_triage_deploy.py",
+      "killers": [
+        "DeployBuildFetchAndUsage.test_the_deploy_dir_variable_sets_the_default_for_the_script_without_a_flag"
+      ]
+    },
+    {
+      "id": "DEPLOY-FLAG-IGNORED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-deploy.sh",
+      "line": 53,
+      "before": "--dir) DIR=\"${2:-}\"; shift 2 ;;",
+      "after": "--dir) shift 2 ;;",
+      "property": "--dir names the deploy path and overrides DEPLOY_DIR; the mutant drops the flag, so the environment or the default is used",
+      "mirror": "DEPLOY-ENV-OVERRIDE-IGNORED",
+      "suite": "scripts/test_triage_deploy.py",
+      "killers": [
+        "DeployBuildFetchAndUsage.test_the_deploy_dir_variable_sets_the_default_for_the_script_without_a_flag"
+      ]
     }
   ]
 }

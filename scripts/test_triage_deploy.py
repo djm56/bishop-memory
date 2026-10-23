@@ -390,6 +390,28 @@ class DeployBuildFetchAndUsage(DeployCase):
         self.assertFalse(os.path.exists(os.path.join(self.home, "bishop-memory-deploy")),
                          "the default path under HOME must not be used when DEPLOY_DIR is set")
 
+    def test_the_deploy_dir_variable_sets_the_default_for_the_script_without_a_flag(self):
+        """Path: scripts/triage-deploy.sh run directly, with DEPLOY_DIR in its environment and no --dir. The worktree is created at DEPLOY_DIR, and not at the default under HOME.
+
+        The control is the flag: with --dir as well, the flag names the path and DEPLOY_DIR is ignored.
+        Recorded against mutant DEPLOY-ENV-OVERRIDE-IGNORED, which drops the environment default, and DEPLOY-FLAG-IGNORED, which drops the flag. Each fails here.
+        """
+        script = os.path.join(self.dev, "scripts", "triage-deploy.sh")
+        proc = subprocess.run(["/bin/bash", script], cwd=self.dev, env={**self.env, "DEPLOY_DIR": self.deploy},
+                              capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertTrue(os.path.isdir(self.deploy), "the worktree must be at DEPLOY_DIR: " + verdict(proc))
+        self.assertEqual(self.sha(self.deploy), self.origin_main(), verdict(proc))
+        self.assertFalse(os.path.exists(os.path.join(self.home, "bishop-memory-deploy")),
+                         "the default under HOME must not be used when DEPLOY_DIR is set")
+        flagged = os.path.join(self.tmp, "flagged")
+        ignored = os.path.join(self.tmp, "ignored-env")
+        proc = subprocess.run(["/bin/bash", script, "--dir", flagged], cwd=self.dev,
+                              env={**self.env, "DEPLOY_DIR": ignored}, capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, "control: " + verdict(proc))
+        self.assertTrue(os.path.isdir(flagged), "control: the flag must name the worktree path")
+        self.assertFalse(os.path.exists(ignored), "control: DEPLOY_DIR must be ignored when the flag is given")
+
     def test_a_build_failure_exits_3_and_removes_the_old_binary(self):
         """Path: origin/main advances to a commit whose main.go does not compile. The run exits 3 with a message that says the build failed, and bin/mcpd is gone, so no earlier binary runs.
 
