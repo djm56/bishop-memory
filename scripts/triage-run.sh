@@ -895,14 +895,27 @@ if engine == "claude":
 # triage_run_start, one read of the work for this kind, and triage_run_finish all
 # completed. A run with nothing to do still makes that read, so it passes. The ERROR
 # line says why a run failed, from where errors, run_failed and problems are set below.
-# No missing call is named from a result the parser could not read. Errors from other
-# tools are counted in tool_errors and are not judged here.
+# No missing call is named when a field the parser checks was out of shape: that event
+# may have been the call. Errors from other tools are counted in tool_errors and are
+# not judged here.
 #
-# A field that is not in the shape the loop reads is recorded as drift and fails the
-# run (see read). Null or absent is read as empty and is not drift. A line that is JSON
-# but not an object is drift. A line that is not JSON is counted in unparsed, which only
-# a run with no steps is judged on: where there are steps, the calls decide. A blank line
-# is a line that is not JSON.
+# Fields checked for shape, each through read: in every event the type and the part; in
+# a step_finish the cost; in a text event the text; in a tool_use event the tool, the
+# state and the status in the state, and, for a triage_run_finish that did not end in
+# error only, the input in the state and the status in that input; in an error event
+# the error, its data, and the three values the message is chosen from (the message in
+# the data, the message in the error, the type of the error). A checked
+# field that is not in shape is recorded as drift. Policy, current: any drift fails the
+# run, whatever the field, cost included, even when every call completed. Null or
+# absent is read as empty and is not drift. A value of the wrong type is drift
+# whether it is falsy or not, and a bool is not a number. A line that is JSON but not
+# an object is drift. A line that is not JSON is counted in unparsed, which only a run
+# with no steps is judged on: where there are steps, the calls decide. A blank line is
+# a line that is not JSON. Not checked: the reason of a step_finish and the messageID
+# of a text event. They are printed or compared and never decide the exit status or
+# the reason, so a wrong-typed one changes only the stop= and the closing words shown.
+# Anything else that raises is caught at the end of this program and fails the run
+# naming the exception type.
 BISHOP = "bishop-triage_"
 # The reads of its work that each kind makes, without the prefix. Classify reads
 # with triage_next_unclassified, or with finding_list when it reclassifies a category.
@@ -923,94 +936,106 @@ bishop_errors, completed = [], set()  # bishop-triage errors not yet forgiven, i
 
 
 def read(value, types, field):
-    """The value when it is one of types. Null or absent reads as the empty value of the first type. Anything else is recorded in drift under field and reads the same."""
-    if isinstance(value, types):
+    """The value when its type is exactly one of types, so a bool is not a number. Null or absent reads as the empty value of the first type. Anything else, falsy or not, is recorded in drift under field and reads the same."""
+    if type(value) in types:
         return value
     if value is not None:
         drift.append(field)
     return types[0]()
 
 
-for line in open(path):
-    try:
-        e = json.loads(line)
-    except ValueError:
-        unparsed += 1
-        continue
-    if not isinstance(e, dict):
-        drift.append("line")
-        continue
-    kind, part = e.get("type"), read(e.get("part"), (dict,), "part")
-    if kind == "step_finish":
-        steps += 1
-        cost += read(part.get("cost"), (int, float), "cost")
-        reason = part.get("reason")
-    elif kind == "text":
-        if part.get("messageID") != last_msg:
-            texts, last_msg = [], part.get("messageID")
-        texts.append(read(part.get("text"), (str,), "text"))
-    elif kind == "tool_use":
-        tool_uses += 1
-        state = read(part.get("state"), (dict,), "state")
-        name, status = str(part.get("tool") or ""), state.get("status")
-        if name and status:
-            shaped += 1
-        if status == "error":
-            tool_errors += 1
-            if name.startswith(BISHOP):
-                bishop_errors.append(name)
-        elif status == "completed" and name.startswith(BISHOP):
-            completed.add(name)
-            # A completed call forgives the earlier errors of the same tool, and only those.
-            bishop_errors = [n for n in bishop_errors if n != name]
-        if status != "error" and name.endswith("triage_run_finish") and read(state.get("input"), (dict,), "input").get("status") == "failed":
-            run_failed = True
-    elif kind == "error":
-        err = read(e.get("error"), (dict,), "error")
-        data = read(err.get("data"), (dict,), "error data")
-        errors.append(read(data.get("message") or err.get("message") or err.get("type") or "error", (str,), "error message"))
-text = " ".join(texts).strip().replace("\n", " | ")
-# The reasons a run fails, named so triage.log says why.
-problems = []
-if bishop_errors:
-    counts = {}
-    for name in bishop_errors:
-        counts[name] = counts.get(name, 0) + 1
-    problems.append("bishop-triage tool errors: " + ", ".join("%s x%d" % (n, c) for n, c in counts.items()))
-if drift:
-    # An event with a field out of shape was read as empty or skipped, so the calls seen may be incomplete and none is named as missing.
-    problems.append("result fields not in the expected shape (format changed?): " + ", ".join(sorted(set(drift))))
-elif steps == 0 and unparsed:
-    # Lines that are not JSON and no step_finish to judge a run by. The format changed under the parser.
-    problems.append("result lines do not parse as JSON (format changed?)")
-elif steps == 0:
-    # steps counts step_finish events. With none there is no run whose calls could be judged.
-    problems.append("no steps in the result")
-elif tool_uses == 0:
-    # Steps ran but no tool_use event parsed. The format may have changed, so no call is named as missing.
-    problems.append("no tool calls parsed from the result (format changed?)")
-elif shaped == 0:
-    # tool_use events parsed, but none has both a tool name and a status. Same reading: no call is named as missing.
-    problems.append("tool calls parsed from the result carry no name or status (format changed?)")
-else:
-    not_done = []
-    if BISHOP + "triage_run_start" not in completed:
-        not_done.append(BISHOP + "triage_run_start")
-    reads = [BISHOP + r for r in WORK_READS[task]]
-    if not any(r in completed for r in reads):
-        not_done.append(" or ".join(reads))
-    if BISHOP + "triage_run_finish" not in completed:
-        not_done.append(BISHOP + "triage_run_finish")
-    if not_done:
-        problems.append("no completed bishop-triage call (not completed: " + ", ".join(not_done) + ")")
-# The branches above give every run with no steps a reason, so problems decides that case and steps == 0 is not tested again here.
-failed = bool(errors) or run_failed or bool(problems)
-flag = ("ERROR run closed as failed " if run_failed else "ERROR ") if failed else ""
-detail = f" errors={'; '.join(errors)[:200]}" if errors else ""
-if problems:
-    detail += f" reason={'; '.join(problems)[:300]}"
-print(f"{flag}steps={steps} tool_errors={tool_errors} cost_usd={round(cost, 4)} stop={reason}{detail} :: {text[:400]}")
-sys.exit(3 if failed else 0)
+try:
+    # utf-8 is named so that a result file that is not UTF-8 fails the same way under any locale.
+    for line in open(path, encoding="utf-8"):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            unparsed += 1
+            continue
+        if not isinstance(e, dict):
+            drift.append("line")
+            continue
+        kind, part = read(e.get("type"), (str,), "type"), read(e.get("part"), (dict,), "part")
+        if kind == "step_finish":
+            steps += 1
+            cost += read(part.get("cost"), (int, float), "cost")
+            reason = part.get("reason")
+        elif kind == "text":
+            if part.get("messageID") != last_msg:
+                texts, last_msg = [], part.get("messageID")
+            texts.append(read(part.get("text"), (str,), "text"))
+        elif kind == "tool_use":
+            tool_uses += 1
+            state = read(part.get("state"), (dict,), "state")
+            name, status = read(part.get("tool"), (str,), "tool"), read(state.get("status"), (str,), "status")
+            if name and status:
+                shaped += 1
+            if status == "error":
+                tool_errors += 1
+                if name.startswith(BISHOP):
+                    bishop_errors.append(name)
+            elif status == "completed" and name.startswith(BISHOP):
+                completed.add(name)
+                # A completed call forgives the earlier errors of the same tool, and only those.
+                bishop_errors = [n for n in bishop_errors if n != name]
+            if status != "error" and name.endswith("triage_run_finish"):
+                closing = read(state.get("input"), (dict,), "input")
+                if read(closing.get("status"), (str,), "input status") == "failed":
+                    run_failed = True
+        elif kind == "error":
+            err = read(e.get("error"), (dict,), "error")
+            data = read(err.get("data"), (dict,), "error data")
+            # All three candidates are read before one is chosen, so a wrong-typed one is drift even when it is falsy or is not the one used.
+            candidates = [read(data.get("message"), (str,), "error message"),
+                          read(err.get("message"), (str,), "error message"),
+                          read(err.get("type"), (str,), "error type")]
+            errors.append(next((c for c in candidates if c), "error"))
+    text = " ".join(texts).strip().replace("\n", " | ")
+    # The reasons a run fails, named so triage.log says why.
+    problems = []
+    if bishop_errors:
+        counts = {}
+        for name in bishop_errors:
+            counts[name] = counts.get(name, 0) + 1
+        problems.append("bishop-triage tool errors: " + ", ".join("%s x%d" % (n, c) for n, c in counts.items()))
+    if drift:
+        # An event with a field out of shape was read as empty or skipped, so the calls seen may be incomplete and none is named as missing.
+        problems.append("result fields not in the expected shape (format changed?): " + ", ".join(sorted(set(drift))))
+    elif steps == 0 and unparsed:
+        # Lines that are not JSON and no step_finish to judge a run by. The format changed under the parser.
+        problems.append("result lines do not parse as JSON (format changed?)")
+    elif steps == 0:
+        # steps counts step_finish events. With none there is no run whose calls could be judged.
+        problems.append("no steps in the result")
+    elif tool_uses == 0:
+        # Steps ran but no tool_use event parsed. The format may have changed, so no call is named as missing.
+        problems.append("no tool calls parsed from the result (format changed?)")
+    elif shaped == 0:
+        # tool_use events parsed, but none has both a tool name and a status. Same reading: no call is named as missing.
+        problems.append("tool calls parsed from the result carry no name or status (format changed?)")
+    else:
+        not_done = []
+        if BISHOP + "triage_run_start" not in completed:
+            not_done.append(BISHOP + "triage_run_start")
+        reads = [BISHOP + r for r in WORK_READS[task]]
+        if not any(r in completed for r in reads):
+            not_done.append(" or ".join(reads))
+        if BISHOP + "triage_run_finish" not in completed:
+            not_done.append(BISHOP + "triage_run_finish")
+        if not_done:
+            problems.append("no completed bishop-triage call (not completed: " + ", ".join(not_done) + ")")
+    # The branches above give every run with no steps a reason, so problems decides that case and steps == 0 is not tested again here.
+    failed = bool(errors) or run_failed or bool(problems)
+    flag = ("ERROR run closed as failed " if run_failed else "ERROR ") if failed else ""
+    detail = f" errors={'; '.join(errors)[:200]}" if errors else ""
+    if problems:
+        detail += f" reason={'; '.join(problems)[:300]}"
+    print(f"{flag}steps={steps} tool_errors={tool_errors} cost_usd={round(cost, 4)} stop={reason}{detail} :: {text[:400]}")
+    sys.exit(3 if failed else 0)
+except Exception as exc:
+    # An exception this program did not plan for fails the run with its type named, where an uncaught one would leave an empty summary and an empty reason. The cases tested are a result file that is not UTF-8, JSON nested too deeply to decode, a cost too large for a float, and a character the output cannot encode. SystemExit is not an Exception, so the exits above pass through.
+    print(f"ERROR reason=summary stopped on {type(exc).__name__}")
+    sys.exit(3)
 PY
 )" || { log "[$KIND] agent reported an error: $summary"; return 1; }
   log "[$KIND] done $summary"
