@@ -34,6 +34,9 @@ const SHOTS = [
     after: async (page) => { await scrollToSection(page, 2); } },
   { name: 'missions-phone-light', theme: 'light', viewport: PHONE, mission: 'Retry transient provider errors',
     after: async (page) => { await scrollToSection(page, -1); } },
+  // The set-aside mission from demo.json: its Grade section carries the large N/A badge.
+  { name: 'missions-na-light', theme: 'light', viewport: DESKTOP, mission: 'Dry run of the release checklist',
+    after: async (page) => { await scrollToGrade(page); } },
   { name: 'performance-light', theme: 'light', viewport: DESKTOP, page: '/performance' },
   { name: 'performance-dark', theme: 'dark', viewport: DESKTOP, page: '/performance' },
   { name: 'phone-light', theme: 'light', viewport: PHONE, tab: 'pending',
@@ -56,6 +59,21 @@ async function scrollToSection(page, i) {
     const header = document.querySelector('header.top').offsetHeight;
     window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - header - 12);
   }, i);
+  await page.waitForTimeout(300);
+}
+
+// Scrolls the mission view so its Grade section sits just below the sticky
+// header. The section is found by its heading, because the panes hide sections
+// that belong to other tabs, so a numeric index can name a hidden one. Throws
+// when there is no Grade section, so the shot fails rather than capturing the top.
+async function scrollToGrade(page) {
+  await page.evaluate(() => {
+    const sec = [...document.querySelectorAll('#view section.sec')]
+      .find(s => s.querySelector('h3')?.textContent.trim() === 'Grade');
+    if (!sec) throw new Error('no Grade section in the mission view');
+    const header = document.querySelector('header.top').offsetHeight;
+    window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - header - 12);
+  });
   await page.waitForTimeout(300);
 }
 

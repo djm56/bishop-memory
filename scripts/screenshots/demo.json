@@ -422,10 +422,46 @@
       ],
       "patterns": [],
       "service_records": []
+    },
+    {
+      "key": "test-run",
+      "title": "Dry run of the release checklist",
+      "owner": "bishop",
+      "opened": "2026-09-26 15:02:00",
+      "closed": "2026-09-26 15:31:00",
+      "status": "complete",
+      "outcome": "done",
+      "goal": "Walk the release checklist once on a scratch branch to check that its steps run in order.",
+      "criteria": [
+        [
+          "Every checklist step runs in order on the scratch branch.",
+          "pass: walked by hand"
+        ]
+      ],
+      "files": [
+        "docs/release-checklist.md — the checklist under test"
+      ],
+      "wrong": "- None recorded.",
+      "mistakes": "- None.",
+      "steps": [
+        {
+          "step": "1",
+          "phase": "",
+          "agent": "@bishop",
+          "status": "done",
+          "start": "2026-09-26 15:02:00",
+          "end": "2026-09-26 15:31:00",
+          "summary": "Checklist walked on the scratch branch; every step ran in order",
+          "notes": "A dry run for the operator's own check. Nothing from it was shipped."
+        }
+      ],
+      "findings": [],
+      "patterns": [],
+      "service_records": []
     }
   ],
   "grades": {
-    "_comment": "Mission grades, written through the grader's own claim and write routes. 'missions' grades the demo missions above by key; 'history' adds small finished missions on other made-up harnesses so the performance page has averages and trends to show.",
+    "_comment": "Mission grades, written through the grader's own claim and write routes. 'missions' grades the demo missions above by key; 'excluded' sets a demo mission aside as N/A through the operator's exclusion route, by key, after the grades are written; 'history' adds small finished missions on other made-up harnesses so the performance page has averages and trends to show.",
     "model": "opencode-go/glm-5.2",
     "missions": {
       "retry": {"grade": "B", "summary": "4/4 acceptance criteria met; @hicks's first report overclaimed the cap test and was returned once (step 3); no escalation, three improvement findings.",
@@ -433,6 +469,7 @@
       "config": {"grade": "A", "summary": "2/2 criteria met in two steps with no rework; the debrief records no sub-agent mistakes and the one finding is an improvement idea, not an error.",
                  "suggestions": "None — keep the current approach."}
     },
+    "excluded": {"test-run": "Test mission, set aside"},
     "history": [
       {"harness": "api-service", "title": "Paginate the audit log endpoint", "closed": "2026-09-08 16:20:00", "grade": "C", "summary": "3/3 criteria met after two fix rounds; an escalation to @vasquez resolved an off-by-one in the cursor.", "suggestions": "Brief cursor-pagination steps with the exact boundary cases to test."},
       {"harness": "api-service", "title": "Rotate signing keys without downtime", "closed": "2026-09-11 12:05:00", "grade": "B", "summary": "4/4 criteria met; one fix round for a missing rollback path.", "suggestions": "Name the rollback path as an acceptance criterion when a change is hard to undo."},

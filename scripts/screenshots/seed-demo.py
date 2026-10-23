@@ -18,6 +18,10 @@ something to show. --db, the throwaway database file, lets the seeder
 backdate the missions and their journal to the dates in demo.json; the API
 stamps both with the current time.
 
+Grades go through the grader's claim and write routes. A demo mission named
+under grades.excluded is then set aside as N/A through the operator's
+exclusion route, so the HUD and the performance page show that state too.
+
 Refuses to seed a database that already holds findings: this is for a
 throwaway instance only (scripts/screenshots/run.sh starts one).
 
@@ -204,6 +208,16 @@ def seed_grades(url, demo, db_path):
     return written
 
 
+def seed_exclusions(url, demo):
+    """Set the demo missions named under grades.excluded aside as N/A, through the
+    operator's exclusion route. Runs after seed_grades, so the grade run never
+    claims these missions. Returns how many were set aside."""
+    spec = (demo.get("grades") or {}).get("excluded", {})
+    for key, note in spec.items():
+        call(url, "PUT", f"/v1/mission-grades/{demo['_mission_ids'][key]}/exclusion", {"note": note})
+    return len(spec)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True)
@@ -290,12 +304,14 @@ def main():
              {"state": "accepted", "decided_by": approver})
 
     graded = seed_grades(url, demo, args.db) if args.memory_root else 0
+    set_aside = seed_exclusions(url, demo) if args.memory_root else 0
 
     pending = call(url, "GET", "/v1/triage/pending")
     missions = len(demo.get("missions", [])) if args.memory_root else 0
     print(f"[seed-demo] {missions} missions, {len(ids)} findings, {len(demo['runs'])} runs, "
           f"{pending['pending_findings']} pending recommendations, "
-          f"{len(pending['directive_proposals'])} pending directive drafts, {graded} mission grades")
+          f"{len(pending['directive_proposals'])} pending directive drafts, {graded} mission grades, "
+          f"{set_aside} set aside")
 
 
 if __name__ == "__main__":
