@@ -859,10 +859,12 @@ run_agent() {
     return 1
   fi
   local summary
-  summary="$(python3 - "$RESULT_FILE" "$ENGINE" <<'PY'
+  summary="$(python3 - "$RESULT_FILE" "$ENGINE" "$KIND" <<'PY'
 import json, sys
-path, engine = sys.argv[1], sys.argv[2]
+path, engine, task = sys.argv[1], sys.argv[2], sys.argv[3]
 
+# The claude engine result is one JSON object with no per-tool results, so the
+# bishop-triage rules below cannot be judged on it. is_error is its only signal.
 if engine == "claude":
     try:
         d = json.load(open(path))
@@ -880,8 +882,23 @@ if engine == "claude":
 # agent that gives up closes its triage run with status failed and still
 # exits cleanly, so that call is read too. (No apostrophes in this heredoc:
 # bash 3.2 misparses them inside a substitution.)
+#
+# A bishop-triage call is read from its tool_use event, with status completed or
+# error. The run fails when a bishop-triage call ended in error, or when it did
+# not complete both triage_run_start and one read of the work for this kind. A run
+# with nothing to do still makes that read, so it passes. Errors from other tools
+# are counted in tool_errors and are not judged here.
+BISHOP = "bishop-triage_"
+# The reads of its work that each kind makes, without the prefix. Classify reads
+# with triage_next_unclassified, or with finding_list when it reclassifies a category.
+WORK_READS = {
+    "classify": ("triage_next_unclassified", "finding_list"),
+    "process": ("triage_category_findings",),
+    "grade": ("grade_claim",),
+}
 steps, cost, reason, last_msg = 0, 0.0, None, None
 texts, errors, tool_errors, run_failed = [], [], 0, False
+bishop_errors, completed = [], set()  # failed bishop-triage calls in order; completed ones by name
 for line in open(path):
     try:
         e = json.loads(line)
@@ -898,17 +915,39 @@ for line in open(path):
             texts, last_msg = [], part.get("messageID")
         texts.append(part.get("text") or "")
     elif kind == "tool_use":
-        if state.get("status") == "error":
+        name, status = str(part.get("tool", "")), state.get("status")
+        if status == "error":
             tool_errors += 1
-        elif str(part.get("tool", "")).endswith("triage_run_finish") and (state.get("input") or {}).get("status") == "failed":
+            if name.startswith(BISHOP):
+                bishop_errors.append(name)
+        elif status == "completed" and name.startswith(BISHOP):
+            completed.add(name)
+        if status != "error" and name.endswith("triage_run_finish") and (state.get("input") or {}).get("status") == "failed":
             run_failed = True
     elif kind == "error":
         err = e.get("error") or {}
         errors.append((err.get("data") or {}).get("message") or err.get("message") or err.get("type") or "error")
 text = " ".join(texts).strip().replace("\n", " | ")
-failed = bool(errors) or steps == 0 or run_failed
+# The reasons a run fails on bishop-triage calls, named so triage.log says why.
+problems = []
+if bishop_errors:
+    counts = {}
+    for name in bishop_errors:
+        counts[name] = counts.get(name, 0) + 1
+    problems.append("bishop-triage tool errors: " + ", ".join("%s x%d" % (n, c) for n, c in counts.items()))
+not_done = []
+if BISHOP + "triage_run_start" not in completed:
+    not_done.append(BISHOP + "triage_run_start")
+reads = [BISHOP + r for r in WORK_READS[task]]
+if not any(r in completed for r in reads):
+    not_done.append(" or ".join(reads))
+if not_done:
+    problems.append("no completed bishop-triage call (not completed: " + ", ".join(not_done) + ")")
+failed = bool(errors) or steps == 0 or run_failed or bool(problems)
 flag = ("ERROR run closed as failed " if run_failed else "ERROR ") if failed else ""
 detail = f" errors={'; '.join(errors)[:200]}" if errors else ""
+if problems:
+    detail += f" reason={'; '.join(problems)[:300]}"
 print(f"{flag}steps={steps} tool_errors={tool_errors} cost_usd={round(cost, 4)} stop={reason}{detail} :: {text[:400]}")
 sys.exit(3 if failed else 0)
 PY
