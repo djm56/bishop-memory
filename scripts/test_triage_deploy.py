@@ -210,7 +210,7 @@ class DeployCreatesAndUpdates(DeployCase):
     def test_a_worktree_already_at_origin_main_keeps_its_head_and_is_rebuilt(self):
         """Path: the deploy worktree is at origin/main already. The run exits 0, HEAD is unchanged, the script says it is already there, and bin/mcpd is rebuilt (a new inode).
 
-        Recorded against mutant DEPLOY-REFUSES-CURRENT, which treats an equal HEAD as diverged, and fails here.
+        Recorded against mutant DEPLOY-REFUSES-CURRENT, which refuses a worktree already at origin/main, and fails here.
         """
         self.deploy_once()
         self.assertEqual(self.sha(self.deploy), self.origin_main(), "control: the first deploy is at origin/main")
@@ -288,7 +288,7 @@ class DeployRefuses(DeployCase):
         """Path: the deploy worktree has a commit on top of origin/main, which has not moved. The run is refused and HEAD does not move. This is the ahead edge; the diverged edge is in the test above.
 
         The control resets the worktree to origin/main; the same run then exits 0 and HEAD is origin/main.
-        Recorded against mutant DEPLOY-ANCESTRY-INVERTED, which accepts a worktree ahead of origin/main, and fails here.
+        Recorded against mutant DEPLOY-AHEAD-ACCEPTED, which accepts a worktree ahead of origin/main, and fails here.
         """
         self.deploy_once()
         base = self.sha(self.deploy)
