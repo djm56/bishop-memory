@@ -54,6 +54,8 @@ Registered in `internal/api/router.go`. "Tool" is the `mcpd` tool that proxies t
 | GET / POST | `/v1/mission-grades` | list / write | — (performance page) / `grade_write` (triage) |
 | GET | `/v1/mission-grades/performance` | `performanceHandler` | — (performance page) |
 | DELETE | `/v1/mission-grades/:missionID` | `deleteGradeHandler` | — (operator: regrade) |
+| PUT | `/v1/mission-grades/:missionID/exclusion` | `setExclusionHandler` | — (operator: N/A) |
+| DELETE | `/v1/mission-grades/:missionID/exclusion` | `clearExclusionHandler` | — (operator: N/A) |
 | GET | `/v1/memory/search` | `searchMemoryHandler` | `memory_search` (both) |
 | POST | `/v1/documents/sync` | `syncDocumentsHandler` | `documents_sync` (harness) |
 | POST | `/v1/documents/push` | `pushDocumentsHandler` | — (reconciler, `push-memory.py`) |
@@ -78,12 +80,12 @@ Routes with no tool are the operator/reconciler surface. Keeping them off both `
 
 `internal/api/hud.go`. Read-only, under `/v1/hud` so nothing the harnesses, `mcpd` or the triage agents call changed shape. Rows come back as maps keyed by column name (`queryMaps`), so the page can show a new column without a model change.
 
-**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match), `grade` (a letter, or `ungraded`), `stale` (any value: only stale missions) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
+**`GET /v1/hud/missions`** — the board. Optional filters, AND-ed: `harness`, `status`, `outcome` (exact match), `grade` (a letter; `ungraded`, which leaves out excluded missions; or `na`, with its synonym `excluded`, for the operator's N/A), `stale` (any value: only stale missions) and `q`, which matches the mission id and title with `LIKE` and, when it sanitises to an FTS5 query, also matches missions whose brief, progress or debrief contain it. Newest first by `opened_at`. Response:
 
 ```json
 {
   "missions":  [{"id", "title", "status", "outcome", "harness", "owner", "priority",
-                 "grade", "grade_state", "opened_at", "closed_at", "updated_at",
+                 "grade", "grade_state", "excluded_note", "opened_at", "closed_at", "updated_at",
                  "last_activity", "stale",
                  "steps", "steps_done", "findings", "patterns", "has_brief", "has_debrief"}],
   "harnesses": [{"name", "missions"}]
@@ -296,6 +298,20 @@ The mission update's re-import (`syncMissionDocuments`) stays, but returns silen
 | `GET /v1/harnesses`, `PUT /v1/harnesses/:name` | `{"memory_root":"/abs/path/.claude/memory"}` | `memory_root` must be absolute |
 
 The pages and their icons (`/triage`, `/missions`, `/favicon.svg`, `/favicon.ico`) are embedded in the binary from `internal/ui/`; the icons are cached for a day, and `.ico` is a 32-pixel PNG so a browser's automatic request is not logged as a 404.
+
+### Mission grades: operator N/A
+
+The operator's routes under `/v1/mission-grades`, and the claim route, which the N/A changes. Behaviour is in [Mission Grading](Mission-Grading#setting-a-mission-aside-na). `internal/api/grades.go` holds the handlers.
+
+| Route | Body | Responses |
+|---|---|---|
+| `PUT /v1/mission-grades/:missionID/exclusion` | `{"note"}`: required, not blank after trimming, at most 700 characters; otherwise 400 | 200 `{"mission_id","state":"excluded","previous_state","previous_grade"}`; 404 `mission not found`; 409 for an unfinished mission; 500 while the `mission_grades` rebuild has not succeeded |
+| `DELETE /v1/mission-grades/:missionID/exclusion` | | 200 `{"mission_id","deleted":true}`; 404 `mission is not excluded` for a mission that is not excluded |
+| `DELETE /v1/mission-grades/:missionID` | | 409 `mission is excluded; …` for an excluded mission, which keeps its row |
+| `POST /v1/mission-grades/claim` | `{"mission_ids"}` or `{"limit"}` | With `mission_ids`, 409 `some missions cannot be claimed` and a `refused` list if any named mission is excluded, unknown (`no such mission`), unfinished or already has a verdict; the whole batch is refused |
+| `GET /v1/mission-grades` | `?state=`, `?grade=` | Without `state`, the list holds the rows that carry a grade or an exclusion, which is the set the `WHERE` at `internal/api/grades.go:612` names (pending and skipped rows need `?state=`); an excluded row has a null `grade` |
+
+The PUT does not set `graded_at`, so a hung run stays idle. An explicit claim of an unfinished mission with no outcome answers 409, not 500.
 
 ## Handler pattern
 

@@ -11,6 +11,7 @@ SQLite through `modernc.org/sqlite` (pure Go, no CGo). One file, WAL mode, forei
 3. `store.EnsureColumns` — for each entry in `additiveColumns`, `ALTER TABLE … ADD COLUMN` if `PRAGMA table_info` lacks it; then each statement in `additiveIndexes`.
 4. `store.EnsureMissionStepsIndex` — creates the unique index on `mission_steps(mission_id, step)` after checking for duplicates and producing an actionable error if any exist.
 5. `store.EnsureTriageRunKinds` — rebuilds `triage_runs` once on a database created before mission grading, to widen its `kind` CHECK to admit `grade`. SQLite cannot alter a CHECK, so it follows SQLite's documented rebuild: foreign keys off on one connection, then in one transaction create, copy every row with its id, drop, rename, and compare `foreign_key_check` before and after. Not fatal: on any error it rolls back, logs a warning and the service starts without grade runs. The rebuilt table is a superset of the old one, so an older `memoryd` still runs against it.
+6. `store.EnsureMissionGradeExcluded` — the same once-only rebuild for `mission_grades`, widening its `state` CHECK to admit `excluded` (`cmd/memoryd/main.go:121`). Also not fatal: on any error it rolls back and logs a warning, and the service starts with setting an exclusion refused until the rebuild succeeds.
 
 Consequence: a fresh database and an upgraded one end up identical, by different paths. `TestUpgradeFromPreTriageDatabase` in `internal/store/migrate_test.go` proves the upgrade path.
 
@@ -46,7 +47,7 @@ Consequence: a fresh database and an upgraded one end up identical, by different
 | `finding_groups` | autoincrement | `category` FK |
 | `finding_recommendations` | autoincrement; partial unique on `finding_id WHERE state='pending'` | `recommendation` CHECK approve/reject/supersede/defer; `state` pending/accepted/declined/expired |
 | `directive_proposals` | autoincrement | six template fields; `evidence` JSON array of finding ids; `directive_id` once accepted |
-| `mission_grades` | `mission_id` (one row per mission) | FK cascade to `missions`; `state` pending/graded/insufficient/skipped; `grade` A–F (required when graded); `signals` JSON the service computed; `attempts` claims so far. Claiming creates the row; a verdict closes it; two unanswered claims mark it skipped. See [Mission Grading](Mission-Grading) |
+| `mission_grades` | `mission_id` (one row per mission) | FK cascade to `missions`; `state` is one of the states its CHECK admits (`internal/store/mission_grades.go:48`, `db/schema.sql:445`), `excluded` being the operator's N/A; `grade` A–F, required when graded and always NULL when excluded; `signals` JSON the service computed; `attempts` claims so far. Claiming creates the row; a verdict closes it; two unanswered claims mark it skipped. See [Mission Grading](Mission-Grading) |
 
 ## Mission links
 

@@ -16,7 +16,9 @@ stands, with no fix planned).
 Last checked against the code: 2026-10-20 (status audit of `main` at
 `1c4def9` and the live database). Statuses changed on 2026-10-21 by the live
 redeploy and by operator decisions; they are recorded under Reconciler,
-Harness portability and Shipped.
+Harness portability and Shipped. Statuses changed on 2026-10-22 through PR #12
+(squash-merge `7fc76ba`, the OpenCode v2 triage runner); they are recorded under
+Findings triage and Shipped.
 
 ## Planned work
 
@@ -58,7 +60,8 @@ transcripts, and a retrieval log with a brief-prep tool that feeds past
 lessons into new briefs. Status: phase 0, stages 1b, 2 and 3 shipped (see
 [Shipped](#shipped)). Open: stage 1a (the fixed verdict line in the agent and
 skill definitions, waiting on ratification of decision P3); phase 2's
-Library, Activity, global search, filters in the URL, operator grade override,
+Library, Activity, global search, filters in the URL, operator grade override
+with a note (not started; the N/A state is shipped, see [Shipped](#shipped)),
 operator notes, park or close from the HUD, and the rest of the Trends work;
 phase 3 (cost
 and usage) and phase 4 (retrieval log, directive citations, git deliverables,
@@ -88,6 +91,33 @@ listed under [Shipped](#shipped). Calibration on the last 20 decisions and
 per-run accepted and declined counts are recorded as done in earlier notes,
 but were not found in the code on 2026-10-20. Status: check, before relying
 on either.
+
+**Grade runs can exit 0 without a grade.** `scripts/triage-run.sh` exits 0
+when a grade run ends with bishop-triage tool errors and writes no grade. The
+2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this
+reason. Source: mission-20261021-05 DEBRIEF (harness repository), and FINDINGS
+2026-10-22 (`scripts/triage-run.sh`, grade success check). Status: open. The
+operator wants it handled as a follow-up mission.
+
+**The launchd triage jobs run the development checkout.** The jobs run
+`/Users/djm56/bishop-memory`, so a `make mutate` run or an in-progress edit
+can reach a scheduled run. Fix: a dedicated deploy checkout or worktree.
+Source: FINDINGS 2026-10-22 (triage launchd jobs, deployment checkout). Status:
+open.
+
+**Live classify and process runs on the OpenCode v2 config shape are not
+observed.** Only `make triage-grade` has run live on that shape (step 2k of
+mission-20261021-05). Classify and process share the builder. Status:
+unverified; the scheduled runs are the first check.
+
+**The 1-second real-binary tests are timing-sensitive under load.** The tests
+in `scripts/test_triage_run.py` use 1-second timeouts, and review 4b judged
+them flaky under load. Source: review 4b, mission-20261021-05. Status: open,
+low.
+
+**Review follow-ups from mission-20261021-05.** Listed in its DEBRIEF, under
+Tracker And Reality, Follow-ups (harness repository:
+`.claude/memory/missions/mission-20261021-05/DEBRIEF.md`). Status: open, low.
 
 **Triage run 99 is still `running`.** Started 2026-10-19 19:20:18 UTC on
 `opencode-go/glm-5.2` (process) with an expired model key, so it is far past
@@ -166,8 +196,8 @@ mission the run does not know. Each mission with journal events gets a
 skipped at the cap exits 3; a failed operation or fetch exits 1 and outranks it.
 The step WARN is printed only after that mission's existing-steps fetch
 succeeds. `JOURNAL_MAX_PAGES` stays 1000, and the known-id set is the ids
-`parse_missions` returns. Status: decided, and shipped with the change that
-carries this record (`reconcile_journal` and `main()` in
+`parse_missions` returns. Status: decided, and shipped in PR #11 (`2cada81`)
+(`reconcile_journal` and `main()` in
 `scripts/reconcile-memory.py`).
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
@@ -318,7 +348,7 @@ except the operational ones, which name their evidence instead.
 
 **Reconciler**
 
-- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped with the change that carries this entry (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
+- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped in PR #11 (`2cada81`) (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
 - Operational, no commit (live system, 2026-10-21, operator-reported): memoryd
   was redeployed at 06:35 UTC with the flight-recorder paging from PR #9
   (`1c4def9`). A full journal reconcile of the live service was clean, with 13
@@ -373,12 +403,25 @@ except the operational ones, which name their evidence instead.
 
 **Mission grading and performance**
 
+- Operator N/A for missions that should not count: `mission_grades.state`
+  admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
+  `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
+  N/A on the HUD and the Performance page (PR #13, mission-20261022-05).
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).
 
 **Findings triage**
 
+- Triage runner on OpenCode v2 (PR #12, squash-merge `7fc76ba`, 2026-10-22).
+  The guard lists agents with `opencode debug agents`, checks the definition
+  file first and applies a last-match-wins allowlist; a check that cannot
+  finish exits 4. Runs use `opencode run --standalone` without `--pure`, so
+  operator plugins load. The MCP config uses the `mcp.servers` shape with
+  `codemode: false`, which fixed tools that OpenCode 2.0.32 hid behind Code
+  Mode; one live grade run confirmed it on 2026-10-22. `--help` works anywhere
+  in the arguments, and the docs require OpenCode v2. Evidence: CHANGELOG
+  `[Unreleased]`, Changed; mission-20261021-05 DEBRIEF.
 - Stale triage-run detection and operator close, and directive proposal reopen
   with amendment (9756373).
 - `export-decisions.py` amends and retires directives in place

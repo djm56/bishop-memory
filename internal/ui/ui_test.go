@@ -599,6 +599,88 @@ func TestTriageModelTruncatesBeforeEscapeSourceText(t *testing.T) {
 	}
 }
 
+// TestNAGradeSourceText is a source-text check only: it cannot run the pages'
+// JavaScript, and TestEmbeddedScriptsParse checks their syntax separately. It
+// asserts that the HUD offers the N/A filter and labels an excluded mission N/A
+// in its list, header and Grade section while the insufficient label stays, and
+// that the Performance page has an N/A chip, shows N/A on each harness line and
+// on each grade row, and keeps the n/e chip, subline and row label. Each needle
+// is its own subtest, so a mutant that breaks one label fails that label alone.
+func TestNAGradeSourceText(t *testing.T) {
+	missions := serve(t, MissionsPageHandler()).Body.String()
+	performance := serve(t, PerformancePageHandler()).Body.String()
+	cases := []struct {
+		name   string
+		page   string
+		needle string
+		source string
+	}{
+		{"hud_filter_na", "missions", `<option value="na">N/A</option>`, missions},
+		{"hud_filter_ungraded", "missions", `<option value="ungraded">Ungraded</option>`, missions},
+		{"hud_list_na", "missions", `m.grade_state === 'excluded' ? naBadge('', m.excluded_note)`, missions},
+		{"hud_list_letter", "missions", `m.grade ? gradeBadge(m.grade) + ' ' :`, missions},
+		{"hud_header_na", "missions", `d.grade?.state === 'excluded' ? naBadge('', d.grade.summary)`, missions},
+		{"hud_header_letter", "missions", `d.grade?.grade ? gradeBadge(d.grade.grade) :`, missions},
+		{"hud_grade_badge_na", "missions", `g.state === 'excluded' ? naBadge('lg')`, missions},
+		{"hud_badge_letter", "missions", `g.grade ? gradeBadge(g.grade, 'lg solid') :`, missions},
+		{"hud_grade_tag_insufficient", "missions", `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`, missions},
+		{"perf_chip_na", "performance", `['excluded', 'N/A']`, performance},
+		{"perf_chip_insufficient", "performance", `['insufficient', 'n/e']`, performance},
+		{"perf_set_aside", "performance", `${o.insufficient + o.skipped + o.excluded}`, performance},
+		{"perf_set_aside_subline", "performance", `${o.insufficient} not enough evidence · ${o.skipped} skipped · ${o.excluded} N/A`, performance},
+		{"perf_harness_na", "performance", "h.excluded ? `${h.excluded} N/A` : ''", performance},
+		{"perf_harness_insufficient", "performance", "h.insufficient ? `${h.insufficient} n/e` : ''", performance},
+		{"perf_row_na", "performance", `g.state === 'excluded' ? naBadge()`, performance},
+		{"perf_row_insufficient", "performance", `'<span class="tag">n/e</span>'`, performance},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(tc.source, tc.needle) {
+				t.Fatalf("%s page does not contain %q", tc.page, tc.needle)
+			}
+		})
+	}
+}
+
+// naTagElement matches a span whose class list holds `tag` and whose text is
+// N/A, in either quote style and with any spacing or case.
+var naTagElement = regexp.MustCompile(`(?i)<span\b[^>]*\bclass\s*=\s*["'][^"']*\btag\b[^"']*["'][^>]*>\s*N/A\s*</span>`)
+
+// TestNAGradeTagAbsent asserts that the Grade section of the HUD mission view
+// carries no N/A tag element. An excluded mission's Grade section shows the large
+// N/A badge alone; a second N/A tag beside it was the duplicate this change
+// removed. The section is the source text from the verdict card's opening
+// (`<h3>Grade</h3><div class="card verdict">`) to the next `</section>`; the
+// other two Grade sections, for a pending and a skipped mission, hold no verdict
+// card and are not searched. The absence is a regexp (naTagElement), so another
+// quote style or spacing is caught, and a tag elsewhere on the page is not
+// counted. The control subtest requires the not-enough-evidence tag inside that
+// same section, so the absence cannot pass merely because the section is empty
+// or the section markers matched nothing.
+func TestNAGradeTagAbsent(t *testing.T) {
+	missions := serve(t, MissionsPageHandler()).Body.String()
+	start := strings.Index(missions, `<h3>Grade</h3><div class="card verdict">`)
+	if start < 0 {
+		t.Fatal("missions page has no Grade verdict card, so the Grade section cannot be searched")
+	}
+	end := strings.Index(missions[start:], `</section>`)
+	if end < 0 {
+		t.Fatal("the Grade verdict card has no closing </section>, so the Grade section cannot be searched")
+	}
+	section := missions[start : start+end]
+	t.Run("control_insufficient_tag_renders", func(t *testing.T) {
+		needle := `g.state === 'insufficient' ? '<span class="tag">not enough evidence</span>'`
+		if !strings.Contains(section, needle) {
+			t.Fatalf("the Grade section does not contain %q", needle)
+		}
+	})
+	t.Run("hud_grade_tag_na_absent", func(t *testing.T) {
+		if found := naTagElement.FindString(section); found != "" {
+			t.Fatalf("the Grade section carries a N/A tag element %q; it must show the large N/A badge only", found)
+		}
+	})
+}
+
 // scriptBlock matches an inline script element with or without attributes. It
 // ends at the first closing script tag, so a literal one inside a JavaScript
 // string would cut a block short.

@@ -114,6 +114,14 @@ func main() {
 		log.Printf("bishop-memory: WARNING: %v; mission grading runs are unavailable until this succeeds", err)
 	}
 
+	// EnsureMissionGradeExcluded widens mission_grades.state to admit the
+	// operator's 'excluded' grade, rebuilding the table once on a database
+	// created before it. Like the triage_runs rebuild it is not fatal: the
+	// rebuild rolls back on any error, and only setting an exclusion is refused.
+	if err := store.EnsureMissionGradeExcluded(db); err != nil {
+		log.Printf("bishop-memory: WARNING: %v; excluding a mission from grading is unavailable until this succeeds", err)
+	}
+
 	router := api.NewRouterWithKeys(cfg, db, keys)
 
 	srv := &http.Server{

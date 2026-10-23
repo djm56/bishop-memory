@@ -53,10 +53,10 @@
 #                             (derived from /v1/harnesses memory_root, two levels up).
 #                             The grader works from the database only and gets none.
 #
-# grade flags: --mission names the missions to grade (each must be finished);
-# --regrade first deletes their existing verdicts (DELETE /v1/mission-grades/ID),
-# which is the only way a graded mission is graded again. --regrade needs
-# --mission.
+# grade flags: --mission names the missions to grade (each must be finished); an
+# excluded (N/A) one is logged as skipped, never deleted or claimed. --regrade
+# first deletes their existing verdicts (DELETE /v1/mission-grades/ID), which is
+# the only way a graded mission is graded again. --regrade needs --mission.
 #   CLAUDE_BIN                default: `claude` on PATH
 #   OPENCODE_BIN              default: `opencode` on PATH
 #
@@ -73,10 +73,10 @@
 # BISHOP_MEMORY_URL value in the file is a default; a variable already set in
 # the environment wins, and a flag on the command line wins over both.
 #
-# Exit codes: 0 ran, or there was nothing to do; 1 the agent run failed or timed
-# out; 2 the guard checked the agent and refused it, or a precondition the run
-# needs was not met; 4 the guard could not finish checking the agent, so nothing
-# ran; 64 usage error.
+# Exit codes: 0 ran, or there was nothing to do (every named mission excluded
+# included); 1 the agent run failed or timed out; 2 the guard checked the agent
+# and refused it, or a precondition the run needs was not met; 4 the guard, or the
+# --mission exclusion check, could not finish, so nothing ran; 64 usage error.
 
 set -euo pipefail
 
@@ -542,6 +542,18 @@ guard_agent() (
 
 # --- Preconditions ----------------------------------------------------------
 
+# A missing curl is reported as itself, so the health check below does not
+# report a service that was never asked as not answering. A --mission run exits
+# 4, the could-not-check outcome: its exclusion lookup needs curl. Any other
+# run exits 2, the code the health check uses for a precondition not met.
+if ! command -v curl >/dev/null 2>&1; then
+  if [[ -n "$MISSIONS" ]]; then
+    log "[$KIND] could not check whether the named missions are excluded: curl is not on PATH ($PATH); nothing deleted or claimed; nothing run"
+    exit 4
+  fi
+  log "[$KIND] curl is not on PATH ($PATH), so bishop-memory cannot be asked for work; nothing run"
+  exit 2
+fi
 if ! api_curl -fsS --max-time 5 "$URL/healthz" >/dev/null 2>&1; then
   log "[$KIND] bishop-memory at $URL is not answering; nothing run"
   exit 2
@@ -603,12 +615,50 @@ elif [[ "$KIND" == "grade" ]]; then
   fi
   MISSION_JSON=""
   if [[ -n "$MISSIONS" ]]; then
+    # python3 reads the ids and the HUD answer below. A missing one is reported as
+    # itself, not as a bad --mission list (exit 64), and exits 4 like the other
+    # could-not-check outcomes of this block.
+    if ! command -v python3 >/dev/null 2>&1; then
+      log "[grade] could not check whether the named missions are excluded: python3 is not on PATH ($PATH); nothing deleted or claimed; nothing run"
+      exit 4
+    fi
     MISSION_JSON="$(printf '%s' "$MISSIONS" | python3 -c '
 import json, sys
 ids = [m.strip() for m in sys.stdin.read().split(",") if m.strip()]
 if not 1 <= len(ids) <= 10:
     sys.exit("name 1-10 missions")
 print(json.dumps(ids))')" || { log "[grade] --mission must name 1-10 mission ids; nothing run"; exit 64; }
+    # An excluded (N/A) mission is the operator's decision, not a grade to redo:
+    # DELETE answers 409 for it, and one excluded id in a claim refuses the whole
+    # batch. The HUD list gives every mission's grade_state and has no row cap, so
+    # one read answers for all the named missions. It runs before any DELETE or
+    # claim; if it fails, nothing is deleted or claimed. Python prints each excluded
+    # mission on its own line, then the kept list as the last line. The mktemp, tail
+    # and sed in this block are guarded the same way as the lookup: a failure logs
+    # the could-not-check line and exits 4, not the 1 or 127 that set -e would give.
+    lookup_err="$(mktemp -t triage-lookup-XXXXXX)" || { log "[grade] could not check whether the named missions are excluded: mktemp failed; nothing deleted or claimed; nothing run"; exit 4; }
+    LOOKUP="$(api_curl -fsS "$URL/v1/hud/missions?grade=excluded" 2>>"$lookup_err" | python3 -I -c '
+import json, sys
+named = json.loads(sys.argv[1])
+body = json.load(sys.stdin)
+if not isinstance(body, dict) or not isinstance(body.get("missions"), list):
+    sys.exit("the HUD list has no missions array")
+excluded = {m.get("id") for m in body["missions"] if isinstance(m, dict) and m.get("grade_state") == "excluded"}
+for m in named:
+    if m in excluded:
+        print(m)
+print(json.dumps([m for m in named if m not in excluded]))' "$MISSION_JSON" 2>>"$lookup_err")" || { log "[grade] could not check whether the named missions are excluded: $(flat "$lookup_err"); nothing deleted or claimed; nothing run"; rm -f "$lookup_err"; exit 4; }
+    rm -f "$lookup_err"
+    KEPT_JSON="$(printf '%s\n' "$LOOKUP" | tail -n 1)" || { log "[grade] could not check whether the named missions are excluded: tail failed on the lookup result; nothing deleted or claimed; nothing run"; exit 4; }
+    EXCLUDED_IDS="$(printf '%s\n' "$LOOKUP" | sed '$d')" || { log "[grade] could not check whether the named missions are excluded: sed failed on the lookup result; nothing deleted or claimed; nothing run"; exit 4; }
+    while IFS= read -r m; do
+      if [[ -n "$m" ]]; then log "[grade] skipping $m: excluded (N/A) by the operator"; fi
+    done <<<"$EXCLUDED_IDS"
+    MISSION_JSON="$KEPT_JSON"
+    if [[ "$MISSION_JSON" == "[]" ]]; then
+      log "[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run"
+      exit 0
+    fi
     # --regrade: the operator reopening missions, here and nowhere else.
     if [[ "$REGRADE" -eq 1 ]]; then
       for m in $(printf '%s' "$MISSION_JSON" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)))'); do

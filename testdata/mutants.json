@@ -2255,7 +2255,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 752,
+      "line": 802,
       "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
       "after": "if [[ $guard_rc -ne 0 ]]; then exit 0; fi",
       "property": "A refused or could-not-check guard ends the run with its own status; the mutant exits 0 on a refusal",
@@ -2270,7 +2270,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 752,
+      "line": 802,
       "before": "if [[ $guard_rc -ne 0 ]]; then exit \"$guard_rc\"; fi",
       "after": "if [[ $guard_rc -eq 0 ]]; then exit \"$guard_rc\"; fi",
       "property": "A passing guard lets the run start; the mutant ends the script on a pass, before anything runs",
@@ -2285,7 +2285,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 569,
+      "line": 581,
       "before": "if [[ \"$ENGINE\" == \"opencode\" ]] && ! command -v python3 >/dev/null 2>&1; then",
       "after": "if false; then",
       "property": "With python3 absent the opencode guard cannot run: exit 4 before the listing; the mutant lets the run go on",
@@ -2300,7 +2300,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 569,
+      "line": 581,
       "before": "if [[ \"$ENGINE\" == \"opencode\" ]] && ! command -v python3 >/dev/null 2>&1; then",
       "after": "if [[ \"$ENGINE\" == \"opencode\" ]] && command -v python3 >/dev/null 2>&1; then",
       "property": "With python3 present the guard runs; the mutant treats a present python3 as absent",
@@ -2480,7 +2480,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 631,
+      "line": 681,
       "before": "MODEL=\"${MODEL:-${TRIAGE_GRADE_MODEL:-$default_model}}\"",
       "after": "MODEL=\"${TRIAGE_GRADE_MODEL:-${MODEL:-$default_model}}\"",
       "property": "A --model flag wins over TRIAGE_GRADE_MODEL in the environment; the mutant reads the environment first",
@@ -2768,7 +2768,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 786,
+      "line": 836,
       "before": "\"$OPENCODE_BIN\" run --standalone",
       "after": "\"$OPENCODE_BIN\" run",
       "property": "The run starts OpenCode with --standalone; the mutant leaves it out",
@@ -2783,7 +2783,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 786,
+      "line": 836,
       "before": "\"$OPENCODE_BIN\" run --standalone",
       "after": "\"$OPENCODE_BIN\" run --pure --standalone",
       "property": "The run does not pass --pure, which OpenCode v2 is reported to lack; the mutant passes it",
@@ -2798,7 +2798,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 741,
+      "line": 791,
       "before": "\"mcp\": {\"servers\": {\"bishop-triage\": {\n        \"type\": \"local\", \"command\": [mcpd], \"codemode\": False,\n        \"environment\": {\"MCPD_PROFILE\": \"triage\", \"BISHOP_MEMORY_URL\": url, \"BISHOP_HARNESS\": \"triage\"}}}},",
       "after": "\"mcp\": {\"bishop-triage\": {\n        \"type\": \"local\", \"command\": [mcpd], \"enabled\": True,\n        \"environment\": {\"MCPD_PROFILE\": \"triage\", \"BISHOP_MEMORY_URL\": url, \"BISHOP_HARNESS\": \"triage\"}}},",
       "summary": "the three-line mcp block is written as the legacy mcp.<name> entry with `enabled` true and no codemode",
@@ -2815,7 +2815,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 741,
+      "line": 791,
       "before": "\"mcp\": {\"servers\": {\"bishop-triage\": {",
       "after": "\"mcp\": {\"bishop-triage\": {\"type\": \"local\", \"command\": [mcpd]}, \"servers\": {\"bishop-triage\": {",
       "property": "mcp holds only the v2 `servers` map; the mutant leaves a legacy mcp.<name> entry beside it",
@@ -2830,7 +2830,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"codemode\": False,",
       "after": "",
       "summary": "the `\"codemode\": False,` entry is removed from the server",
@@ -2847,7 +2847,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"codemode\": False",
       "after": "\"codemode\": True",
       "property": "codemode is the JSON false; the mutant sets it true",
@@ -2863,7 +2863,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"codemode\": False,",
       "after": "\"codemode\": False, \"enabled\": True,",
       "property": "The server carries no `enabled` key, which the 2.0.32 listing drops (observed); the mutant adds one",
@@ -2878,7 +2878,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"codemode\": False,",
       "after": "\"codemode\": False, \"disabled\": True,",
       "property": "The server is not disabled; the mutant sets `disabled` true, which the 2.0.32 listing carries (observed; what a live session does with it is not)",
@@ -2893,7 +2893,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"command\": [mcpd],",
       "after": "\"command\": mcpd,",
       "property": "The server's command is an argv list; the mutant gives the path as a string",
@@ -2908,7 +2908,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 742,
+      "line": 792,
       "before": "\"command\": [mcpd],",
       "after": "\"command\": [mcpd, \"--help\"],",
       "property": "The server's command is the mcpd path alone; the mutant appends an argument",
@@ -2923,7 +2923,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 743,
+      "line": 793,
       "before": "\"environment\": {\"MCPD_PROFILE\": \"triage\", ",
       "after": "\"environment\": {",
       "property": "The server is started with MCPD_PROFILE set; the mutant sets none, so mcpd starts in its default harness profile",
@@ -2938,7 +2938,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 743,
+      "line": 793,
       "before": "\"MCPD_PROFILE\": \"triage\"",
       "after": "\"MCPD_PROFILE\": \"harness\"",
       "property": "MCPD_PROFILE is triage; the mutant sets the other value mcpd accepts, harness",
@@ -2953,7 +2953,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 743,
+      "line": 793,
       "before": "\"BISHOP_MEMORY_URL\": url, ",
       "after": "",
       "summary": "the `\"BISHOP_MEMORY_URL\": url, ` entry is removed from the server's environment",
@@ -2969,7 +2969,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/triage-run.sh",
-      "line": 743,
+      "line": 793,
       "before": "\"BISHOP_MEMORY_URL\": url",
       "after": "\"BISHOP_MEMORY_URL\": \"http://127.0.0.1:8787\"",
       "property": "The server is given the run's service URL; the mutant gives it the default URL whatever the run uses",
@@ -2977,6 +2977,413 @@
       "suite": "scripts/test_triage_run.py",
       "killers": [
         "LayeredConfig.test_run_declares_bishop_triage_as_a_v2_server_outside_code_mode"
+      ]
+    },
+    {
+      "id": "GRADE-SKIP-STATE-LOOSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 646,
+      "before": "m.get(\"grade_state\") == \"excluded\"",
+      "after": "m.get(\"grade_state\") is not None",
+      "property": "Only a mission whose grade_state is excluded is skipped; a graded or insufficient one is not",
+      "mirror": "GRADE-SKIP-STATE-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission",
+        "GradeExcluded.test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one"
+      ]
+    },
+    {
+      "id": "GRADE-SKIP-STATE-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 646,
+      "before": "m.get(\"grade_state\") == \"excluded\"",
+      "after": "m.get(\"grade_state\") == \"skipped\"",
+      "property": "A mission whose grade_state is excluded is skipped",
+      "mirror": "GRADE-SKIP-STATE-LOOSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission",
+        "GradeExcluded.test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one",
+        "GradeExcluded.test_regrade_claims_only_the_reopened_missions",
+        "GradeExcluded.test_plain_mission_drops_the_excluded_one_from_the_claim"
+      ]
+    },
+    {
+      "id": "GRADE-SKIP-PRINT-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 648,
+      "before": "    if m in excluded:",
+      "after": "    if False:",
+      "property": "Each excluded named mission is reported to the skip log",
+      "mirror": "GRADE-SKIP-PRINT-ALL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission",
+        "GradeExcluded.test_dry_run_reports_the_skip_for_the_excluded_mission",
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
+      ]
+    },
+    {
+      "id": "GRADE-SKIP-PRINT-ALL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 648,
+      "before": "    if m in excluded:",
+      "after": "    if True:",
+      "property": "Each named mission is reported to the skip log, whether or not it is excluded",
+      "mirror": "GRADE-SKIP-PRINT-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission",
+        "GradeExcluded.test_plain_mission_with_no_excluded_one_claims_every_named_mission"
+      ]
+    },
+    {
+      "id": "GRADE-KEEP-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 650,
+      "before": "if m not in excluded]",
+      "after": "if True]",
+      "property": "An excluded named mission is left out of the claim and of the reopen set",
+      "mirror": "GRADE-KEEP-ONLY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one",
+        "GradeExcluded.test_regrade_claims_only_the_reopened_missions",
+        "GradeExcluded.test_dry_run_says_it_would_delete_the_others_and_not_the_excluded_one",
+        "GradeExcluded.test_plain_mission_drops_the_excluded_one_from_the_claim"
+      ]
+    },
+    {
+      "id": "GRADE-KEEP-ONLY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 650,
+      "before": "if m not in excluded]",
+      "after": "if m in excluded]",
+      "property": "A named mission that is not excluded is left out of the claim and of the reopen set",
+      "mirror": "GRADE-KEEP-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one",
+        "GradeExcluded.test_regrade_claims_only_the_reopened_missions",
+        "GradeExcluded.test_plain_mission_with_no_excluded_one_claims_every_named_mission",
+        "GradeExcluded.test_an_ungraded_mission_beside_an_excluded_one_still_runs"
+      ]
+    },
+    {
+      "id": "GRADE-LOOKUP-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 650,
+      "before": "rm -f \"$lookup_err\"; exit 4; }",
+      "after": "rm -f \"$lookup_err\"; :; }",
+      "property": "A failed exclusion lookup stops the run before any DELETE or claim",
+      "mirror": "GRADE-LOOKUP-FLIP",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_a_lookup_error_status_exits_4_and_deletes_nothing",
+        "GradeExcluded.test_a_lookup_answer_that_is_not_json_exits_4_and_deletes_nothing",
+        "GradeExcluded.test_a_lookup_with_no_answer_exits_4_and_deletes_nothing"
+      ]
+    },
+    {
+      "id": "GRADE-LOOKUP-FLIP",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 650,
+      "before": "\" || { log \"[grade] could not check whether the named missions",
+      "after": "\" && { log \"[grade] could not check whether the named missions",
+      "property": "A successful exclusion lookup is not taken as a failed one",
+      "mirror": "GRADE-LOOKUP-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission"
+      ]
+    },
+    {
+      "id": "GRADE-VALID-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 644,
+      "before": "if not isinstance(body, dict) or not isinstance(body.get(\"missions\"), list):",
+      "after": "if False:",
+      "property": "An answer with no missions array is named as the fault in the log",
+      "mirror": "GRADE-VALID-REFUSE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_a_lookup_answer_without_a_missions_list_names_the_fault"
+      ]
+    },
+    {
+      "id": "GRADE-VALID-REFUSE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 644,
+      "before": "if not isinstance(body, dict) or not isinstance(body.get(\"missions\"), list):",
+      "after": "if isinstance(body, dict) and isinstance(body.get(\"missions\"), list):",
+      "property": "An answer with a missions array is accepted",
+      "mirror": "GRADE-VALID-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_regrade_logs_one_skip_line_for_the_excluded_mission"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 658,
+      "before": "if [[ \"$MISSION_JSON\" == \"[]\" ]]; then",
+      "after": "if [[ \"$MISSION_JSON\" == \"[ ]\" ]]; then",
+      "property": "A request whose named missions are all excluded exits 0 with nothing run",
+      "mirror": "GRADE-ALLEX-ANY",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-ANY",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 658,
+      "before": "if [[ \"$MISSION_JSON\" == \"[]\" ]]; then",
+      "after": "if [[ \"$MISSION_JSON\" != \"[]\" ]]; then",
+      "property": "A request with a mission left to claim exits 0 with nothing run",
+      "mirror": "GRADE-ALLEX-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_an_ungraded_mission_beside_an_excluded_one_still_runs"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-LOG-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 659,
+      "before": "log \"[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run\"",
+      "after": ":",
+      "property": "A request whose named missions are all excluded logs why nothing ran",
+      "mirror": "GRADE-ALLEX-LOG-WRONG",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
+      ]
+    },
+    {
+      "id": "GRADE-ALLEX-LOG-WRONG",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 659,
+      "before": "log \"[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run\"",
+      "after": "log \"[grade] every finished mission has a verdict; nothing to do\"",
+      "property": "The line logged when every named mission is excluded gives that reason, not another message's",
+      "mirror": "GRADE-ALLEX-LOG-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_all_named_missions_excluded_exits_0_with_nothing_run"
+      ]
+    },
+    {
+      "id": "GRADE-CURL-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 549,
+      "before": "if ! command -v curl >/dev/null 2>&1; then",
+      "after": "if false; then",
+      "property": "A run without curl on PATH is reported as a missing curl, not as a service that is not answering",
+      "mirror": "GRADE-CURL-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_curl_cannot_check_and_says_curl",
+        "GradeExcluded.test_plain_run_without_curl_exits_2_and_says_curl_not_that_the_service_is_silent"
+      ]
+    },
+    {
+      "id": "GRADE-CURL-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 549,
+      "before": "if ! command -v curl >/dev/null 2>&1; then",
+      "after": "if true; then",
+      "property": "A run with curl on PATH is not stopped as one without it (opposite edge of GRADE-CURL-OFF)",
+      "mirror": "GRADE-CURL-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_with_every_tool_present_reopens_and_claims_the_others",
+        "GradeExcluded.test_plain_run_with_every_tool_present_starts_the_grader"
+      ]
+    },
+    {
+      "id": "GRADE-CURL-MISSION-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 550,
+      "before": "if [[ -n \"$MISSIONS\" ]]; then",
+      "after": "if false; then",
+      "property": "A --mission run without curl exits 4, the could-not-check outcome, and names the exclusion check",
+      "mirror": "GRADE-CURL-MISSION-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_curl_cannot_check_and_says_curl"
+      ]
+    },
+    {
+      "id": "GRADE-CURL-MISSION-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 550,
+      "before": "if [[ -n \"$MISSIONS\" ]]; then",
+      "after": "if true; then",
+      "property": "A run with no --mission and no curl exits 2 and does not name the exclusion check (opposite edge of GRADE-CURL-MISSION-OFF)",
+      "mirror": "GRADE-CURL-MISSION-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_plain_run_without_curl_exits_2_and_says_curl_not_that_the_service_is_silent"
+      ]
+    },
+    {
+      "id": "GRADE-PY3-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 621,
+      "before": "if ! command -v python3 >/dev/null 2>&1; then",
+      "after": "if false; then",
+      "property": "A --mission run without python3 on PATH exits 4 naming python3, not 64 as a bad id list",
+      "mirror": "GRADE-PY3-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_python3_cannot_check_and_says_python3"
+      ]
+    },
+    {
+      "id": "GRADE-PY3-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 621,
+      "before": "if ! command -v python3 >/dev/null 2>&1; then",
+      "after": "if true; then",
+      "property": "A --mission run with python3 on PATH is not stopped as one without it (opposite edge of GRADE-PY3-OFF)",
+      "mirror": "GRADE-PY3-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_with_every_tool_present_reopens_and_claims_the_others"
+      ]
+    },
+    {
+      "id": "GRADE-MKTEMP-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 639,
+      "before": "mktemp failed; nothing deleted or claimed; nothing run\"; exit 4; }",
+      "after": "mktemp failed; nothing deleted or claimed; nothing run\"; :; }",
+      "property": "A --mission run whose mktemp fails exits 4 naming mktemp",
+      "mirror": "GRADE-MKTEMP-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_mktemp_cannot_check_and_says_mktemp"
+      ]
+    },
+    {
+      "id": "GRADE-MKTEMP-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 639,
+      "before": ")\" || { log \"[grade] could not check whether the named missions are excluded: mktemp failed",
+      "after": ")\" && { log \"[grade] could not check whether the named missions are excluded: mktemp failed",
+      "property": "A --mission run whose mktemp succeeds is not stopped as one whose mktemp failed (opposite edge of GRADE-MKTEMP-OFF)",
+      "mirror": "GRADE-MKTEMP-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_with_every_tool_present_reopens_and_claims_the_others"
+      ]
+    },
+    {
+      "id": "GRADE-TAIL-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 652,
+      "before": "tail failed on the lookup result; nothing deleted or claimed; nothing run\"; exit 4; }",
+      "after": "tail failed on the lookup result; nothing deleted or claimed; nothing run\"; :; }",
+      "property": "A --mission run whose tail fails on the lookup result exits 4 naming tail",
+      "mirror": "GRADE-TAIL-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_tail_cannot_check_and_says_tail"
+      ]
+    },
+    {
+      "id": "GRADE-TAIL-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 652,
+      "before": ")\" || { log \"[grade] could not check whether the named missions are excluded: tail failed",
+      "after": ")\" && { log \"[grade] could not check whether the named missions are excluded: tail failed",
+      "property": "A --mission run whose tail succeeds is not stopped as one whose tail failed (opposite edge of GRADE-TAIL-OFF)",
+      "mirror": "GRADE-TAIL-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_with_every_tool_present_reopens_and_claims_the_others"
+      ]
+    },
+    {
+      "id": "GRADE-SED-OFF",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 653,
+      "before": "sed failed on the lookup result; nothing deleted or claimed; nothing run\"; exit 4; }",
+      "after": "sed failed on the lookup result; nothing deleted or claimed; nothing run\"; :; }",
+      "property": "A --mission run whose sed fails on the lookup result exits 4 naming sed",
+      "mirror": "GRADE-SED-ON",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_without_sed_cannot_check_and_says_sed"
+      ]
+    },
+    {
+      "id": "GRADE-SED-ON",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 653,
+      "before": ")\" || { log \"[grade] could not check whether the named missions are excluded: sed failed",
+      "after": ")\" && { log \"[grade] could not check whether the named missions are excluded: sed failed",
+      "property": "A --mission run whose sed succeeds is not stopped as one whose sed failed (opposite edge of GRADE-SED-OFF)",
+      "mirror": "GRADE-SED-OFF",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "GradeExcluded.test_mission_run_with_every_tool_present_reopens_and_claims_the_others"
       ]
     },
     {
@@ -3316,6 +3723,1357 @@
       "suite": "scripts/test_triage_run.py",
       "killers": [
         "HelpText.test_help_wins_wherever_it_stands_and_does_nothing_else"
+      ]
+    },
+    {
+      "id": "MG-SKIP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 83,
+      "before": "if strings.Contains(definition, \"'excluded'\") {",
+      "after": "if strings.Contains(definition, \"'excluded'\") || true {",
+      "property": "A database whose mission_grades lacks 'excluded' is rebuilt, not left on the old CHECK",
+      "mirror": "MG-SKIP-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/admits_excluded_without_grade"
+      ]
+    },
+    {
+      "id": "MG-SKIP-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 83,
+      "before": "if strings.Contains(definition, \"'excluded'\") {",
+      "after": "if strings.Contains(definition, \"'excluded'\") && false {",
+      "property": "A table that already admits 'excluded' is left alone (the opposite edge)",
+      "mirror": "MG-SKIP",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/table_left_alone"
+      ]
+    },
+    {
+      "id": "MG-INDEX-DROP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 123,
+      "before": "missionGradesIndex,",
+      "after": "",
+      "summary": "the index statement is removed from the rebuild, so the rebuilt table has no idx_mission_grades_state",
+      "property": "The rebuild leaves idx_mission_grades_state in place",
+      "mirror": "MG-INDEX-COL",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/index_recreated_on_state"
+      ]
+    },
+    {
+      "id": "MG-INDEX-COL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 59,
+      "before": "ON mission_grades(state)",
+      "after": "ON mission_grades(graded_at)",
+      "property": "The index the rebuild recreates covers state, the column the schema declares it on (the opposite edge)",
+      "mirror": "MG-INDEX-DROP",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/index_recreated_on_state"
+      ]
+    },
+    {
+      "id": "MG-COPY-SIGNALS",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 55,
+      "before": "suggestions, signals, graded_by",
+      "after": "suggestions, graded_by",
+      "property": "The rebuild copies signals, the JSON the grade was written against",
+      "mirror": "MG-COPY-ATTEMPTS",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "MG-COPY-ATTEMPTS",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 55,
+      "before": "run_id, attempts, claimed_at",
+      "after": "run_id, claimed_at",
+      "property": "The rebuild copies attempts, the count the claim's retry limit reads (the opposite column)",
+      "mirror": "MG-COPY-SIGNALS",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "SCH-CHECK-OPEN",
+      "status": "active",
+      "language": "go",
+      "file": "db/schema.sql",
+      "line": 448,
+      "before": "CHECK (state <> 'excluded' OR grade IS NULL)",
+      "after": "CHECK (1 = 1)",
+      "property": "A fresh database refuses an excluded row that holds a grade",
+      "mirror": "SCH-CHECK-SHUT",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/refuses_excluded_with_grade"
+      ]
+    },
+    {
+      "id": "SCH-CHECK-SHUT",
+      "status": "active",
+      "language": "go",
+      "file": "db/schema.sql",
+      "line": 448,
+      "before": "CHECK (state <> 'excluded' OR grade IS NULL)",
+      "after": "CHECK (state <> 'excluded')",
+      "property": "A fresh database admits an excluded row with no grade (the opposite edge)",
+      "mirror": "SCH-CHECK-OPEN",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedFreshDatabase/admits_excluded_without_grade"
+      ]
+    },
+    {
+      "id": "CLAIM-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 154,
+      "before": "case state.Valid && state.String == \"excluded\":",
+      "after": "case false:",
+      "property": "An explicitly named excluded mission is refused, not claimed",
+      "mirror": "CLAIM-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/explicit_claim_of_excluded_refused"
+      ]
+    },
+    {
+      "id": "CLAIM-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 154,
+      "before": "case state.Valid && state.String == \"excluded\":",
+      "after": "case state.Valid && state.String == \"pending\":",
+      "property": "An explicitly named pending retry is still claimed (the opposite edge)",
+      "mirror": "CLAIM-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/explicit_claim_of_pending_retry_allowed"
+      ]
+    },
+    {
+      "id": "SWEEP-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 173,
+      "before": "g.state = 'pending' AND g.attempts < ? AND",
+      "after": "g.state IN ('pending', 'excluded') AND g.attempts < ? AND",
+      "property": "The claim sweep never claims an excluded mission",
+      "mirror": "SWEEP-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_skips_excluded"
+      ]
+    },
+    {
+      "id": "SWEEP-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 173,
+      "before": "g.state = 'pending' AND g.attempts < ? AND",
+      "after": "g.state = 'excluded' AND g.attempts < ? AND",
+      "property": "The claim sweep still claims a pending retry with attempts to spare (the opposite edge)",
+      "mirror": "SWEEP-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_still_claims_pending_retry"
+      ]
+    },
+    {
+      "id": "WAIT-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 87,
+      "before": "(g.state = 'pending' AND g.attempts < ?)",
+      "after": "(g.state IN ('pending', 'excluded') AND g.attempts < ?)",
+      "property": "The waiting count leaves out excluded missions",
+      "mirror": "WAIT-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_skips_excluded"
+      ]
+    },
+    {
+      "id": "WAIT-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 87,
+      "before": "(g.state = 'pending' AND g.attempts < ?)",
+      "after": "(g.state = 'excluded' AND g.attempts < ?)",
+      "property": "The waiting count includes a pending retry (the opposite edge)",
+      "mirror": "WAIT-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/sweep_still_claims_pending_retry"
+      ]
+    },
+    {
+      "id": "WRITE-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 558,
+      "before": "WHERE mission_id = ? AND state = 'pending'",
+      "after": "WHERE mission_id = ? AND state IN ('pending', 'excluded')",
+      "property": "A verdict is never written over an excluded row",
+      "mirror": "WRITE-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestWriteNeverOverwritesExcludedRow/verdict_refused_for_excluded"
+      ]
+    },
+    {
+      "id": "WRITE-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 558,
+      "before": "WHERE mission_id = ? AND state = 'pending'",
+      "after": "WHERE mission_id = ? AND state = 'excluded'",
+      "property": "A claimed pending mission takes its verdict (the opposite edge)",
+      "mirror": "WRITE-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestWriteNeverOverwritesExcludedRow/pending_control_takes_verdict"
+      ]
+    },
+    {
+      "id": "PERF-EXCL-AVG",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 711,
+      "before": "p.Excluded++",
+      "after": "p.Excluded++; p.Graded++",
+      "property": "An excluded mission enters no graded count, so it changes no average",
+      "mirror": "PERF-GRADED-IGNORED",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/average_ignores_excluded_F"
+      ]
+    },
+    {
+      "id": "PERF-GRADED-IGNORED",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 704,
+      "before": "sums[p] += gradePoints[grade]",
+      "after": "sums[p] += 0",
+      "property": "A graded mission's points enter the average (the opposite edge)",
+      "mirror": "PERF-EXCL-AVG",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/graded_F_counts_before_exclusion"
+      ]
+    },
+    {
+      "id": "LIST-DEFAULT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 612,
+      "before": "'graded', 'insufficient', 'excluded')",
+      "after": "'graded', 'insufficient')",
+      "property": "The default grade list includes excluded rows",
+      "mirror": "LIST-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedRowsInListAndHUD/default_list_includes_excluded"
+      ]
+    },
+    {
+      "id": "LIST-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 612,
+      "before": "'graded', 'insufficient', 'excluded')",
+      "after": "'graded', 'insufficient', 'excluded', 'pending')",
+      "property": "The default grade list omits pending claims (the opposite edge)",
+      "mirror": "LIST-DEFAULT",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedRowsInListAndHUD/default_list_omits_pending"
+      ]
+    },
+    {
+      "id": "NOTE-GUARD-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 803,
+      "before": "if note == \"\" {",
+      "after": "if false {",
+      "property": "A note of only whitespace is refused",
+      "mirror": "NOTE-GUARD-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_whitespace_note_400"
+      ]
+    },
+    {
+      "id": "NOTE-GUARD-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 803,
+      "before": "if note == \"\" {",
+      "after": "if true {",
+      "property": "A note with text is accepted (the opposite edge)",
+      "mirror": "NOTE-GUARD-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_note_with_text"
+      ]
+    },
+    {
+      "id": "GRADABLE-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 830,
+      "before": "if !gradable {",
+      "after": "if false {",
+      "property": "An exclusion is refused for an unfinished mission with 409",
+      "mirror": "GRADABLE-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_unfinished_mission_409"
+      ]
+    },
+    {
+      "id": "GRADABLE-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 830,
+      "before": "if !gradable {",
+      "after": "if true {",
+      "property": "A finished mission is refused as unfinished (the opposite edge)",
+      "mirror": "GRADABLE-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_finished_mission"
+      ]
+    },
+    {
+      "id": "UNKNOWN-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 822,
+      "before": "if errors.Is(err, sql.ErrNoRows) {",
+      "after": "if false {",
+      "property": "An exclusion for an unknown mission is answered 404, not 500",
+      "mirror": "UNKNOWN-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_unknown_mission_404"
+      ]
+    },
+    {
+      "id": "UNKNOWN-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 822,
+      "before": "if errors.Is(err, sql.ErrNoRows) {",
+      "after": "if true {",
+      "property": "A known mission is answered as unknown (the opposite edge)",
+      "mirror": "UNKNOWN-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_known_mission"
+      ]
+    },
+    {
+      "id": "CLEAR-404-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 874,
+      "before": "if n, _ := result.RowsAffected(); n == 0 {",
+      "after": "if n, _ := result.RowsAffected(); n == 0 && false {",
+      "property": "Lifting an exclusion that is not there is answered 404",
+      "mirror": "CLEAR-404-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/DELETE_not_excluded_404"
+      ]
+    },
+    {
+      "id": "CLEAR-404-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 874,
+      "before": "if n, _ := result.RowsAffected(); n == 0 {",
+      "after": "if n, _ := result.RowsAffected(); n == 0 || true {",
+      "property": "A lifted exclusion is answered 404 (the opposite edge)",
+      "mirror": "CLEAR-404-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/lift_returns_200"
+      ]
+    },
+    {
+      "id": "CLEAR-PRED-ANY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 869,
+      "before": "AND state = 'excluded'",
+      "after": "",
+      "summary": "the state test is removed from the lift's DELETE, so the exclusion route can delete a verdict",
+      "property": "The lift deletes only an excluded row, never a verdict",
+      "mirror": "CLEAR-PRED-GRADED",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/DELETE_on_graded_row_404_and_row_kept"
+      ]
+    },
+    {
+      "id": "CLEAR-PRED-GRADED",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 869,
+      "before": "AND state = 'excluded'",
+      "after": "AND state = 'graded'",
+      "property": "The lift deletes a graded row, not an excluded one (the opposite edge)",
+      "mirror": "CLEAR-PRED-ANY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/lift_deletes_row"
+      ]
+    },
+    {
+      "id": "UPSERT-SUGGEST",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 843,
+      "before": "suggestions = NULL, signals = NULL, ",
+      "after": "",
+      "summary": "the upsert leaves the replaced verdict's suggestions and signals on the excluded row",
+      "property": "An excluded row holds no suggestions or signals from the verdict it replaced",
+      "mirror": "UPSERT-SUMMARY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "UPSERT-SUMMARY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 842,
+      "before": "summary = excluded.summary,",
+      "after": "summary = summary,",
+      "property": "The note replaces the summary of the row it excludes (the opposite edge)",
+      "mirror": "UPSERT-SUGGEST",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "ROUTE-SET",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/router.go",
+      "line": 136,
+      "before": "grades.PUT(\"/:missionID/exclusion\", setExclusionHandler(db))",
+      "after": "grades.POST(\"/:missionID/exclusion\", setExclusionHandler(db))",
+      "property": "The set route is registered as PUT",
+      "mirror": "ROUTE-CLEAR",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/router_registers_exclusion_routes"
+      ]
+    },
+    {
+      "id": "ROUTE-CLEAR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/router.go",
+      "line": 137,
+      "before": "grades.DELETE(\"/:missionID/exclusion\", clearExclusionHandler(db))",
+      "after": "grades.GET(\"/:missionID/exclusion\", clearExclusionHandler(db))",
+      "property": "The lift route is registered as DELETE (the opposite edge)",
+      "mirror": "ROUTE-SET",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/router_registers_exclusion_routes"
+      ]
+    },
+    {
+      "id": "MCP-EXCL-REACH",
+      "status": "active",
+      "language": "go",
+      "file": "cmd/mcpd/triage.go",
+      "line": 181,
+      "before": "\"v1\", \"mission-grades\"),",
+      "after": "\"v1\", \"mission-grades\", \"exclusion\"),",
+      "property": "The triage profile's grade write never reaches the operator exclusion route",
+      "mirror": "MCP-WRITE-UNREACHED",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/triage_profile_never_reaches_exclusion"
+      ]
+    },
+    {
+      "id": "MCP-WRITE-UNREACHED",
+      "status": "active",
+      "language": "go",
+      "file": "cmd/mcpd/triage.go",
+      "line": 181,
+      "before": "\"v1\", \"mission-grades\"),",
+      "after": "\"v1\", \"mission-grade\"),",
+      "property": "The triage profile's grade write reaches the grade route it is meant for (the opposite edge)",
+      "mirror": "MCP-EXCL-REACH",
+      "package": "./cmd/mcpd",
+      "killers": [
+        "TestMCPToolsNeverReachOperatorExclusionRoutes/triage_profile_reaches_grade_write"
+      ]
+    },
+    {
+      "id": "W2-BUMP",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 843,
+      "before": "signals = NULL, graded_by = 'operator'",
+      "after": "signals = NULL, graded_by = 'operator', graded_at = CURRENT_TIMESTAMP",
+      "summary": "the exclusion stamps graded_at with the current time, which triageRunLastActivitySQL reads as run activity",
+      "property": "An exclusion writes no graded_at, so it moves no run's last activity",
+      "mirror": "W2-ERASE",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionLeavesRunLivenessAlone/exclusion_does_not_move_last_activity"
+      ]
+    },
+    {
+      "id": "W2-ERASE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 843,
+      "before": "signals = NULL, graded_by = 'operator'",
+      "after": "signals = NULL, graded_by = 'operator', graded_at = NULL",
+      "property": "An exclusion keeps the graded_at of the verdict it replaces, so the row still says when that verdict was written (the opposite edge: it clears the time)",
+      "mirror": "W2-BUMP",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "CAP-700",
+      "status": "active",
+      "language": "go",
+      "file": "internal/model/grade.go",
+      "line": 35,
+      "before": "binding:\"required,max=700\"",
+      "after": "binding:\"required,max=701\"",
+      "property": "A note longer than 700 characters is refused with 400 (the cap on the exclusion note)",
+      "mirror": "CAP-700-MIRROR",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/PUT_701_char_note_400"
+      ]
+    },
+    {
+      "id": "CAP-700-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/model/grade.go",
+      "line": 35,
+      "before": "binding:\"required,max=700\"",
+      "after": "binding:\"required,max=699\"",
+      "property": "A note of exactly 700 characters is accepted (the opposite edge: a cap of 699 refuses it)",
+      "mirror": "CAP-700",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteRefusals/accepts_700_char_note"
+      ]
+    },
+    {
+      "id": "PREV-STATE-NIL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 854,
+      "before": "nullStringPtr(prevState)",
+      "after": "nil",
+      "property": "The response names the state the row held before, when it held one",
+      "mirror": "PREV-STATE-EMPTY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/pending"
+      ]
+    },
+    {
+      "id": "PREV-STATE-EMPTY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 854,
+      "before": "nullStringPtr(prevState)",
+      "after": "prevState.String",
+      "property": "A mission with no row is answered previous_state null, not an empty string (the opposite edge)",
+      "mirror": "PREV-STATE-NIL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/no_row"
+      ]
+    },
+    {
+      "id": "PREV-GRADE-NIL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 855,
+      "before": "nullStringPtr(prevGrade)",
+      "after": "nil",
+      "property": "The response names the grade the row held before, when it held one",
+      "mirror": "PREV-GRADE-EMPTY",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/graded"
+      ]
+    },
+    {
+      "id": "PREV-GRADE-EMPTY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 855,
+      "before": "nullStringPtr(prevGrade)",
+      "after": "prevGrade.String",
+      "property": "A mission with no row is answered previous_grade null, not an empty string (the opposite edge)",
+      "mirror": "PREV-GRADE-NIL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExclusionRouteReportsWhatItReplaced/no_row"
+      ]
+    },
+    {
+      "id": "EXCL-COUNT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 711,
+      "before": "p.Excluded++",
+      "after": "p.Excluded += 0",
+      "summary": "the excluded arm increments nothing, so an excluded mission is counted nowhere",
+      "property": "An excluded mission is counted under excluded",
+      "mirror": "EXCL-COUNT-MIRROR",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/excluded_counted_apart"
+      ]
+    },
+    {
+      "id": "EXCL-COUNT-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 715,
+      "before": "p.Waiting++",
+      "after": "p.Waiting++; p.Excluded++",
+      "property": "A waiting mission is never counted under excluded (the opposite branch)",
+      "mirror": "EXCL-COUNT",
+      "package": "./internal/api",
+      "killers": [
+        "TestPerformanceCountsExcludedApartFromAverages/excluded_counted_apart"
+      ]
+    },
+    {
+      "id": "SKIP-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 127,
+      "before": "WHERE state = 'pending' AND attempts >= ?",
+      "after": "WHERE state IN ('pending', 'excluded') AND attempts >= ?",
+      "property": "The claim sweep's skip leaves an excluded row alone, though its attempts are spent",
+      "mirror": "SKIP-PENDING",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/spent_exclusion_survives_sweep"
+      ]
+    },
+    {
+      "id": "SKIP-PENDING",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 127,
+      "before": "WHERE state = 'pending' AND attempts >= ?",
+      "after": "WHERE state = 'excluded' AND attempts >= ?",
+      "property": "The claim sweep still marks a spent pending claim skipped (the opposite edge)",
+      "mirror": "SKIP-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestExcludedMissionIsNeverClaimed/spent_pending_is_skipped"
+      ]
+    },
+    {
+      "id": "W1-ERR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 127,
+      "before": "return fmt.Errorf(\"mission_grades rebuild: %w\", err)",
+      "after": "return nil",
+      "property": "A statement that fails makes the rebuild return its error",
+      "mirror": "W1-ERR-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change"
+      ]
+    },
+    {
+      "id": "W1-ERR-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 126,
+      "before": "err != nil {",
+      "after": "err == nil {",
+      "property": "A statement that succeeds does not fail the rebuild (the opposite edge)",
+      "mirror": "W1-ERR",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/rows_preserved"
+      ]
+    },
+    {
+      "id": "W1-ROLLBACK",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 106,
+      "before": "defer tx.Rollback()",
+      "after": "defer tx.Commit()",
+      "property": "A failed rebuild rolls back, so the rows and the table definition are as they were",
+      "mirror": "W1-COMMIT",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_after_drop_rolls_back"
+      ]
+    },
+    {
+      "id": "W1-COMMIT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 145,
+      "before": "tx.Commit()",
+      "after": "tx.Rollback()",
+      "property": "A successful rebuild commits (the opposite edge: it rolls back, and the widened table is lost)",
+      "mirror": "W1-ROLLBACK",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedWidensOldTable/commit_persists_widening"
+      ]
+    },
+    {
+      "id": "W1-FK-SUCCESS-ONLY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 100,
+      "before": "defer restoreForeignKeys(ctx, conn)\n\n\ttx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer tx.Rollback() //nolint:errcheck",
+      "after": "tx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer func() {\n\t\tif tx.Rollback() == sql.ErrTxDone {\n\t\t\trestoreForeignKeys(ctx, conn)\n\t\t}\n\t}()",
+      "summary": "the restore runs only on the success path: the deferred restore is removed, and a deferred rollback restores foreign keys only when it finds the transaction already committed",
+      "property": "Foreign keys are restored only when the rebuild commits, so a failed rebuild leaves them off (the opposite edge of W1-FK-FAILURE-ONLY)",
+      "mirror": "W1-FK-FAILURE-ONLY",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/fails_before_any_change"
+      ]
+    },
+    {
+      "id": "W1-FK-FAILURE-ONLY",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 100,
+      "before": "defer restoreForeignKeys(ctx, conn)\n\n\ttx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer tx.Rollback() //nolint:errcheck",
+      "after": "tx, err := conn.BeginTx(ctx, nil)\n\tif err != nil {\n\t\treturn fmt.Errorf(\"mission_grades rebuild: begin: %w\", err)\n\t}\n\tdefer func() {\n\t\tif tx.Rollback() == nil {\n\t\t\trestoreForeignKeys(ctx, conn)\n\t\t}\n\t}()",
+      "summary": "the restore runs only on the failure path: the deferred restore is removed, and a deferred rollback restores foreign keys only when the rollback succeeds, which means the transaction was not committed",
+      "property": "Foreign keys are restored only when the rebuild fails, so a successful rebuild leaves them off (the opposite edge of W1-FK-SUCCESS-ONLY)",
+      "mirror": "W1-FK-SUCCESS-ONLY",
+      "package": "./internal/store",
+      "killers": [
+        "TestEnsureMissionGradeExcludedRebuildFailure/success_restores_foreign_keys"
+      ]
+    },
+    {
+      "id": "W1-FK-OFF",
+      "status": "retired",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "reason": "Superseded by the path pair W1-FK-SUCCESS-ONLY and W1-FK-FAILURE-ONLY. Its fault, a restore that leaves foreign keys off on every exit, is still killed by the same subtests, but a single-line edit has no opposite edge for it other than the original line, so no mirror is recorded for it.",
+      "property": "Foreign keys are enforced on the pooled connection after a rebuild, whether it failed or not",
+      "mirror": "W1-FK-ABSENT"
+    },
+    {
+      "id": "W1-FK-ABSENT",
+      "status": "retired",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "reason": "Not a separate fault. The rebuild's own PRAGMA foreign_keys = OFF (mission_grades.go:95) runs before the restore is deferred, so a restore that never runs leaves the same value on every exit, with the same failure text under each killer as a restore that writes OFF. The path faults are W1-FK-SUCCESS-ONLY and W1-FK-FAILURE-ONLY.",
+      "property": "Every exit from the rebuild restores foreign keys (no restore runs)",
+      "mirror": "W1-FK-OFF"
+    },
+    {
+      "id": "W1-LOG",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 158,
+      "before": "log.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)",
+      "after": "_ = log.Writer()",
+      "property": "A failed restore of foreign keys is logged, so the one silent loss of enforcement is visible",
+      "mirror": "W1-LOG-MIRROR",
+      "package": "./internal/store",
+      "killers": [
+        "TestRestoreForeignKeysLogs/closed_connection_logs_failure"
+      ]
+    },
+    {
+      "id": "W1-LOG-MIRROR",
+      "status": "active",
+      "language": "go",
+      "file": "internal/store/mission_grades.go",
+      "line": 157,
+      "before": "if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {\n\t\tlog.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)\n\t}",
+      "after": "if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {\n\t\tlog.Printf(\"mission_grades rebuild: restoring foreign keys: %v\", err)\n\t} else {\n\t\tlog.Print(\"mission_grades rebuild: foreign keys restored\")\n\t}",
+      "summary": "the success branch logs too: an else branch writes a line when the restore works, so a restore that works is reported as well as one that fails",
+      "property": "A successful restore is logged as well as a failed one (the opposite branch of W1-LOG: the success branch logs, where W1-LOG removes the failure log)",
+      "mirror": "W1-LOG",
+      "package": "./internal/store",
+      "killers": [
+        "TestRestoreForeignKeysLogs/open_connection_logs_nothing"
+      ]
+    },
+    {
+      "id": "CLAIM-NULL-COALESCE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 144,
+      "before": "COALESCE(`+gradableSQL+`, 0), g.state FROM missions m",
+      "after": "`+gradableSQL+`, g.state FROM missions m",
+      "property": "An explicit claim of an unfinished mission with no outcome is refused with 409, not a 500 from scanning NULL into a bool",
+      "mirror": "CLAIM-NULL-ADMIT",
+      "package": "./internal/api",
+      "killers": [
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_409"
+      ]
+    },
+    {
+      "id": "CLAIM-NULL-ADMIT",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 144,
+      "before": "COALESCE(`+gradableSQL+`, 0), g.state FROM missions m",
+      "after": "COALESCE(`+gradableSQL+`, 1), g.state FROM missions m",
+      "property": "An unfinished mission with no outcome counts as gradable, so an explicit claim admits it (the opposite edge of CLAIM-NULL-COALESCE)",
+      "mirror": "CLAIM-NULL-COALESCE",
+      "package": "./internal/api",
+      "killers": [
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_409",
+        "TestExplicitClaimOfUnfinishedMissionRefused/unfinished_null_outcome_writes_no_row"
+      ]
+    },
+    {
+      "id": "DEL-EXCL-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 758,
+      "before": "AND state <> 'excluded'",
+      "after": "AND state <> ''",
+      "property": "A regrade of an excluded mission is refused with 409 and its row is kept",
+      "mirror": "DEL-GRADED-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/excluded_refused_409",
+        "TestRegradeRefusesExcludedMission/excluded_row_kept"
+      ]
+    },
+    {
+      "id": "DEL-GRADED-GUARD",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 758,
+      "before": "AND state <> 'excluded'",
+      "after": "AND state <> 'graded'",
+      "property": "A regrade of a graded verdict is still admitted (the opposite edge of DEL-EXCL-GUARD)",
+      "mirror": "DEL-EXCL-GUARD",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/graded_verdict_still_deleted"
+      ]
+    },
+    {
+      "id": "DEL-REFUSE-OFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 769,
+      "before": "if err == nil {",
+      "after": "if false {",
+      "property": "A regrade that deleted nothing, with an excluded row present, is answered 409",
+      "mirror": "DEL-REFUSE-ON",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/excluded_refused_409"
+      ]
+    },
+    {
+      "id": "DEL-REFUSE-ON",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/grades.go",
+      "line": 769,
+      "before": "if err == nil {",
+      "after": "if true {",
+      "property": "A regrade of a mission with no row is answered 200 with deleted false, not 409 (the opposite edge of DEL-REFUSE-OFF)",
+      "mirror": "DEL-REFUSE-OFF",
+      "package": "./internal/api",
+      "killers": [
+        "TestRegradeRefusesExcludedMission/lifted_mission_not_refused"
+      ]
+    },
+    {
+      "id": "HUD-UNGRADED-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 84,
+      "before": "IS NULL AND (SELECT g.state FROM mission_grades g WHERE g.mission_id = m.id) IS NOT 'excluded'",
+      "after": "IS NULL",
+      "property": "grade=ungraded omits an excluded mission",
+      "mirror": "HUD-UNGRADED-NOROW",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/ungraded_drops_excluded"
+      ]
+    },
+    {
+      "id": "HUD-UNGRADED-NOROW",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 84,
+      "before": "IS NOT 'excluded'",
+      "after": "IS NOT NULL",
+      "property": "grade=ungraded still lists a mission with no grade row (the opposite edge of HUD-UNGRADED-EXCL)",
+      "mirror": "HUD-UNGRADED-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/ungraded_keeps_unscored"
+      ]
+    },
+    {
+      "id": "HUD-NA-MATCH",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 86,
+      "before": "m.id) = 'excluded'\")",
+      "after": "m.id) = 'graded'\")",
+      "property": "grade=na lists the excluded missions",
+      "mirror": "HUD-NA-OVERMATCH",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_lists_excluded",
+        "TestHUDGradeFilterAndNoteForExcluded/na_synonym_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NA-OVERMATCH",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 86,
+      "before": "m.id) = 'excluded'\")",
+      "after": "m.id) IS NOT NULL\")",
+      "property": "grade=na lists no mission that is not excluded (the opposite edge of HUD-NA-MATCH)",
+      "mirror": "HUD-NA-MATCH",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_omits_other_states"
+      ]
+    },
+    {
+      "id": "HUD-NA-ALIAS-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 85,
+      "before": "strings.EqualFold(v, \"na\"),",
+      "after": "strings.EqualFold(v, \"nx\"),",
+      "property": "grade=na is accepted as the N/A filter",
+      "mirror": "HUD-NA-ALIAS-EXCL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_lists_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NA-ALIAS-EXCL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 85,
+      "before": "strings.EqualFold(v, \"excluded\"):",
+      "after": "strings.EqualFold(v, \"exclusion\"):",
+      "property": "grade=excluded is accepted as the synonym of the N/A filter (the other spelling of HUD-NA-ALIAS-NA)",
+      "mirror": "HUD-NA-ALIAS-NA",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/na_synonym_excluded"
+      ]
+    },
+    {
+      "id": "HUD-NOTE-STATE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 97,
+      "before": "g.state = 'excluded') AS excluded_note",
+      "after": "g.state = 'graded') AS excluded_note",
+      "property": "The HUD list row carries the operator's note for an excluded mission",
+      "mirror": "HUD-NOTE-ALL",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_on_excluded",
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_null_on_graded"
+      ]
+    },
+    {
+      "id": "HUD-NOTE-ALL",
+      "status": "active",
+      "language": "go",
+      "file": "internal/api/hud.go",
+      "line": 97,
+      "before": "AND g.state = 'excluded') AS excluded_note",
+      "after": ") AS excluded_note",
+      "property": "A graded row carries no note: the list note is only for excluded rows (the opposite edge of HUD-NOTE-STATE)",
+      "mirror": "HUD-NOTE-STATE",
+      "package": "./internal/api",
+      "killers": [
+        "TestHUDGradeFilterAndNoteForExcluded/list_note_null_on_graded"
+      ]
+    },
+    {
+      "id": "UI-HUD-NA-OPTION",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 367,
+      "before": "<option value=\"na\">N/A</option>",
+      "after": "<option value=\"nx\">N/A</option>",
+      "property": "The HUD grade filter offers N/A, which lists the excluded missions",
+      "mirror": "UI-HUD-UNGRADED-OPTION",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_filter_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-UNGRADED-OPTION",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 367,
+      "before": "<option value=\"ungraded\">Ungraded</option>",
+      "after": "<option value=\"ungradedx\">Ungraded</option>",
+      "property": "The HUD grade filter still offers Ungraded beside N/A (the other non-letter option)",
+      "mirror": "UI-HUD-NA-OPTION",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_filter_ungraded"
+      ]
+    },
+    {
+      "id": "UI-HUD-LIST-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 513,
+      "before": "m.grade_state === 'excluded' ? naBadge('', m.excluded_note)",
+      "after": "m.grade_state === 'insufficient' ? naBadge('', m.excluded_note)",
+      "property": "An excluded mission reads N/A in its HUD list row",
+      "mirror": "UI-HUD-LIST-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_list_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-LIST-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 513,
+      "before": "m.grade ? gradeBadge(m.grade) + ' ' :",
+      "after": "m.grade ? gradeBadge('N/A') + ' ' :",
+      "property": "A graded mission keeps its letter in its HUD list row (the opposite edge of UI-HUD-LIST-NA)",
+      "mirror": "UI-HUD-LIST-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_list_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-HEADER-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 605,
+      "before": "d.grade?.state === 'excluded' ? naBadge('', d.grade.summary)",
+      "after": "d.grade?.state === 'insufficient' ? naBadge('', d.grade.summary)",
+      "property": "An excluded mission reads N/A in its HUD header, with its note",
+      "mirror": "UI-HUD-HEADER-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_header_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-HEADER-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 605,
+      "before": "d.grade?.grade ? gradeBadge(d.grade.grade) :",
+      "after": "d.grade?.grade ? gradeBadge('N/A') :",
+      "property": "A graded mission keeps its letter in its HUD header (the opposite edge of UI-HUD-HEADER-NA)",
+      "mirror": "UI-HUD-HEADER-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_header_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-BADGE-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 685,
+      "before": "g.state === 'excluded' ? naBadge('lg')",
+      "after": "g.state === 'insufficient' ? naBadge('lg')",
+      "property": "An excluded mission's Grade section shows a large N/A badge",
+      "mirror": "UI-HUD-BADGE-LETTER",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_grade_badge_na"
+      ]
+    },
+    {
+      "id": "UI-HUD-BADGE-LETTER",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 685,
+      "before": "g.grade ? gradeBadge(g.grade, 'lg solid') :",
+      "after": "g.grade ? gradeBadge('N/A', 'lg solid') :",
+      "property": "A graded mission's Grade section keeps its large letter badge (the opposite edge of UI-HUD-BADGE-NA)",
+      "mirror": "UI-HUD-BADGE-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_badge_letter"
+      ]
+    },
+    {
+      "id": "UI-HUD-TAG-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 687,
+      "before": ": ''}<span>${esc(g.graded_by || '')}",
+      "after": ": '<span class=\"tag\">N/A</span>'}<span>${esc(g.graded_by || '')}",
+      "property": "An excluded mission's Grade section carries no N/A tag beside its N/A badge",
+      "mirror": "UI-HUD-TAG-INSUFF",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeTagAbsent/hud_grade_tag_na_absent"
+      ]
+    },
+    {
+      "id": "UI-HUD-TAG-INSUFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/missions.html",
+      "line": 687,
+      "before": "g.state === 'insufficient' ? '<span class=\"tag\">not enough evidence</span>'",
+      "after": "g.state === 'insufficient' ? '<span class=\"tag\">N/A</span>'",
+      "property": "An insufficient mission's Grade section shows the not-enough-evidence tag, not the N/A tag (opposite edge of UI-HUD-TAG-NA)",
+      "mirror": "UI-HUD-TAG-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/hud_grade_tag_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-CHIP-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 532,
+      "before": "['excluded', 'N/A']",
+      "after": "['excluded', 'n/a']",
+      "property": "The Performance page has an N/A filter chip",
+      "mirror": "UI-PERF-CHIP-INSUFF",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_chip_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-CHIP-INSUFF",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 532,
+      "before": "['insufficient', 'n/e']",
+      "after": "['insufficient', 'N/A']",
+      "property": "The n/e filter chip keeps its label, not N/A (the opposite edge of UI-PERF-CHIP-NA)",
+      "mirror": "UI-PERF-CHIP-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_chip_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-HARNESS-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 473,
+      "before": "h.excluded ? `${h.excluded} N/A` : ''",
+      "after": "h.excluded ? `${h.excluded} NA` : ''",
+      "property": "Each harness subline on the Performance page names its N/A count",
+      "mirror": "UI-PERF-HARNESS-NE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_harness_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-HARNESS-NE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 473,
+      "before": "h.insufficient ? `${h.insufficient} n/e` : ''",
+      "after": "h.insufficient ? `${h.insufficient} N/A` : ''",
+      "property": "Each harness subline keeps its n/e count, not N/A (the opposite edge of UI-PERF-HARNESS-NA)",
+      "mirror": "UI-PERF-HARNESS-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_harness_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-ROW-NA",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 488,
+      "before": "g.state === 'excluded' ? naBadge()",
+      "after": "g.state === 'insufficient' ? naBadge()",
+      "property": "An excluded mission's grade row reads N/A",
+      "mirror": "UI-PERF-ROW-NE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_row_na"
+      ]
+    },
+    {
+      "id": "UI-PERF-ROW-NE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 488,
+      "before": "'<span class=\"tag\">n/e</span>'",
+      "after": "'<span class=\"tag\">N/A</span>'",
+      "property": "An insufficient mission's grade row keeps the n/e tag (the opposite edge of UI-PERF-ROW-NA)",
+      "mirror": "UI-PERF-ROW-NA",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_row_insufficient"
+      ]
+    },
+    {
+      "id": "UI-PERF-SETASIDE-SUM",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 540,
+      "before": "${o.insufficient + o.skipped + o.excluded}",
+      "after": "${o.insufficient + o.skipped}",
+      "property": "The Performance page's Set aside total includes the N/A count",
+      "mirror": "UI-PERF-SETASIDE-SUBLINE",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_set_aside"
+      ]
+    },
+    {
+      "id": "UI-PERF-SETASIDE-SUBLINE",
+      "status": "active",
+      "language": "go",
+      "file": "internal/ui/performance.html",
+      "line": 540,
+      "before": " · ${o.excluded} N/A",
+      "after": "",
+      "summary": "the Set aside subline drops its N/A term, so the total counts N/A while the subline does not name it",
+      "property": "The Set aside subline names the N/A count beside the other two (the opposite edge of UI-PERF-SETASIDE-SUM)",
+      "mirror": "UI-PERF-SETASIDE-SUM",
+      "package": "./internal/ui",
+      "killers": [
+        "TestNAGradeSourceText/perf_set_aside_subline"
       ]
     }
   ]

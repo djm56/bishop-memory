@@ -6,7 +6,9 @@
 //	POST   /v1/mission-grades              write verdicts for claimed missions
 //	GET    /v1/mission-grades              list grades (harness, state, grade filters)
 //	GET    /v1/mission-grades/performance  per-harness average, spread and recent grades
-//	DELETE /v1/mission-grades/:missionID   operator only: reopen a mission for regrading
+//	DELETE /v1/mission-grades/:missionID   operator only: reopen a mission for regrading; refused for an excluded one
+//	PUT    /v1/mission-grades/:missionID/exclusion  operator only: set a finished mission aside as N/A
+//	DELETE /v1/mission-grades/:missionID/exclusion  operator only: lift that exclusion
 //
 // The grader works from the database alone. Each claimed mission comes back
 // as a compact packet the server assembles here — the brief's goal and
@@ -17,8 +19,11 @@
 //
 // No mission is graded in a loop. Claiming creates the mission's row (state
 // 'pending', attempts + 1); a verdict closes it for good. A claim that is
-// never answered is retried by one later run and then marked 'skipped'. Only
-// DELETE reopens a mission, and mcpd registers no tool that reaches it.
+// never answered is retried by one later run and then marked 'skipped'. The
+// operator's DELETE reopens a mission, but refuses an excluded one, which only
+// the exclusion route's DELETE lifts. The exclusion routes set a mission aside
+// as N/A, and an excluded mission is never claimed. mcpd registers no tool that
+// reaches a DELETE or the exclusion routes.
 package api
 
 import (
@@ -133,8 +138,10 @@ func claimGradesHandler(db *sql.DB) gin.HandlerFunc {
 				id = strings.TrimSpace(id)
 				var gradable bool
 				var state sql.NullString
+				// COALESCE keeps the gradable test from yielding NULL for an
+				// unfinished mission with no outcome, which would not scan into a bool.
 				err := tx.QueryRowContext(ctx, `
-					SELECT `+gradableSQL+`, g.state FROM missions m
+					SELECT COALESCE(`+gradableSQL+`, 0), g.state FROM missions m
 					  LEFT JOIN mission_grades g ON g.mission_id = m.id WHERE m.id = ?`, id).Scan(&gradable, &state)
 				switch {
 				case errors.Is(err, sql.ErrNoRows):
@@ -144,6 +151,9 @@ func claimGradesHandler(db *sql.DB) gin.HandlerFunc {
 					return
 				case !gradable:
 					refused = append(refused, gin.H{"mission_id": id, "reason": "mission is not finished"})
+				case state.Valid && state.String == "excluded":
+					// Its own case, ahead of the verdict case: the upsert below would overwrite the exclusion.
+					refused = append(refused, gin.H{"mission_id": id, "reason": "excluded by the operator; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"})
 				case state.Valid && (state.String == "graded" || state.String == "insufficient"):
 					refused = append(refused, gin.H{"mission_id": id, "reason": "already has a verdict; DELETE /v1/mission-grades/" + id + " to regrade"})
 				default:
@@ -582,7 +592,7 @@ func gradingPacketSignals(ctx context.Context, db *sql.DB, id string) (gin.H, er
 // --- Read --------------------------------------------------------------------
 
 // listGradesHandler handles GET /v1/mission-grades. Filters: harness, state
-// (default: graded and insufficient), grade, limit (default 100).
+// (default: graded, insufficient and excluded), grade, limit (default 100).
 func listGradesHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		limit, _, err := parseLimitOffset(c)
@@ -599,7 +609,7 @@ func listGradesHandler(db *sql.DB) gin.HandlerFunc {
 			where = append(where, "g.state = ?")
 			args = append(args, v)
 		} else {
-			where = append(where, "g.state IN ('graded', 'insufficient')")
+			where = append(where, "g.state IN ('graded', 'insufficient', 'excluded')")
 		}
 		if v := strings.TrimSpace(c.Query("harness")); v != "" {
 			where = append(where, "m.harness = ?")
@@ -641,12 +651,15 @@ func decodeSignals(row map[string]any) {
 	}
 }
 
-// harnessPerformance is one harness's line on the performance page.
+// harnessPerformance is one harness's line on the performance page. Excluded
+// counts the missions the operator set aside; they are in no average or
+// distribution.
 type harnessPerformance struct {
 	Harness      string         `json:"harness"`
 	Graded       int            `json:"graded"`
 	Insufficient int            `json:"insufficient"`
 	Skipped      int            `json:"skipped"`
+	Excluded     int            `json:"excluded"`
 	Waiting      int            `json:"waiting"`
 	AvgPoints    *float64       `json:"avg_points"`
 	AvgGrade     *string        `json:"avg_grade"`
@@ -657,7 +670,8 @@ type harnessPerformance struct {
 
 // performanceHandler handles GET /v1/mission-grades/performance: one line per
 // harness that has finished missions, plus the same figures over every
-// harness.
+// harness. Only graded missions enter an average or the distribution; an
+// excluded mission is counted under excluded and nowhere else.
 func performanceHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -693,6 +707,8 @@ func performanceHandler(db *sql.DB) gin.HandlerFunc {
 					}
 				case "insufficient":
 					p.Insufficient++
+				case "excluded":
+					p.Excluded++
 				case "skipped":
 					p.Skipped++
 				default:
@@ -727,16 +743,138 @@ func performanceHandler(db *sql.DB) gin.HandlerFunc {
 // --- Regrade -----------------------------------------------------------------
 
 // deleteGradeHandler handles DELETE /v1/mission-grades/:missionID: the
-// operator reopening a mission for grading. No mcpd profile registers it.
+// operator reopening a mission for grading. It deletes the mission's row in
+// any state except 'excluded'. An excluded row is the operator's N/A, lifted
+// only by DELETE .../exclusion, so this route answers 409 and keeps the row. A
+// mission with no row answers 200 with deleted false. No mcpd profile registers it.
 func deleteGradeHandler(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		result, err := db.ExecContext(c.Request.Context(),
-			`DELETE FROM mission_grades WHERE mission_id = ?`, c.Param("missionID"))
+		ctx := c.Request.Context()
+		id := c.Param("missionID")
+
+		// One statement carries both the state test and the delete, so no write
+		// can land between them and an excluded row is never deleted. state is
+		// NOT NULL, so <> leaves no row out of the test.
+		result, err := db.ExecContext(ctx, `DELETE FROM mission_grades WHERE mission_id = ? AND state <> 'excluded'`, id)
 		if err != nil {
 			internalError(c, err)
 			return
 		}
 		n, _ := result.RowsAffected()
-		c.JSON(http.StatusOK, gin.H{"mission_id": c.Param("missionID"), "deleted": n > 0})
+		if n == 0 {
+			// Nothing was deleted: the mission has no row, or its row is
+			// excluded. Only now is the row read, to tell the two apart.
+			var one int
+			err := db.QueryRowContext(ctx, `SELECT 1 FROM mission_grades WHERE mission_id = ? AND state = 'excluded'`, id).Scan(&one)
+			if err == nil {
+				c.JSON(http.StatusConflict, gin.H{"error": "mission is excluded; DELETE /v1/mission-grades/" + id + "/exclusion lifts it"})
+				return
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				internalError(c, err)
+				return
+			}
+		}
+		c.JSON(http.StatusOK, gin.H{"mission_id": id, "deleted": n > 0})
+	}
+}
+
+// --- Exclusion (N/A) ---------------------------------------------------------
+
+// setExclusionHandler handles PUT /v1/mission-grades/:missionID/exclusion: the
+// operator sets a finished mission aside as N/A. The mission's row becomes
+// state 'excluded' with grade, suggestions and signals NULL, the note in
+// summary and graded_by 'operator'. graded_at is not written; it keeps the
+// value the row had. A row that held a verdict, a claim or a skip is
+// overwritten. The response names the state and grade the row held before,
+// both null when there was no row. Refused with 404 for an unknown mission
+// and 409 for one the grader could not grade. No mcpd profile registers it.
+func setExclusionHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		id := c.Param("missionID")
+		var request model.ExclusionRequest
+		if err := c.ShouldBindJSON(&request); err != nil {
+			validationError(c, err)
+			return
+		}
+		// The binding's required tag admits a note of spaces, so the trimmed note is checked here.
+		note := strings.TrimSpace(request.Note)
+		if note == "" {
+			validationError(c, errors.New("note must not be empty or whitespace-only"))
+			return
+		}
+
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		defer tx.Rollback()
+
+		// COALESCE keeps the gradable test from yielding NULL for an unfinished
+		// mission with no outcome, which would not scan into a bool.
+		var gradable bool
+		var prevState, prevGrade sql.NullString
+		err = tx.QueryRowContext(ctx, `
+			SELECT COALESCE(`+gradableSQL+`, 0), g.state, g.grade FROM missions m
+			  LEFT JOIN mission_grades g ON g.mission_id = m.id WHERE m.id = ?`, id).Scan(&gradable, &prevState, &prevGrade)
+		if errors.Is(err, sql.ErrNoRows) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "mission not found"})
+			return
+		}
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if !gradable {
+			c.JSON(http.StatusConflict, gin.H{"error": "mission is not finished; only a finished mission can be excluded"})
+			return
+		}
+
+		// graded_at is never written here. triageRunLastActivitySQL reads it as
+		// the grader's activity, so an operator's N/A must not make a hung run
+		// look alive. An excluded row keeps the graded_at of any verdict it replaced.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO mission_grades (mission_id, state, grade, summary, graded_by)
+			VALUES (?, 'excluded', NULL, ?, 'operator')
+			ON CONFLICT(mission_id) DO UPDATE SET
+			  state = 'excluded', grade = NULL, summary = excluded.summary,
+			  suggestions = NULL, signals = NULL, graded_by = 'operator'`, id, note); err != nil {
+			internalError(c, err)
+			return
+		}
+		if err := tx.Commit(); err != nil {
+			internalError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"mission_id":     id,
+			"state":          "excluded",
+			"previous_state": nullStringPtr(prevState),
+			"previous_grade": nullStringPtr(prevGrade),
+		})
+	}
+}
+
+// clearExclusionHandler handles DELETE /v1/mission-grades/:missionID/exclusion:
+// the operator lifts an exclusion. The row is deleted, so the mission has no
+// grade and the nightly grader claims it again. Refused with 404 when the
+// mission is not excluded: unknown, ungraded, or holding another state. No
+// mcpd profile registers it.
+func clearExclusionHandler(db *sql.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("missionID")
+		result, err := db.ExecContext(c.Request.Context(),
+			`DELETE FROM mission_grades WHERE mission_id = ? AND state = 'excluded'`, id)
+		if err != nil {
+			internalError(c, err)
+			return
+		}
+		if n, _ := result.RowsAffected(); n == 0 {
+			c.JSON(http.StatusNotFound, gin.H{"error": "mission is not excluded"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"mission_id": id, "deleted": true})
 	}
 }

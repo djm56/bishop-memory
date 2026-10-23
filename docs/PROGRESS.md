@@ -4,7 +4,7 @@ The follow-along tracker for [ROADMAP.md](ROADMAP.md). The roadmap says what is
 outstanding; this file shows the same work by workstream, one checkbox per
 item, with evidence for what is done and a link to the plan section.
 
-Last updated: 2026-10-21, against `main` at `fc38064`. Harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`), and the `[flight-recorder]` summary fix and the journal cap exit code ship with the change that carries this update. The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked.
+Last updated: 2026-10-22, on branch `feat/grade-excluded`, cut from `cbf229e`, with the operator N/A grade (PR #13). PR #12 (squash-merge `7fc76ba`, "Triage runner on OpenCode v2") is on `main`, and its items are in Triage & grading. Before it, against `fc38064`: harness portability phase 1 is on `main` through PR #8 (`8437f32`). The reconciler fixes are on `main` through PR #9 (`1c4def9`), and the `[flight-recorder]` summary fix and the journal cap exit code are on `main` through PR #11 (`2cada81`). The live memoryd was redeployed on 2026-10-21 at 06:35 UTC with the flight-recorder paging (operator-reported), and a full journal reconcile was run on it the same day. Live items the repository cannot confirm stay unticked. The operator N/A line under Memory insight is ticked on branch `feat/grade-excluded` (mission-20261022-05, PR #13); the override line stays open.
 
 ## Summary
 
@@ -12,14 +12,14 @@ Last updated: 2026-10-21, against `main` at `fc38064`. Harness portability phase
 |------------|-----:|------------:|--:|
 | Network deployment | 11 | 11 | 50% |
 | PostgreSQL | 0 | 5 | 0% |
-| Memory insight | 7 | 14 | 33% |
+| Memory insight | 8 | 14 | 36% |
 | Mission HUD | 17 | 6 | 74% |
-| Triage & grading | 10 | 14 | 42% |
+| Triage & grading | 11 | 19 | 37% |
 | Reconciler | 5 | 10 | 33% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 8 | 2 | 80% |
 | Harness portability | 1 | 7 | 13% |
-| **Total** | **61** | **73** | **46%** |
+| **Total** | **63** | **78** | **45%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -102,7 +102,8 @@ Plan: [plans/MEMORY-INSIGHT-PLAN.md](plans/MEMORY-INSIGHT-PLAN.md)
 - [ ] Phase 2: trends on `/performance` (partial: the grade trend shipped in `c83fdbf`; fix rounds and findings per week have not been built) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: global search across missions, findings, patterns and directives ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: filters in the URL (unverified: not inspected) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
-- [ ] Phase 2: operator agree or override of a grade, with a note (the `mission_grades` operator columns do not exist) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
+- [x] Phase 2: operator N/A (excluded) state for test missions that should not count, with its `PUT` and `DELETE` routes under `/v1/mission-grades/:missionID/exclusion`, the HUD and Performance labels, and the grader skip — PR #13 (mission-20261022-05) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
+- [ ] Phase 2: operator agree or override of a grade, with a note, and the `mission_grades` operator columns (not started) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: park or close a stale mission from the HUD (unverified: not inspected in the UI) ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 2: operator notes on a mission, `mission_notes` ([§4](plans/MEMORY-INSIGHT-PLAN.md#4-phase-2--cross-mission-pages-and-operator-actions))
 - [ ] Phase 3: cost and usage, `agent_runs`, `model_prices`, `scripts/import-usage.py` ([§5](plans/MEMORY-INSIGHT-PLAN.md#5-phase-3--cost-and-usage))
@@ -154,7 +155,13 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [x] `export-decisions.py` amends and retires in place; exit codes 0, 1, 2, 3 — `scripts/export-decisions.py` ([ROADMAP](ROADMAP.md#shipped))
 - [x] OpenCode triage engine, `TRIAGE_ENGINE=opencode` — PR #4 (`7943ac8`), `54058ff`, `scripts/triage-run.sh` ([wiki](wiki/Developer-Triage-Agents.md))
 - [x] Classifier batch size 20 — PR #6 (`f9d8f1f`), `2df2f46` ([ROADMAP](ROADMAP.md#shipped))
-- [x] `--reclassify` option — `scripts/triage-run.sh:161` ([ROADMAP](ROADMAP.md#findings-triage))
+- [x] `--reclassify` option — `scripts/triage-run.sh:189-190` ([ROADMAP](ROADMAP.md#findings-triage))
+- [x] Triage runner on OpenCode v2 — PR #12, squash-merge `7fc76ba` on 2026-10-22. The guard reads agents through `opencode debug agents` (identity, and a last-match-wins allowlist, with the definition file checked first); a check that cannot finish exits 4; runs use `opencode run --standalone` without `--pure`; the MCP config uses the `mcp.servers` shape with `codemode: false`; `--help` works anywhere in the arguments; the docs require OpenCode v2. Evidence: `CHANGELOG.md` [Unreleased], Changed; `scripts/triage-run.sh`; and one live `make triage-grade` run on 2026-10-22 (run 111, grade written, no 'No tool named' errors) on the mission branch commit `2f63b29`, before the squash. The live run is recorded in mission-20261021-05 DEBRIEF, step 2k (harness repository, `.claude/memory/missions/mission-20261021-05/DEBRIEF.md`) ([ROADMAP](ROADMAP.md#shipped))
+- [ ] Grade runs exit 0 when they end with bishop-triage tool errors and write no grade (open: `scripts/triage-run.sh`, grade success check; the 2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this reason; a follow-up mission is wanted) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The launchd triage jobs run the development checkout `/Users/djm56/bishop-memory`, so `make mutate` and in-progress edits can reach scheduled runs (open: fix is a dedicated deploy checkout or worktree) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Live classify and process runs on the OpenCode v2 config shape have not been observed; only grade has (unverified: the scheduled runs are the first check) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The 1-second real-binary tests in `scripts/test_triage_run.py` are timing-sensitive under load (open, low; review 4b, and three failures under load at step 4a that did not recur) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Review follow-ups from mission-20261021-05 (open, low; listed in its DEBRIEF, `Tracker And Reality`, Follow-ups, in the harness repository at `.claude/memory/missions/mission-20261021-05/DEBRIEF.md`) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Triage run 89 closed as `failed` (unverified: closed on the live database; no commit, PR or path confirms it) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Triage run 99 is still `running` since 2026-10-19 19:20 UTC; close it as failed once the model key is confirmed (decision) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Pending recommendations never expire by age; a sweep is needed ([ROADMAP](ROADMAP.md#findings-triage))
@@ -176,7 +183,7 @@ Plan: none. The items are in [ROADMAP](ROADMAP.md#reconciler) and
 [ROADMAP](ROADMAP.md#harness-side-bishop-harness-repository).
 
 - [x] An unrecognised step status is warned and counted, not dropped: `parse_steps` in `scripts/reconcile-memory.py` sends the step without a status, names the raw value in a `[WARN]` line, and counts it as `warned` (`scripts/reconcile-memory.py:583, 908-911`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
-- [x] The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` (`scripts/reconcile-memory.py`: `reconcile_journal`) add up to it, with an `out of scope` bucket and a detail line per mission; shipped with the change that carries this update, not run against the live service ([ROADMAP](ROADMAP.md#shipped))
+- [x] The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` (`scripts/reconcile-memory.py`: `reconcile_journal`) add up to it, with an `out of scope` bucket and a detail line per mission; shipped in PR #11 (`2cada81`), not run against the live service ([ROADMAP](ROADMAP.md#shipped))
 - [x] The journal's `warned` counter is incremented once per capped mission, and the cap has its own summary category, `skipped (journal cap)` (`scripts/reconcile-memory.py`: `reconcile_journal`, the cap branch at lines 1079-1081 on `main`; `main()`, the summary note at line 1465 on `main`; PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#reconciler))
 - [x] Flight-recorder paging is on the live memoryd: redeployed 2026-10-21 at 06:35 UTC (operator-reported; a live-system action, no commit; the paging code is PR #9, `1c4def9`) ([ROADMAP](ROADMAP.md#shipped))
 - [x] Full journal reconcile against the live service is clean, with 13 rows added on 2026-10-21 (operator-reported; a live-system action, no commit) ([ROADMAP](ROADMAP.md#shipped))

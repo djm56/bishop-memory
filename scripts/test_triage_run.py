@@ -155,11 +155,12 @@ esac
 """
 
 # The tools the script and its guard use, all but perl. The no-perl test builds
-# a PATH from these alone.
+# a PATH from these alone, and so do the --mission lookup tests, which also need
+# tail and run on the claude engine because it does not use perl.
 TOOLS_WITHOUT_PERL = (
     "python3", "cat", "mktemp", "date", "tr", "head", "sed", "awk", "sleep", "rm",
     "mkdir", "stat", "chmod", "grep", "wc", "cut", "dirname", "basename", "curl", "tee",
-    "uname", "sort",
+    "uname", "sort", "tail",
 )
 
 # The same tools without python3, for the test of a missing python3. perl is not
@@ -1852,6 +1853,433 @@ class HelpText(TriageRunCase):
                 self.assertFalse(os.path.exists(self.log_dir), "argv=%s: help created the log directory" % (argv,))
                 self.assertEqual(self.debug_calls(), 0, "argv=%s: help called the stub for `debug`" % (argv,))
                 self.assertFalse(self.ran(), "argv=%s: help called the stub for `run`" % (argv,))
+
+
+class GradeService(FakeMemory):
+    """
+    The bishop-memory routes the --mission path reads, beyond FakeMemory's. The
+    HUD list answers from the server's `hud` pair, (status, text). A status of 0
+    drops the connection with no answer, as a service that went away would. DELETE
+    answers 200 and is recorded in `deletes`; every GET path is recorded in `gets`.
+    """
+
+    def do_GET(self):
+        self.server.gets.append(self.path)
+        if self.path.split("?", 1)[0] != "/v1/hud/missions":
+            return super().do_GET()
+        status, text = self.server.hud
+        if status == 0:
+            self.close_connection = True
+            return
+        payload = text.encode("utf8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_DELETE(self):
+        self.server.deletes.append(self.path)
+        payload = json.dumps({"mission_id": self.path.rsplit("/", 1)[-1], "deleted": True}).encode("utf8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+
+def hud_answer(states):
+    """The HUD list's JSON for a {mission id: grade_state} map, as the service writes it."""
+    return json.dumps({"missions": [{"id": m, "grade_state": s} for m, s in states.items()], "harnesses": []})
+
+
+class GradeExcluded(TriageRunCase):
+    """
+    The --mission path of the grade kind, with excluded (N/A) missions. The HUD
+    list answers from GradeService; the grader listing is the accepted one, so a
+    run reaches the run stub unless the script refuses first. Each test asserts one
+    path, so a failure names that path alone. The HUD stub answers graded, excluded
+    and ungraded rows alike, so the script must choose the excluded ones itself.
+    """
+
+    def serve_hud(self, status=200, text=None, states=None):
+        """
+        Replace the setUp service with a GradeService whose HUD list answers as
+        given: `text` verbatim with `status`, or else the JSON for `states` with 200.
+        The setUp service is shut down here; tearDown shuts this one down.
+        """
+        self.server.shutdown()
+        self.server.server_close()
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), GradeService)
+        self.server.hud = (status, hud_answer(states or {}) if text is None else text)
+        self.server.deletes = []
+        self.server.gets = []
+        self.url = "http://127.0.0.1:%d" % self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def grade(self, *flags):
+        """Run the grade kind on the opencode engine, with the accepted grader listing and the given flags."""
+        return self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], flags=flags)
+
+    def regrade_b_excluded(self):
+        """Regrade A, B and C where B is excluded, A is graded and C is ungraded. Returns the process."""
+        self.serve_hud(states={"A": "graded", "B": "excluded", "C": None})
+        return self.grade("--mission", "A,B,C", "--regrade")
+
+    def log_text(self):
+        """The runner's log with each line's timestamp removed, so a message built from it reads the same on every run."""
+        return " | ".join(re.sub(r"^\S+ \S+ UTC ", "", line) for line in self.log().splitlines())
+
+    def skips(self):
+        """The mission ids the log names as skipped for being excluded, in log order."""
+        return re.findall(r"\[grade\] skipping (\S+): excluded \(N/A\) by the operator", self.log())
+
+    def claimed(self):
+        """The mission ids the grader was asked to claim, or None when no grader was started."""
+        if not self.ran():
+            return None
+        for line in self.args():
+            found = re.search(r"mission_ids=(\[[^\]]*\])", line)
+            if found:
+                return json.loads(found.group(1))
+        return None
+
+    def assert_lookup_failure(self, proc):
+        """
+        The could-not-check outcome for a lookup that failed: the HUD list was asked
+        for, the run exited 4 with the could-not-check line in the log, and nothing
+        was deleted or claimed. The HUD request is asserted first, so a pass cannot
+        come from the lookup never having been made.
+        """
+        self.assertIn("/v1/hud/missions?grade=excluded", self.server.gets,
+                      "the HUD list was not asked for the excluded missions")
+        self.assertEqual(proc.returncode, 4, "lookup failure exited %d; expected 4; log: %s" % (proc.returncode, self.log_text()))
+        self.assertIn("could not check whether the named missions are excluded", self.log(),
+                      "no could-not-check line; log: %s" % self.log_text())
+        self.assertEqual(self.server.deletes, [], "a failed lookup still sent DELETE %r" % (self.server.deletes,))
+        self.assertFalse(self.ran(), "a failed lookup still started the grader")
+
+    def test_regrade_logs_one_skip_line_for_the_excluded_mission(self):
+        """Path: --regrade --mission A,B,C with B excluded logs a skip line for B, and only for B.
+
+        The HUD answers A graded, B excluded and C ungraded. A predicate that reads
+        any grade state as excluded also skips the graded A (GRADE-SKIP-STATE-LOOSE).
+        A predicate that matches no state skips nothing (GRADE-SKIP-STATE-OFF). The
+        print gate that reports every named mission logs three skips
+        (GRADE-SKIP-PRINT-ALL), and the one that reports none logs none
+        (GRADE-SKIP-PRINT-OFF). The claim is named in each message, so the
+        messages differ.
+        """
+        proc = self.regrade_b_excluded()
+        self.assertEqual(proc.returncode, 0, "regrade with B excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        skips, claimed = self.skips(), self.claimed()
+        # assertTrue, not assertEqual: the message comes first on the failure line, so the
+        # observed skips and claim are what a failure reports, not a list diff.
+        self.assertTrue(skips == ["B"], "skip lines were %r, claim %r; expected skip lines ['B']" % (skips, claimed))
+
+    def test_regrade_sends_delete_for_the_others_and_never_for_the_excluded_one(self):
+        """Path: --regrade sends DELETE for A and for C, and none for B.
+
+        Presence and absence are checked through one list of every DELETE the stub
+        received. Mutant GRADE-KEEP-OFF (no drop: B is deleted too) and GRADE-KEEP-ONLY
+        (only the excluded one is kept) fail it.
+        """
+        proc = self.regrade_b_excluded()
+        self.assertEqual(proc.returncode, 0, "regrade with B excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(sorted(self.server.deletes), ["/v1/mission-grades/A", "/v1/mission-grades/C"],
+                         "DELETE set was %r; expected A and C, never B" % (self.server.deletes,))
+
+    def test_regrade_claims_only_the_reopened_missions(self):
+        """Path: the grader is asked to claim A and C, the missions reopened, and not B.
+
+        Mutants GRADE-KEEP-OFF and GRADE-KEEP-ONLY change the claim as well as the
+        DELETE set; this test reads the claim the grader was given.
+        """
+        proc = self.regrade_b_excluded()
+        self.assertEqual(proc.returncode, 0, "regrade with B excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(self.claimed(), ["A", "C"], "claim was %r; expected ['A', 'C']" % (self.claimed(),))
+
+    def test_all_named_missions_excluded_exits_0_with_nothing_run(self):
+        """Path: --regrade --mission A,B with both excluded exits 0, deletes nothing, starts no grader, logs a skip line for A and for B, and logs the all-excluded reason.
+
+        Each claim is asserted: the exit code, the DELETE set, the grader not
+        started, the two skip lines (read from the log by skips()) and the
+        all-excluded line (read from the log by text). Mutant GRADE-ALLEX-OFF (the
+        all-excluded test no longer matches) starts the grader with an empty claim.
+        GRADE-SKIP-PRINT-OFF logs no skip line. GRADE-ALLEX-LOG-OFF drops the
+        all-excluded line and GRADE-ALLEX-LOG-WRONG gives another reason; the failure
+        message carries the log, so the two read differently.
+        """
+        self.serve_hud(states={"A": "excluded", "B": "excluded"})
+        proc = self.grade("--mission", "A,B", "--regrade")
+        self.assertEqual(proc.returncode, 0, "every named mission excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(self.server.deletes, [], "DELETE set %r; expected none" % (self.server.deletes,))
+        self.assertFalse(self.ran(), "the grader was started for a request whose missions are all excluded")
+        skips = self.skips()
+        self.assertTrue(skips == ["A", "B"], "skip lines were %r; expected ['A', 'B']; log: %s" % (skips, self.log_text()))
+        reason = "[grade] every named mission is excluded (N/A) by the operator; nothing to regrade or claim; nothing run"
+        self.assertIn(reason, self.log(), "no all-excluded line; log: %s" % self.log_text())
+
+    def test_an_ungraded_mission_beside_an_excluded_one_still_runs(self):
+        """Path (control for the all-excluded exit): --mission A,B with A excluded and B ungraded starts the grader for B alone.
+
+        The same run through the same path as the test above, with one mission left
+        to claim. Mutant GRADE-ALLEX-ANY (every claimable request exits without
+        running) fails it.
+        """
+        self.serve_hud(states={"A": "excluded", "B": None})
+        proc = self.grade("--mission", "A,B")
+        self.assertEqual(proc.returncode, 0, "control with B ungraded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertTrue(self.ran(), "control: the grader was not started with B to claim")
+        self.assertEqual(self.claimed(), ["B"], "control claim was %r; expected ['B']" % (self.claimed(),))
+
+    def test_dry_run_reports_the_skip_for_the_excluded_mission(self):
+        """Path: --dry-run with --regrade reports the same skip line for B as a real run does."""
+        self.serve_hud(states={"A": "graded", "B": "excluded", "C": None})
+        proc = self.grade("--mission", "A,B,C", "--regrade", "--dry-run")
+        self.assertEqual(proc.returncode, 0, "dry run exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(self.skips(), ["B"], "dry run skip lines were %r; expected ['B']" % (self.skips(),))
+
+    def test_dry_run_says_it_would_delete_the_others_and_not_the_excluded_one(self):
+        """Path: --dry-run names the verdicts it would delete for A and C, and not for B.
+
+        The presence of the A line is the control: the same dry-run path reports a
+        would-delete line for a mission that is not excluded. Mutant GRADE-KEEP-OFF
+        makes the dry run say it would delete B. The dry run sends no DELETE.
+        """
+        self.serve_hud(states={"A": "graded", "B": "excluded", "C": None})
+        proc = self.grade("--mission", "A,B,C", "--regrade", "--dry-run")
+        self.assertEqual(proc.returncode, 0, "dry run exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertIn("would delete the verdict on A", self.log(), "control: dry run gave no would-delete line for A")
+        self.assertNotIn("would delete the verdict on B", self.log(), "dry run says it would delete the excluded B")
+        self.assertEqual(self.server.deletes, [], "dry run sent DELETE %r" % (self.server.deletes,))
+        self.assertFalse(self.ran(), "dry run started the grader")
+
+    def test_a_lookup_error_status_exits_4_and_deletes_nothing(self):
+        """Path: the HUD list answers 500, so the lookup could not check and nothing is deleted or claimed.
+
+        Mutant GRADE-LOOKUP-OFF (a failed lookup no longer stops the run) fails it.
+        """
+        self.serve_hud(status=500, text="{}")
+        self.assert_lookup_failure(self.grade("--mission", "A,B,C", "--regrade"))
+
+    def test_a_lookup_answer_that_is_not_json_exits_4_and_deletes_nothing(self):
+        """Path: the HUD list answers 200 with text that is not JSON, so the lookup could not check.
+
+        Mutant GRADE-LOOKUP-OFF fails it as well.
+        """
+        self.serve_hud(status=200, text="not json")
+        self.assert_lookup_failure(self.grade("--mission", "A,B,C", "--regrade"))
+
+    def test_a_lookup_with_no_answer_exits_4_and_deletes_nothing(self):
+        """Path: the service drops the connection during the lookup, so the lookup could not check.
+
+        Mutant GRADE-LOOKUP-OFF fails it as well.
+        """
+        self.serve_hud(status=0)
+        self.assert_lookup_failure(self.grade("--mission", "A,B,C", "--regrade"))
+
+    def test_a_lookup_answer_without_a_missions_list_names_the_fault(self):
+        """Path: the HUD list answers JSON with no missions array, so the lookup could not check and the log says why.
+
+        Mutant GRADE-VALID-OFF (the shape check is skipped) fails the reason check:
+        the run still exits 4, but the log names a KeyError, not the missing array.
+        """
+        self.serve_hud(status=200, text='{"harnesses": []}')
+        proc = self.grade("--mission", "A,B,C", "--regrade")
+        self.assertEqual(proc.returncode, 4, "answer without a missions array exited %d; expected 4" % (proc.returncode,))
+        self.assertIn("the HUD list has no missions array", self.log(),
+                      "the log does not name the missing missions array; log: %s" % self.log_text())
+        self.assertEqual(self.server.deletes, [], "an answer without a missions array still sent DELETE %r" % (self.server.deletes,))
+
+    def test_plain_mission_drops_the_excluded_one_from_the_claim(self):
+        """Path: --mission without --regrade drops excluded B from the claim, and sends no DELETE.
+
+        A and C are ungraded here, so the claim is the one the grader would get.
+        Mutants GRADE-KEEP-OFF and GRADE-KEEP-ONLY change this claim.
+        """
+        self.serve_hud(states={"A": None, "B": "excluded", "C": None})
+        proc = self.grade("--mission", "A,B,C")
+        self.assertEqual(proc.returncode, 0, "plain --mission with B excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(self.server.deletes, [], "plain --mission sent DELETE %r" % (self.server.deletes,))
+        self.assertEqual(self.claimed(), ["A", "C"], "plain claim was %r; expected ['A', 'C']" % (self.claimed(),))
+
+    def test_plain_mission_with_no_excluded_one_claims_every_named_mission(self):
+        """Path (control for the plain drop): --mission A,B,C with none excluded claims all three and skips none.
+
+        Mutant GRADE-KEEP-ONLY (only the excluded ones are kept) fails the claim
+        check; mutant GRADE-SKIP-PRINT-ALL (every named mission is reported) fails
+        the skip check.
+        """
+        self.serve_hud(states={"A": None, "B": None, "C": None})
+        proc = self.grade("--mission", "A,B,C")
+        self.assertEqual(proc.returncode, 0, "control with none excluded exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(self.claimed(), ["A", "B", "C"], "control claim was %r; expected ['A', 'B', 'C']" % (self.claimed(),))
+        self.assertEqual(self.skips(), [], "control skip lines were %r; expected none" % (self.skips(),))
+
+    # --- A tool the --mission lookup needs is missing (DIR-002) --------------
+    #
+    # These runs use the claude engine, which does not use perl or the agent
+    # guard, so the lookup is the only thing that can stop them. The tool is
+    # taken off PATH through a directory of symlinks to every other tool
+    # (tools_dir), and the claude CLI is a stub that records its arguments where
+    # ran() and claimed() read them. The HUD answers A graded, B excluded and C
+    # ungraded, so a lookup that wrongly went ahead would send DELETE for A and C.
+
+    def tools_dir(self, without):
+        """
+        A directory to use as PATH: a symlink to every tool in TOOLS_WITHOUT_PERL
+        except `without` (None leaves none out). It checks that `without` does not
+        resolve in it and that every other tool does, so a run cannot stop on a
+        tool this directory forgot and read as the tool under test being absent.
+        """
+        bin_dir = os.path.join(self.tmp, "tools-without-%s" % (without or "nothing"))
+        os.makedirs(bin_dir)
+        original = os.environ.get("PATH", "/usr/bin:/bin")
+        for name in TOOLS_WITHOUT_PERL:
+            found = shutil.which(name, path=original)
+            if found and name != without:
+                os.symlink(found, os.path.join(bin_dir, name))
+        if without:
+            self.assertIsNone(shutil.which(without, path=bin_dir), "%s is still on the shim PATH" % without)
+        for name in TOOLS_WITHOUT_PERL:
+            if name != without:
+                self.assertIsNotNone(shutil.which(name, path=bin_dir), "the shim PATH lacks %s, which this test does not remove" % name)
+        return bin_dir
+
+    def run_claude_without(self, without, *flags):
+        """
+        Run the grade kind on the claude engine with the HUD answering A graded, B
+        excluded and C ungraded, and with `without` taken off PATH (None for no
+        tool left out). The claude CLI is a stub that records its arguments and
+        answers a finished run.
+        """
+        self.serve_hud(states={"A": "graded", "B": "excluded", "C": None})
+        claude = os.path.join(self.tmp, "claude-stub")
+        with open(claude, "w") as fh:
+            fh.write("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$STUB_RUN_ARGS\"\n"
+                     "printf '{\"result\":\"ok\",\"num_turns\":1,\"total_cost_usd\":0,\"stop_reason\":\"end_turn\"}'\n")
+        os.chmod(claude, 0o755)
+        return self.run_script("grade", [], path=self.tools_dir(without),
+                               flags=("--engine", "claude", *flags), extra_env={"CLAUDE_BIN": claude})
+
+    def assert_mission_run_not_started(self, proc, tool, reason, asked_lookup):
+        """
+        The could-not-check outcome for a --mission run that lacked `tool`: exit 4,
+        exactly one log line that says the exclusion check could not finish, and it
+        gives `reason`, no DELETE and no claude run. One line, so the run stopped at
+        the guard for `tool` and not later at a failure that guard let through.
+        `asked_lookup` is whether the HUD list was asked for, which it was only
+        where the tool is needed after the answer. The health check was answered in
+        each of these runs.
+        """
+        self.assertEqual(proc.returncode, 4, "run without %s exited %d; expected 4; log: %s" % (tool, proc.returncode, self.log_text()))
+        line = "could not check whether the named missions are excluded: " + reason
+        self.assertIn(line, self.log(), "run without %s did not log %r; log: %s" % (tool, line, self.log_text()))
+        stops = self.log().count("could not check whether the named missions are excluded")
+        self.assertEqual(stops, 1, "run without %s logged %d could-not-check lines; expected 1; log: %s" % (tool, stops, self.log_text()))
+        self.assertIn("/healthz", self.server.gets, "run without %s: the health check was not asked; requests %r" % (tool, self.server.gets))
+        asked = "/v1/hud/missions?grade=excluded" in self.server.gets
+        self.assertEqual(asked, asked_lookup, "run without %s: HUD list asked = %r, expected %r; requests %r" % (tool, asked, asked_lookup, self.server.gets))
+        self.assertEqual(self.server.deletes, [], "run without %s still sent DELETE %r" % (tool, self.server.deletes))
+        self.assertFalse(self.ran(), "run without %s still started the grader" % tool)
+
+    def test_mission_run_with_every_tool_present_reopens_and_claims_the_others(self):
+        """Path (control for the missing-tool tests): the same claude run, shim PATH and HUD answer, with no tool left out, deletes A and C and claims A and C.
+
+        It is the run the tests below stop by taking one tool away, so a missing-tool
+        result cannot come from a shim that never let the run through. Mutants
+        GRADE-CURL-ON, GRADE-PY3-ON, GRADE-MKTEMP-ON, GRADE-TAIL-ON and GRADE-SED-ON
+        make their guard fire with the tool present, and this test fails each.
+        """
+        proc = self.run_claude_without(None, "--mission", "A,B,C", "--regrade")
+        self.assertEqual(proc.returncode, 0, "run with every tool exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertEqual(sorted(self.server.deletes), ["/v1/mission-grades/A", "/v1/mission-grades/C"],
+                         "DELETE set was %r; expected A and C" % (self.server.deletes,))
+        self.assertEqual(self.claimed(), ["A", "C"], "claim was %r; expected ['A', 'C']" % (self.claimed(),))
+
+    def test_mission_run_without_curl_cannot_check_and_says_curl(self):
+        """Path: curl is not on PATH, so the --mission run exits 4 naming curl, before the health check, and nothing is deleted or claimed.
+
+        The service is not asked at all, the health check included. Mutant GRADE-CURL-OFF (the guard removed) reaches the
+        health check, which fails with exit 2 and the reason 'not answering'.
+        GRADE-CURL-MISSION-OFF (a --mission run is treated as any other) exits 2.
+        """
+        proc = self.run_claude_without("curl", "--mission", "A,B,C", "--regrade")
+        self.assertEqual(proc.returncode, 4, "run without curl exited %d; expected 4; log: %s" % (proc.returncode, self.log_text()))
+        line = "could not check whether the named missions are excluded: curl is not on PATH"
+        self.assertIn(line, self.log(), "run without curl did not log %r; log: %s" % (line, self.log_text()))
+        self.assertNotIn("is not answering", self.log(), "the missing curl was reported as a silent service; log: %s" % self.log_text())
+        self.assertEqual(self.server.gets, [], "the service was asked %r with no curl to ask it" % (self.server.gets,))
+        self.assertEqual(self.server.deletes, [], "run without curl still sent DELETE %r" % (self.server.deletes,))
+        self.assertFalse(self.ran(), "run without curl still started the grader")
+
+    def test_plain_run_without_curl_exits_2_and_says_curl_not_that_the_service_is_silent(self):
+        """Path: curl is not on PATH, and the run has no --mission, so it exits 2 naming curl and does not say the service is not answering.
+
+        The service is not asked. Mutant GRADE-CURL-OFF reaches the health check,
+        which reports the service as not answering. GRADE-CURL-MISSION-ON (a plain
+        run is treated as a --mission one) exits 4 with the exclusion-check reason.
+        """
+        proc = self.run_claude_without("curl")
+        self.assertEqual(proc.returncode, 2, "plain run without curl exited %d; expected 2; log: %s" % (proc.returncode, self.log_text()))
+        self.assertIn("curl is not on PATH", self.log(), "no curl reason; log: %s" % self.log_text())
+        self.assertNotIn("is not answering", self.log(), "the missing curl was reported as a silent service; log: %s" % self.log_text())
+        self.assertNotIn("could not check whether the named missions", self.log(), "a plain run logged the exclusion check; log: %s" % self.log_text())
+        self.assertEqual(self.server.gets, [], "the service was asked %r with no curl to ask it" % (self.server.gets,))
+        self.assertFalse(self.ran(), "a plain run without curl started the grader")
+
+    def test_plain_run_with_every_tool_present_starts_the_grader(self):
+        """Path (control for the plain missing-curl test): the same plain claude run and shim PATH with curl present starts the grader.
+
+        Mutant GRADE-CURL-ON (the guard fires with curl present) exits 2.
+        """
+        proc = self.run_claude_without(None)
+        self.assertEqual(proc.returncode, 0, "plain run with every tool exited %d; log: %s" % (proc.returncode, self.log_text()))
+        self.assertTrue(self.ran(), "control: the plain run did not start the grader")
+        self.assertIn("/healthz", self.server.gets, "control: the health check was not asked")
+
+    def test_mission_run_without_python3_cannot_check_and_says_python3(self):
+        """Path: python3 is not on PATH, so the --mission run exits 4 naming python3, not 64 and 'must name 1-10 mission ids'.
+
+        The health check is answered and the HUD list is not asked for. Mutant
+        GRADE-PY3-OFF (the guard removed) reads the missing python3 as a bad id list
+        and exits 64.
+        """
+        proc = self.run_claude_without("python3", "--mission", "A,B,C", "--regrade")
+        self.assertNotIn("must name 1-10 mission ids", self.log(), "the missing python3 was reported as a bad id list; log: %s" % self.log_text())
+        self.assert_mission_run_not_started(proc, "python3", "python3 is not on PATH", asked_lookup=False)
+
+    def test_mission_run_without_mktemp_cannot_check_and_says_mktemp(self):
+        """Path: mktemp is not on PATH, so the --mission run exits 4 naming mktemp, with no DELETE and no claim.
+
+        Mutant GRADE-MKTEMP-OFF (the guard's exit removed) logs the mktemp reason and
+        goes on with no stderr file; the lookup then fails and logs a second
+        could-not-check line. The exit is 4 either way, so the one-line count in
+        assert_mission_run_not_started is what fails it.
+        """
+        proc = self.run_claude_without("mktemp", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "mktemp", "mktemp failed", asked_lookup=False)
+
+    def test_mission_run_without_tail_cannot_check_and_says_tail(self):
+        """Path: tail is not on PATH, so the --mission run exits 4 naming tail, after the lookup answered, with no DELETE and no claim.
+
+        The HUD list is asked for, since tail is needed only after its answer.
+        Mutant GRADE-TAIL-OFF (the guard's exit removed) goes on with an empty kept
+        list and the run exits 0.
+        """
+        proc = self.run_claude_without("tail", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "tail", "tail failed on the lookup result", asked_lookup=True)
+
+    def test_mission_run_without_sed_cannot_check_and_says_sed(self):
+        """Path: sed is not on PATH, so the --mission run exits 4 naming sed, after the lookup answered, with no DELETE and no claim.
+
+        Mutant GRADE-SED-OFF (the guard's exit removed) goes on with no excluded ids
+        listed and the run exits 0.
+        """
+        proc = self.run_claude_without("sed", "--mission", "A,B,C", "--regrade")
+        self.assert_mission_run_not_started(proc, "sed", "sed failed on the lookup result", asked_lookup=True)
 
 
 if __name__ == "__main__":

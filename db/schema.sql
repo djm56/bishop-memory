@@ -422,7 +422,10 @@ CREATE TABLE IF NOT EXISTS directive_proposals (
 -- 'pending', attempts + 1); writing a grade or an 'insufficient' verdict
 -- closes it for good. A claim that is never written is retried by one later
 -- run, then marked 'skipped', so no mission is graded in a loop. Only the
--- operator's DELETE /v1/mission-grades/:id reopens a mission for regrading.
+-- operator's DELETE /v1/mission-grades/:id reopens a mission for regrading, except an excluded one.
+-- An 'excluded' row is the operator's N/A: the mission does not count, its
+-- grade stays NULL, the note sits in summary, and the grader never claims it.
+-- The operator's PUT .../:id/exclusion sets one and its DELETE .../:id/exclusion lifts it; DELETE /v1/mission-grades/:id refuses it.
 -- signals is a JSON object the server computes from the database (criteria,
 -- steps, fix rounds, findings); the agent never writes it.
 CREATE TABLE IF NOT EXISTS mission_grades (
@@ -439,9 +442,10 @@ CREATE TABLE IF NOT EXISTS mission_grades (
     graded_at    TEXT,
     created_at   TEXT    NOT NULL DEFAULT (CURRENT_TIMESTAMP),
 
-    CHECK (state IN ('pending', 'graded', 'insufficient', 'skipped')),
+    CHECK (state IN ('pending', 'graded', 'insufficient', 'skipped', 'excluded')),
     CHECK (grade IS NULL OR grade IN ('A', 'B', 'C', 'D', 'E', 'F')),
-    CHECK (state <> 'graded' OR grade IS NOT NULL)
+    CHECK (state <> 'graded' OR grade IS NOT NULL),
+    CHECK (state <> 'excluded' OR grade IS NULL)
 );
 
 -- mission_criteria — acceptance criteria and outcomes from mission briefs and debriefs.
