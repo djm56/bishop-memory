@@ -120,11 +120,73 @@ LITERAL_GRADER_DESCRIPTION = (
     "MCP tools. Database only, one pass per run; writes no files."
 )
 
-# One step_finish, so the run summary counts a step and exits 0.
-STEP_OK = (
-    '{"type":"text","part":{"messageID":"m1","text":"done"}}\n'
-    '{"type":"step_finish","part":{"cost":0.01,"reason":"stop"}}\n'
-)
+# The bishop-triage calls each kind makes, by tool name without the prefix. The
+# read finds the work and the write records it. Classify reads with
+# triage_next_unclassified, or with finding_list when it re-classifies a category.
+KIND_CALLS = {
+    "classify": {"read": "triage_next_unclassified", "write": "triage_classify"},
+    "process": {"read": "triage_category_findings", "write": "triage_recommend"},
+    "grade": {"read": "grade_claim", "write": "grade_write"},
+}
+
+BISHOP = "bishop-triage_"
+
+
+def call_event(tool, status, *, input=None, output="", error=None):
+    """
+    One tool_use event for a call in its final state, as OpenCode v2 writes it:
+    status "completed" with an output, or status "error" with the message the
+    server gives for a tool it does not have. The shape is the one in the grade
+    result files of 2026-10-21 (failed calls) and 2026-10-22 (completed calls).
+    """
+    state = {"status": status, "input": input or {}}
+    if status == "completed":
+        state["output"] = output
+    else:
+        state["error"] = error or ('No tool named "%s" is currently available. Please use a tool from the available tool list.' % tool)
+    return json.dumps({"type": "tool_use", "part": {"type": "tool", "tool": tool, "state": state}}) + "\n"
+
+
+def said(text):
+    """A text event: the words the agent says in one message."""
+    return json.dumps({"type": "text", "part": {"type": "text", "messageID": "msg_1", "text": text}}) + "\n"
+
+
+def step_done(cost=0.01):
+    """A step_finish event: one model step, with its cost, as OpenCode writes after each call."""
+    return json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "tool-calls", "cost": cost}}) + "\n"
+
+
+def kind_run(kind, *, start="completed", read="completed", write="completed", finish="completed",
+             finish_status="done", considered=1, read_tool=None, extra=()):
+    """
+    The result stream of one run of `kind`: triage_run_start, the kind's read and
+    write, triage_run_finish, then the `extra` events. start, read, write and
+    finish are each a call's status, "completed" or "error", or None when the agent
+    never made that call. read_tool names a different read, as a re-classify run
+    makes. Each call is followed by a step, as OpenCode writes it.
+    """
+    calls = KIND_CALLS[kind]
+    out = [step_done()]
+    if start is not None:
+        out.append(call_event(BISHOP + "triage_run_start", start, input={"kind": kind, "model": "test-model"},
+                              output='{"created":true,"id":111}'))
+        out.append(step_done())
+    if read is not None:
+        out.append(call_event(BISHOP + (read_tool or calls["read"]), read, input={}, output="[]"))
+        out.append(step_done())
+    if write is not None:
+        out.append(call_event(BISHOP + calls["write"], write, input={}, output='{"written":0}'))
+        out.append(step_done())
+    if finish is not None:
+        out.append(call_event(BISHOP + "triage_run_finish", finish,
+                              input={"id": 111, "status": finish_status, "considered": considered, "written": 0,
+                                     "notes": "test run"},
+                              output='{"id":111,"status":"done","updated":true}'))
+        out.append(step_done())
+    out.extend(extra)
+    out.append(said("Run closed."))
+    return "".join(out)
 
 # Stands in for OPENCODE_BIN. For `debug` it counts the call in STUB_DEBUG_COUNT.
 # STUB_DEBUG_HANG makes it sleep until the guard's alarm kills it. The first
@@ -314,7 +376,7 @@ class TriageRunCase(unittest.TestCase):
             "STUB_RUN_OUT": self.run_out,
         }
 
-    def run_script(self, kind, listing, *, debug_rc=0, debug_err=None, run_out=STEP_OK, run_rc=0,
+    def run_script(self, kind, listing, *, debug_rc=0, debug_err=None, run_out=None, run_rc=0,
                    cold=0, cold_out="", hang=False, guard_timeout=30, path=None, slow=None,
                    flags=(), extra_env=None, env_file_text=None):
         """Run the copied script for one kind. The listing is JSON, or raw text when a string, or raw bytes.
@@ -324,6 +386,8 @@ class TriageRunCase(unittest.TestCase):
         makes every `debug` call sleep that many seconds, then answer normally.
         `flags` are given after `--engine opencode`, `extra_env` is added to the
         environment, and `env_file_text` is written to the file TRIAGE_ENV_FILE names.
+        `run_out` is the result stream the run stub prints. Left out, it is a clean
+        run of the kind (kind_run), which the run summary accepts.
         """
         if isinstance(listing, bytes):
             data = listing
@@ -331,6 +395,8 @@ class TriageRunCase(unittest.TestCase):
             data = (listing if isinstance(listing, str) else json.dumps(listing, ensure_ascii=False)).encode("utf8")
         with open(self.debug_out, "wb") as fh:
             fh.write(data)
+        if run_out is None:
+            run_out = kind_run(kind)
         with open(self.run_out, "w") as fh:
             fh.write(run_out)
         env = self.base_env(path)
@@ -1674,6 +1740,336 @@ class RunReportsErrors(TriageRunCase):
                                run_out=ERROR_EVENT, run_rc=1)
         self.assertEqual(proc.returncode, 1, proc.stderr + self.log())
         self.assertIn("agent exited 1; see", self.log())
+
+
+# The reason the parser gives, per kind, for a read of the work that never
+# completed: the same reads triage-run.sh asks for in WORK_READS.
+NOT_DONE = {
+    "classify": "bishop-triage_triage_next_unclassified or bishop-triage_finding_list",
+    "process": "bishop-triage_triage_category_findings",
+    "grade": "bishop-triage_grade_claim",
+}
+
+
+class RunDecidesOnBishopCalls(TriageRunCase):
+    """
+    The run summary in run_agent, on the opencode engine. A run fails when a
+    bishop-triage call ended in error, or when it did not complete both
+    triage_run_start and the kind's read of its work. Each test runs the copied
+    script for one kind with a stub result stream, so the exit code and the last
+    triage.log line are the summary's decision. Each docstring names the path and
+    the control, and lists the mutants of scripts/triage-run.sh the test kills.
+    """
+
+    def judge(self, kind, flags=(), **shape):
+        """Run the copied script for `kind` on the stream kind_run builds from `shape`."""
+        agent = KIND_AGENT[kind]
+        return self.run_script(kind, [self.agent_entry(agent, RULES[agent])], flags=flags,
+                               run_out=kind_run(kind, **shape))
+
+    def verdict(self, proc):
+        """The exit code and the last triage.log line, on one line, for an assertion message."""
+        lines = self.log().strip().splitlines()
+        return "exit %d; triage.log: %s" % (proc.returncode, lines[-1] if lines else "(empty)")
+
+    def assert_exit(self, kind, want, shape, label, flags=()):
+        """Run `kind` on the stream `shape` builds and assert the exit code. `label` opens the message."""
+        proc = self.judge(kind, flags=flags, **shape)
+        self.assertEqual(proc.returncode, want, "%s: %s" % (label, self.verdict(proc)))
+        return proc
+
+    def assert_logged(self, proc, text, label):
+        """Assert that triage.log holds `text`, with the observed last line in the message."""
+        self.assertIn(text, self.log(), "%s: triage.log lacks %r; %s" % (label, text, self.verdict(proc)))
+
+    def check_clean(self, kind):
+        """A run with every call completed and the run closed done exits 0 and is read as done."""
+        proc = self.assert_exit(kind, 0, {}, "%s clean run" % kind)
+        self.assertIn("] done steps=", self.log(), "%s clean run: no done line; %s" % (kind, self.verdict(proc)))
+
+    def check_nothing_to_do(self, kind):
+        """The read finds nothing and the run closes done with zero items: exit 0, as the doctrine has it."""
+        proc = self.assert_exit(kind, 0, {"write": None, "considered": 0}, "%s nothing to do" % kind)
+        self.assertIn("] done steps=", self.log(), "%s nothing to do: no done line; %s" % (kind, self.verdict(proc)))
+
+    def check_tool_error(self, kind):
+        """The closing triage_run_finish ends in error, every other call completed: exit 1, named on the ERROR line."""
+        label = "%s bishop tool error" % kind
+        proc = self.assert_exit(kind, 1, {"finish": "error"}, label)
+        self.assert_logged(proc, "ERROR steps=", label)
+        self.assert_logged(proc, "tool_errors=1 ", label)
+        self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_triage_run_finish x1", label)
+
+    def check_no_completed_call(self, kind):
+        """No bishop-triage call completed or errored; the agent read the doctrine and stopped: exit 1, both reasons named."""
+        label = "%s no completed bishop call" % kind
+        proc = self.assert_exit(kind, 1, {"start": None, "read": None, "write": None, "finish": None,
+                                          "extra": (call_event("read", "completed", output="doctrine read"),)}, label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, %s)"
+                           % NOT_DONE[kind], label)
+
+    def check_start_without_read(self, kind):
+        """triage_run_start completed; the read of the work never did: exit 1, the read named."""
+        label = "%s start completed, no read" % kind
+        proc = self.assert_exit(kind, 1, {"read": None, "write": None}, label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: %s)" % NOT_DONE[kind], label)
+
+    def check_read_without_start(self, kind):
+        """The read of the work completed; triage_run_start never did: exit 1, the start named."""
+        label = "%s read completed, no start" % kind
+        proc = self.assert_exit(kind, 1, {"start": None}, label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start)", label)
+
+    def check_other_tool_error(self, kind):
+        """A read tool that is not bishop-triage ends in error, the bishop calls complete: exit 0, the error counted."""
+        label = "%s other tool error" % kind
+        shape = {"extra": (call_event("read", "error", error="File not found: .claude/skills/findings-triage/SKILL.md"),)}
+        proc = self.assert_exit(kind, 0, shape, label)
+        self.assert_logged(proc, "tool_errors=1 ", label)
+        self.assert_logged(proc, "] done steps=", label)
+
+    def test_classify_clean_run_exits_0(self):
+        """Path: classify, every call completed, run closed done. The control for the classify failures.
+
+        Mutants BISHOP-NOT-DONE-INVERTED and BISHOP-CLASSIFY-NO-NEXT-READ each fail it.
+        """
+        self.check_clean("classify")
+
+    def test_process_clean_run_exits_0(self):
+        """Path: process, every call completed, run closed done. The control for the process failures.
+
+        Mutant BISHOP-NOT-DONE-INVERTED fails it.
+        """
+        self.check_clean("process")
+
+    def test_grade_clean_run_exits_0(self):
+        """Path: grade, every call completed, run closed done. The control for the grade failures.
+
+        Mutant BISHOP-NOT-DONE-INVERTED fails it.
+        """
+        self.check_clean("grade")
+
+    def test_classify_nothing_to_do_run_exits_0(self):
+        """Path: classify reads an empty list and closes done with zero findings; no write.
+
+        Mutants BISHOP-NOT-DONE-INVERTED and BISHOP-CLASSIFY-NO-NEXT-READ each fail it.
+        """
+        self.check_nothing_to_do("classify")
+
+    def test_process_nothing_to_do_run_exits_0(self):
+        """Path: process reads an empty category and closes done with zero items; no write.
+
+        Mutant BISHOP-NOT-DONE-INVERTED fails it.
+        """
+        self.check_nothing_to_do("process")
+
+    def test_grade_nothing_to_do_run_exits_0(self):
+        """Path: grade claims nothing and closes done with zero considered; no write.
+
+        Mutant BISHOP-NOT-DONE-INVERTED fails it.
+        """
+        self.check_nothing_to_do("grade")
+
+    def test_classify_bishop_tool_error_exits_1(self):
+        """Path: classify, start and read completed, triage_run_finish ends in error. Only the tool error is wrong.
+
+        Mutants BISHOP-ERR-IGNORED (the error is not counted) and BISHOP-TEXT-TOOL-ERRORS
+        (the reason is worded differently) each fail it.
+        """
+        self.check_tool_error("classify")
+
+    def test_process_bishop_tool_error_exits_1(self):
+        """Path: process, start and read completed, triage_run_finish ends in error. Only the tool error is wrong.
+
+        Mutants BISHOP-ERR-IGNORED and BISHOP-TEXT-TOOL-ERRORS each fail it.
+        """
+        self.check_tool_error("process")
+
+    def test_grade_bishop_tool_error_exits_1(self):
+        """Path: grade, start and grade_claim completed, triage_run_finish ends in error. Only the tool error is wrong.
+
+        Mutants BISHOP-ERR-IGNORED and BISHOP-TEXT-TOOL-ERRORS each fail it.
+        """
+        self.check_tool_error("grade")
+
+    def test_classify_no_completed_bishop_call_exits_1(self):
+        """Path: classify, no bishop-triage call completed or errored. The reason is the missing calls.
+
+        Mutants BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_no_completed_call("classify")
+
+    def test_process_no_completed_bishop_call_exits_1(self):
+        """Path: process, no bishop-triage call completed or errored. The reason is the missing calls.
+
+        Mutants BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_no_completed_call("process")
+
+    def test_grade_no_completed_bishop_call_exits_1(self):
+        """Path: grade, no bishop-triage call completed or errored. The reason is the missing calls.
+
+        Mutants BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_no_completed_call("grade")
+
+    def test_classify_start_completed_but_no_read_exits_1(self):
+        """Path: classify, triage_run_start completed, no read of the work. The read is the reason.
+
+        Mutants BISHOP-READ-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_start_without_read("classify")
+
+    def test_process_start_completed_but_no_read_exits_1(self):
+        """Path: process, triage_run_start completed, no read of the work. The read is the reason.
+
+        Mutants BISHOP-READ-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_start_without_read("process")
+
+    def test_grade_start_completed_but_no_read_exits_1(self):
+        """Path: grade, triage_run_start completed, no grade_claim. The read is the reason.
+
+        Mutants BISHOP-READ-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_start_without_read("grade")
+
+    def test_classify_read_completed_but_no_start_exits_1(self):
+        """Path: classify, the read completed, triage_run_start never did. The start is the reason.
+
+        Mutants BISHOP-START-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_read_without_start("classify")
+
+    def test_process_read_completed_but_no_start_exits_1(self):
+        """Path: process, the read completed, triage_run_start never did. The start is the reason.
+
+        Mutants BISHOP-START-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_read_without_start("process")
+
+    def test_grade_read_completed_but_no_start_exits_1(self):
+        """Path: grade, grade_claim completed, triage_run_start never did. The start is the reason.
+
+        Mutants BISHOP-START-NOT-REQUIRED, BISHOP-NOT-DONE-NEVER and BISHOP-TEXT-NOT-DONE each fail it.
+        """
+        self.check_read_without_start("grade")
+
+    def test_classify_other_tool_error_still_exits_0(self):
+        """Path: classify, every bishop-triage call completed, a non-bishop read ends in error. The control for the tool-error rule.
+
+        Mutant BISHOP-ERR-ANY-TOOL, which judges every tool error, fails it.
+        """
+        self.check_other_tool_error("classify")
+
+    def test_process_other_tool_error_still_exits_0(self):
+        """Path: process, every bishop-triage call completed, a non-bishop read ends in error. The control for the tool-error rule.
+
+        Mutant BISHOP-ERR-ANY-TOOL fails it.
+        """
+        self.check_other_tool_error("process")
+
+    def test_grade_other_tool_error_still_exits_0(self):
+        """Path: grade, every bishop-triage call completed, a non-bishop read ends in error. The control for the tool-error rule.
+
+        Mutant BISHOP-ERR-ANY-TOOL fails it.
+        """
+        self.check_other_tool_error("grade")
+
+    def test_classify_reclassify_read_by_finding_list_exits_0(self):
+        """Path: classify --reclassify, which reads its category with finding_list, not triage_next_unclassified.
+
+        The reclassify prompt in scripts/triage-run.sh names finding_list, so a
+        completed finding_list is the read. Mutant BISHOP-CLASSIFY-NO-RECLASSIFY-READ,
+        which accepts only triage_next_unclassified, fails it.
+        """
+        self.assert_exit("classify", 0, {"read_tool": "finding_list"}, "classify reclassify run",
+                         flags=("--reclassify", "demo"))
+
+    def test_grade_replays_the_2026_10_21_failure_exits_1(self):
+        """Path: the grade run of 2026-10-21 15:35 UTC, replayed from its result file (triage-grade-2026-10-21T153534Z.jsonl).
+
+        Its triage_run_start was refused twice and its triage_run_finish once, all as
+        No tool named calls. No call completed, so the run is failed, with both reasons
+        on the ERROR line. The run exited 0 in production. Mutants BISHOP-ERR-IGNORED,
+        BISHOP-NOT-DONE-NEVER and the two BISHOP-TEXT rows each fail it.
+        """
+        events = (
+            call_event("read", "completed", input={"path": ".claude/skills/mission-grading/SKILL.md"}, output="doctrine"),
+            step_done(),
+            said("Doctrine read. Opening the run with kind grade and my model id."),
+            call_event(BISHOP + "triage_run_start", "error", input={"kind": "grade", "model": "opencode-go/glm-5.2"}),
+            step_done(),
+            said("The tool failed; doctrine says retry once."),
+            call_event(BISHOP + "triage_run_start", "error", input={"kind": "grade", "model": "opencode-go/glm-5.2"}),
+            step_done(),
+            call_event(BISHOP + "triage_run_finish", "error", input={"notes": "triage_run_start failed twice", "status": "failed"}),
+            step_done(),
+            said("Stopped: the bishop-triage tools are not available in this session's tool list."),
+        )
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out="".join(events))
+        label = "grade replay of 2026-10-21 15:35"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=4 tool_errors=3 ", label)
+        self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_triage_run_start x2, "
+                                 "bishop-triage_triage_run_finish x1", label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, "
+                                 "bishop-triage_grade_claim)", label)
+
+    def test_grade_replays_the_2026_10_22_clean_run_exits_0(self):
+        """Path: the grade run of 2026-10-22 04:33 UTC, replayed from its result file (triage-grade-2026-10-22T043342Z.jsonl).
+
+        Every bishop-triage call completed and the run closed done. The run exited 0
+        and logged done steps=5 tool_errors=0. Mutant BISHOP-NOT-DONE-INVERTED fails it.
+        """
+        events = (
+            call_event("read", "completed", input={"path": ".claude/skills/mission-grading/SKILL.md"}, output="doctrine"),
+            step_done(),
+            call_event(BISHOP + "triage_run_start", "completed", input={"kind": "grade", "model": "opencode-go/glm-5.2"},
+                       output='{"created":true,"id":111}'),
+            step_done(),
+            call_event(BISHOP + "grade_claim", "completed", input={"limit": 1, "run_id": 111}, output="CLAIMED 1 MISSIONS."),
+            step_done(),
+            call_event(BISHOP + "grade_write", "completed", input={"run_id": 111, "items": []}, output='{"written":1}'),
+            step_done(),
+            call_event(BISHOP + "triage_run_finish", "completed", input={"id": 111, "status": "done", "considered": 1, "written": 1},
+                       output='{"id":111,"status":"done","updated":true}'),
+            step_done(),
+            said("Graded one mission, B."),
+        )
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out="".join(events))
+        self.assertEqual(proc.returncode, 0, "grade replay of 2026-10-22 04:33: %s" % self.verdict(proc))
+        self.assert_logged(proc, "] done steps=5 tool_errors=0 ", "grade replay of 2026-10-22 04:33")
+
+    def test_grade_replays_read_errors_beside_a_completed_chain_exits_0(self):
+        """Path: the grade run of 2026-10-21 19:40 UTC, replayed from its result file (triage-grade-2026-10-21T194001Z.jsonl).
+
+        Two non-bishop read calls ended in error; every bishop-triage call completed.
+        The run exited 0 and logged done steps=7 tool_errors=2. Mutant BISHOP-ERR-ANY-TOOL
+        fails it.
+        """
+        events = (
+            call_event("read", "completed", input={"path": ".claude/skills/mission-grading/SKILL.md"}, output="doctrine"),
+            step_done(),
+            call_event("read", "error", input={"filePath": "/nonexistent/one.md"}, error="File not found"),
+            step_done(),
+            call_event(BISHOP + "triage_run_start", "completed", input={"kind": "grade", "model": "opencode-go/glm-5.2"},
+                       output='{"created":true,"id":111}'),
+            step_done(),
+            call_event(BISHOP + "grade_claim", "completed", input={"limit": 1, "run_id": 111}, output="CLAIMED 1 MISSIONS."),
+            step_done(),
+            call_event("read", "error", input={"filePath": "/nonexistent/two.md"}, error="File not found"),
+            step_done(),
+            call_event(BISHOP + "grade_write", "completed", input={"run_id": 111, "items": []}, output='{"written":1}'),
+            step_done(),
+            call_event(BISHOP + "triage_run_finish", "completed", input={"id": 111, "status": "done", "considered": 1, "written": 1},
+                       output='{"id":111,"status":"done","updated":true}'),
+            step_done(),
+            said("Graded one mission, C."),
+        )
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out="".join(events))
+        self.assertEqual(proc.returncode, 0, "grade replay of 2026-10-21 19:40 with read errors: %s" % self.verdict(proc))
+        self.assert_logged(proc, "] done steps=7 tool_errors=2 ", "grade replay of 2026-10-21 19:40")
 
 
 class FlagAndFilePrecedence(TriageRunCase):
