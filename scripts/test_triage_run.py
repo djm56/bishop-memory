@@ -2058,8 +2058,8 @@ class RunDecidesOnBishopCalls(TriageRunCase):
     def test_classify_read_of_another_kind_exits_1(self):
         """Path: classify, triage_run_start and process's read completed, and the run closed. Classify's own read never did.
 
-        No row widens classify's read. Mutants of the not-done, requirement and reason
-        rows kill this test; testdata/README.md says why no widening row exists.
+        No row widens classify's read. Mutants of the not-done, requirement, reason and
+        classify rows kill this test; testdata/README.md says why no widening row exists.
         """
         self.check_read_of_another_kind("classify")
 
