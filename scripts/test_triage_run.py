@@ -152,6 +152,11 @@ def said(text):
     return json.dumps({"type": "text", "part": {"type": "text", "messageID": "msg_1", "text": text}}) + "\n"
 
 
+def raw_tool_use(part):
+    """A tool_use event with `part` as its part, for a stream whose parts call_event cannot shape."""
+    return json.dumps({"type": "tool_use", "part": part}) + "\n"
+
+
 def step_done(cost=0.01):
     """A step_finish event: one model step, with its cost, as OpenCode writes after each call."""
     return json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "tool-calls", "cost": cost}}) + "\n"
@@ -1761,10 +1766,12 @@ OTHER_READ = {
 class RunDecidesOnBishopCalls(TriageRunCase):
     """
     The run summary in run_agent, on the opencode engine. A bishop-triage call
-    that ends in error fails the run unless a later call of the same tool
-    completes. A run also fails unless triage_run_start, the kind's read of its
-    work and triage_run_finish all completed. A run with no steps, or with steps
-    and no parsed tool calls, fails with a reason of its own. Each test runs the
+    that ends in error fails the run unless a later completed call of the same
+    tool forgives it. A run also fails unless triage_run_start, the kind's read
+    of its work and triage_run_finish all completed. A run with no steps fails
+    with a reason of its own, and so does a result with lines that do not parse
+    as JSON and no steps, a result with steps and no parsed tool calls, and one
+    whose tool calls carry no name or no status. Each test runs the
     copied script for one kind with a stub result stream, so the exit code and
     the last triage.log line are the summary's decision. Each docstring names the
     path and the control, and lists the mutants of scripts/triage-run.sh the test kills.
@@ -1864,6 +1871,25 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         other = call_event(BISHOP + OTHER_READ[kind], "completed", input={}, output="[]")
         proc = self.assert_exit(kind, 1, {"read": None, "write": None, "extra": (other,)}, label)
         self.assert_logged(proc, "no completed bishop-triage call (not completed: %s)" % NOT_DONE[kind], label)
+
+    def check_error_after_completed_write(self, kind):
+        """The write completes, then the same write ends in error with no completed call after it: exit 1, the write named once."""
+        write = BISHOP + KIND_CALLS[kind]["write"]
+        label = "%s error after a completed write" % kind
+        later = call_event(write, "error", input={}, error="The batch was rejected after the write completed.")
+        proc = self.assert_exit(kind, 1, {"extra": (later,)}, label)
+        self.assert_logged(proc, "ERROR steps=", label)
+        self.assert_logged(proc, "bishop-triage tool errors: %s x1" % write, label)
+
+    def check_error_after_retry_then_error(self, kind):
+        """The write errors, its retry completes, then the write errors again with no completed call after it: exit 1, the last error named once."""
+        write = BISHOP + KIND_CALLS[kind]["write"]
+        label = "%s error after a retried write" % kind
+        first = call_event(write, "error", input={}, error="The first attempt failed.")
+        later = call_event(write, "error", input={}, error="The second attempt failed.")
+        proc = self.assert_exit(kind, 1, {"extra": (later,)}, label, before=first + step_done())
+        self.assert_logged(proc, "tool_errors=2 ", label)
+        self.assert_logged(proc, "bishop-triage tool errors: %s x1" % write, label)
 
     def test_classify_clean_run_exits_0(self):
         """Path: classify, every call completed, run closed done. The control for the classify failures.
@@ -2055,11 +2081,53 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         """
         self.check_error_not_forgiven_by_another_tool("grade")
 
+    def test_classify_error_after_completed_write_exits_1(self):
+        """Path: classify, triage_classify completes, then triage_classify ends in error with no completed call after it. The later error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_completed_write("classify")
+
+    def test_process_error_after_completed_write_exits_1(self):
+        """Path: process, triage_recommend completes, then triage_recommend ends in error with no completed call after it. The later error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_completed_write("process")
+
+    def test_grade_error_after_completed_write_exits_1(self):
+        """Path: grade, grade_write completes, then grade_write ends in error with no completed call after it. The later error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_completed_write("grade")
+
+    def test_classify_error_after_retry_then_error_exits_1(self):
+        """Path: classify, triage_classify errors, its retry completes, then triage_classify errors again with no completed call after it. Only the last error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_retry_then_error("classify")
+
+    def test_process_error_after_retry_then_error_exits_1(self):
+        """Path: process, triage_recommend errors, its retry completes, then triage_recommend errors again with no completed call after it. Only the last error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_retry_then_error("process")
+
+    def test_grade_error_after_retry_then_error_exits_1(self):
+        """Path: grade, grade_write errors, its retry completes, then grade_write errors again with no completed call after it. Only the last error is not forgiven.
+
+        Mutants BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND and BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-CHECK each fail it.
+        """
+        self.check_error_after_retry_then_error("grade")
+
     def test_classify_read_of_another_kind_exits_1(self):
         """Path: classify, triage_run_start and process's read completed, and the run closed. Classify's own read never did.
 
-        No row widens classify's read. Mutants of the not-done, requirement, reason and
-        classify rows kill this test; testdata/README.md says why no widening row exists.
+        Mutant BISHOP-CLASSIFY-READ-WIDENED, which accepts process's read for classify, fails it.
+        Its own-rejected mirror is BISHOP-CLASSIFY-READ-OWN-REJECTED.
         """
         self.check_read_of_another_kind("classify")
 
@@ -2125,6 +2193,48 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "reason=no tool calls parsed from the result (format changed?)", label)
         self.assertNotIn("no completed bishop-triage call", self.log(), "%s: the missing calls are named" % label)
 
+    def test_unparsed_lines_without_steps_give_the_parse_reason(self):
+        """Path: grade, the result holds one line that is not JSON and no step_finish. The reason names the lines, not the missing steps.
+
+        The stream has no step to judge, and no missing call is named. Mutant
+        BISHOP-PARSE-REASON-MISSING, which drops the parse reason, fails it.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out="not json at all\n")
+        label = "grade with unparsed lines and no steps"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=0 tool_errors=0 ", label)
+        self.assert_logged(proc, "reason=result lines do not parse as JSON (format changed?)", label)
+        self.assertNotIn("no steps in the result", self.log(), "%s: the no-steps reason is given" % label)
+
+    def test_parseable_stream_without_steps_still_gives_the_no_steps_reason(self):
+        """Path: grade, the result holds one text event, every line parses and there is no step_finish. The control for the parse reason.
+
+        Mutant BISHOP-PARSE-REASON-ON-NO-STEPS-RUN, which gives every run with no steps the parse
+        reason, fails it.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out=said("Nothing to grade."))
+        label = "grade with a parseable stream and no steps"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=0 tool_errors=0 ", label)
+        self.assert_logged(proc, "reason=no steps in the result", label)
+        self.assertNotIn("format changed", self.log(), "%s: the parse reason is given" % label)
+
+    def test_tool_calls_without_name_or_status_give_the_shape_reason(self):
+        """Path: grade, two tool_use events parse, and neither has both a tool name and a status. The reason says the format may have changed.
+
+        No missing call is named, because no call the rules can read was made. Mutant
+        BISHOP-SHAPE-STATUS-NOT-REQUIRED, which counts a call with a name and no status as shaped, fails it.
+        """
+        no_name = raw_tool_use({"type": "tool", "tool": "", "state": {"status": "completed", "input": {}}})
+        no_status = raw_tool_use({"type": "tool", "tool": BISHOP + "grade_claim", "state": {"input": {}}})
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
+                               run_out=no_name + step_done() + no_status + step_done())
+        label = "grade with tool_use events that have no name or status"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=2 tool_errors=0 ", label)
+        self.assert_logged(proc, "reason=tool calls parsed from the result carry no name or status (format changed?)", label)
+        self.assertNotIn("no completed bishop-triage call", self.log(), "%s: the missing calls are named" % label)
+
     def test_classify_reclassify_read_by_finding_list_exits_0(self):
         """Path: classify --reclassify, which reads its category with finding_list, not triage_next_unclassified.
 
@@ -2135,7 +2245,7 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_exit("classify", 0, {"read_tool": "finding_list"}, "classify reclassify run",
                          flags=("--reclassify", "demo"))
 
-    def test_grade_replays_the_2026_10_21_failure_exits_1(self):
+    def test_grade_reconstructed_2026_10_21_failure_exits_1(self):
         """Path: the grade run of 2026-10-21 15:35 UTC, reconstructed from its result file (triage-grade-2026-10-21T153534Z.jsonl).
 
         The events are written out by hand; the test does not read that file. Their
@@ -2168,7 +2278,7 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, "
                                  "bishop-triage_grade_claim, bishop-triage_triage_run_finish)", label)
 
-    def test_grade_replays_the_2026_10_22_clean_run_exits_0(self):
+    def test_grade_reconstructed_2026_10_22_clean_run_exits_0(self):
         """Path: the grade run of 2026-10-22 04:33 UTC, reconstructed from its result file (triage-grade-2026-10-22T043342Z.jsonl).
 
         The events are written out by hand; the test does not read that file. Their
@@ -2196,7 +2306,7 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assertEqual(proc.returncode, 0, "grade replay of 2026-10-22 04:33: %s" % self.verdict(proc))
         self.assert_logged(proc, "] done steps=5 tool_errors=0 ", "grade replay of 2026-10-22 04:33")
 
-    def test_grade_replays_read_errors_beside_a_completed_chain_exits_0(self):
+    def test_grade_reconstructed_2026_10_21_read_errors_beside_a_completed_chain_exits_0(self):
         """Path: the grade run of 2026-10-21 19:40 UTC, reconstructed from its result file (triage-grade-2026-10-21T194001Z.jsonl).
 
         The events are written out by hand; the test does not read that file. Their
