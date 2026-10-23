@@ -140,7 +140,7 @@ Point the nightly triage at the server. Its launchd job sets the URL itself, whi
 scripts/install-triage-schedule.sh --url https://SERVER_IP:8787
 ```
 
-Open `https://SERVER_IP:8787/missions` in the browser. It asks for the key once; paste `mac`. Your missions should be there. The Triage / Missions switch takes you to `/triage`.
+Open `https://SERVER_IP:8787/missions` in the browser. It asks for the key once; paste `mac`. Your missions should be there. The page switch in the header takes you to `/triage` and the other pages.
 
 ## 6. Point each harness at the server
 

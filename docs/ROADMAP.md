@@ -423,10 +423,10 @@ except the operational ones, which name their evidence instead.
   admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
   `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
   N/A on the HUD and the Performance page (PR #13, squash-merge `41aa27e`,
-  mission-20261022-05). Deployed to the live service on 2026-10-23 with
-  `scripts/install-daemon.sh`; the `mission_grades` rebuild ran on that start
-  (operator-reported). The override with a note is still open, under Memory
-  insight.
+  mission-20261022-05). Deployed 2026-10-23 with `scripts/install-daemon.sh`
+  at the operator's request; the `mission_grades` rebuild ran on that start,
+  and the live schema was checked after restart (mission-20261022-05
+  follow-up). The override with a note is still open, under Memory insight.
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).

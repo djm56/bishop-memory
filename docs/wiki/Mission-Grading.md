@@ -27,7 +27,7 @@ A mission whose record is too thin to judge (no debrief and no steps) gets **not
 
 **Mission HUD.** Each graded mission shows its letter in the mission list and in its header, and a **Grade** section under the tiles: the letter, **Why** (the summary), **Suggestions**, and the counts the grade rests on. A mission the operator has set aside shows **N/A** in place of a letter: in the list its note is the tooltip, and in the Grade section the note is under **Why**. The list has a grade filter, including **Ungraded** and **N/A**.
 
-![A mission's grade on the HUD, dark theme](images/missions-dark.png)
+![The mission HUD in the dark theme, with the Grade heading at the foot of the view](images/missions-dark.png)
 
 **Performance page** (`/performance`, the third link in the page switch):
 
