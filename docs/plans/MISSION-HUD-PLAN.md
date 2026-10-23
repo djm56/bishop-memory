@@ -181,7 +181,7 @@ The HUD is its own page, `/missions`, served by memoryd beside `/triage`
 (decision D4). `/` redirects to `/missions`.
 
 - Both pages carry a Triage / Missions switch in the header and share the
-  theme setting.
+  theme setting. (superseded: the switch now has more pages; see the wiki)
 - A finding card on `/triage` links to its mission (`/missions#<id>`).
 - A finding on `/missions` links to `/triage?finding=<id>`, which opens
   Browse on just that finding, with a "show all" link back to the full list.

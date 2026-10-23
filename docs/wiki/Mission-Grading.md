@@ -4,7 +4,7 @@ Every finished mission gets a grade from **A** to **F**, a short summary of why,
 
 Grading is the third triage job, after classify and process. It runs nightly at 21:40 and can be run by hand. It works from the database alone: the mission's brief, debrief, steps, findings and agent notes as bishop-memory already holds them. It reads no files and makes no changes to a harness.
 
-![Harness performance, light theme](images/performance-light.png)
+![Harness performance, light theme: the average grade, the set-aside tile counting one N/A, and the demo harness card with its N/A count](images/performance-light.png)
 
 ## What the grades mean
 
@@ -27,7 +27,7 @@ A mission whose record is too thin to judge (no debrief and no steps) gets **not
 
 **Mission HUD.** Each graded mission shows its letter in the mission list and in its header, and a **Grade** section under the tiles: the letter, **Why** (the summary), **Suggestions**, and the counts the grade rests on. A mission the operator has set aside shows **N/A** in place of a letter: in the list its note is the tooltip, and in the Grade section the note is under **Why**. The list has a grade filter, including **Ungraded** and **N/A**.
 
-![A mission's grade on the HUD, dark theme](images/missions-dark.png)
+![The mission HUD in the dark theme, with the Grade heading at the foot of the view](images/missions-dark.png)
 
 **Performance page** (`/performance`, the third link in the page switch):
 
@@ -72,6 +72,8 @@ A run with nothing waiting exits at once without starting an agent. Each run mak
 - An excluded (N/A) mission is never claimed. A run that names one skips it with a log line and leaves it alone; `DELETE /v1/mission-grades/<id>` answers 409 for it. Lift the exclusion first, and the nightly grader can claim the mission again.
 
 ## Setting a mission aside (N/A)
+
+![The mission HUD with a set-aside mission selected: its list row carries N/A, the Now block sits above the Grade section, and the Grade section shows a large N/A badge with the note under Why](images/missions-na-light.png)
 
 Only the operator sets this. No MCP tool reaches these routes. Both are on the HTTP API under `/v1/mission-grades/:missionID/exclusion`; the operator's side of the service is in [Developer: HTTP API](Developer-HTTP-API#mission-grades-operator-na).
 
@@ -121,7 +123,7 @@ bin/memoryd backup data/memory-before-na.db
 sqlite3 data/memory-before-na.db ".tables"
 ```
 
-Run `bin/memoryd backup` from the checkout, as above. `DB_PATH` is relative, so a run from any other directory (for example, with the full path to the binary) opens and creates an empty `data/memory.db` there, because `store.Open` creates the database file on open (`internal/store/sqlite.go:39-43`). The backup is then empty and the stray file must be removed. The `.tables` check catches the empty copy; do not restart on it.
+Run `bin/memoryd backup` from the checkout, as above. `DB_PATH` is relative, so a run from any other directory (for example, with the full path to the binary) opens and creates an empty `data/memory.db` there, because `store.Open` creates the database file on open: its `db.Ping` call forces the driver to create the file (`internal/store/sqlite.go:66-71`). The backup is then empty and the stray file must be removed. The `.tables` check catches the empty copy; do not restart on it.
 
 On Linux the database is in the service user's StateDirectory (`scripts/bishop-memory.service:68`), so run the backup as that user and keep the target inside that directory. The unit's own comment uses `sudo -u bishop-memory env DB_PATH=... <bin>/memoryd keys add` (`scripts/bishop-memory.service:73`), and `scripts/install.sh:176` runs the same pattern with `runuser -u`. `<install root>` is the directory the unit runs `bin/memoryd` from (`scripts/bishop-memory.service:54`):
 
@@ -134,7 +136,7 @@ sudo -u bishop-memory sqlite3 /var/lib/bishop-memory/memory-before-na.db ".table
 
 If the `.tables` line prints nothing, the copy is empty. Do not restart until it lists `mission_grades`.
 
-The migration runs only when the operator restarts memoryd, so nothing changes until then.
+The migration runs only when the operator restarts memoryd, so nothing changes until then. On a Mac, the redeploy is `scripts/install-daemon.sh`: it builds `bin/memoryd`, stages a copy into the exec directory that launchd runs (`scripts/install-daemon.sh:260-264`, `:277-282`), and replaces the launchd job with a bootout and a bootstrap (`scripts/install-daemon.sh:315-331`). The migration runs when that new process starts, in `cmd/memoryd/main.go:121`. Take the backup above first, so that a bad redeploy can be rolled back from it.
 
 ## Settings
 

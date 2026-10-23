@@ -188,6 +188,12 @@ here ahead of an actual release.
   in a published image. The README shows the Pending tab in the reader's
   GitHub theme; the Review Page Guide shows every tab. `make wiki-publish`
   now uploads the images with the pages.
+- **Screenshots refreshed for the N/A grade.** `missions-na-light.png` is new:
+  a set-aside mission on the HUD, with its N/A row, the Now block and the
+  Grade section. The HUD and Performance captures are regenerated to match.
+  `scripts/screenshots/capture.js` now targets the set-aside mission's Grade
+  section, and a shot throws when that target is not on screen below the
+  sticky bars.
 - **A favicon for the review page.** A "B" in the page's accent blue, served
   at `/favicon.svg` with a 32px PNG at `/favicon.ico`, both embedded in the
   binary. It replaces the 404 every page load used to log for `/favicon.ico`.

@@ -107,9 +107,9 @@ On OpenCode instead (cheaper models, your own OpenCode config and key): skip the
 
 ## 6. Following a mission
 
-The mission HUD at `http://127.0.0.1:8787/missions` (also where `/` lands) shows one mission at a time with tabbed detail sections: the brief with its acceptance criteria ticked from the debrief; a steps tab showing the timeline with each agent's crew role, start time, duration and summary and the review verdicts; findings with their triage state; the debrief (split across deliverables, agent mistakes, lessons and full debrief sections); and patterns, directives, crew and service records. The crew page shows per-agent metrics (steps, approval rate, re-reviews, mistakes, average grade) as a sortable, filterable, paginated leaderboard. A **Triage / Missions** switch in the header moves between the HUD and the review page.
+The mission HUD at `http://127.0.0.1:8787/missions` (also where `/` lands) shows one mission at a time with tabbed detail sections: the brief with its acceptance criteria ticked from the debrief; a steps tab showing the timeline with each agent's crew role, start time, duration and summary and the review verdicts; findings with their triage state; the debrief (split across deliverables, agent mistakes, lessons and full debrief sections); and patterns, directives, crew and service records. The crew page shows per-agent metrics (steps, approval rate, re-reviews, mistakes, average grade) as a sortable, filterable, paginated leaderboard. A page switch in the header moves between the HUD, the review page and the other pages (`internal/ui/missions.html:349`, `internal/ui/triage.html:314`, `internal/ui/performance.html:398`, `internal/ui/crew.html:200`).
 
-![The mission HUD](images/missions-light.png)
+![The mission HUD, with the page switch across the top, the mission list, and a completed mission's header, tabs, tiles and Now block, with the Grade heading at the foot of the view](images/missions-light.png)
 
 The brief, progress and debrief reach it as documents. Once the harness is registered (a reconcile with `--harness` does that), sync them:
 

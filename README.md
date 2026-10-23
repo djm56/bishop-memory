@@ -134,10 +134,10 @@ Every finished mission gets a grade from A to F, a short summary of why and sugg
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/wiki/images/missions-dark.png">
-  <img alt="The mission HUD: the mission list with search and filters on the left, and on the right a completed mission with its status, tiles for steps, duration, findings and criteria, and its brief." src="docs/wiki/images/missions-light.png">
+  <img alt="The mission HUD: the mission list on the left, and on the right a completed mission with its status, tiles for steps, duration, findings, criteria, patterns and directives, and its Now block; the Grade heading shows at the foot of the view." src="docs/wiki/images/missions-light.png">
 </picture>
 
-`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A switch in each page's header links the four pages (Triage, Missions, Performance and Crew), and each finding links across to the other. `/crew` shows per-agent metrics across all missions; see [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md#the-crew-page).
+`http://127.0.0.1:8787/missions`, beside `/triage` (and where `/` redirects), shows one mission at a time: the brief with its acceptance criteria ticked from the debrief, a step timeline with each agent's crew role, timing and summary, the linked findings with their triage state, the debrief, and the patterns, directives, crew, service records and journal entries that belong to it. A switch in each page's header links to the other pages, and each finding links across to the other. `/crew` shows per-agent metrics across all missions; see [Mission HUD Guide](docs/wiki/Mission-HUD-Guide.md#the-crew-page).
 
 ```bash
 curl -X POST http://127.0.0.1:8787/v1/documents/sync   # import every registered harness's memory tree and agents
@@ -175,7 +175,7 @@ Environment variables, with optional `.env` in the working directory (gitignored
 ## Network and security model
 
 - **Loopback, no keys: open.** The default single-machine install binds `127.0.0.1` and asks for nothing, exactly as before.
-- **API keys.** `memoryd keys add <name>` creates a named key and prints it once; the keys file holds only SHA-256 hashes and is re-read on change, so adding or revoking needs no restart. Once any key exists, every `/v1` route needs one (`Authorization: Bearer <key>` or `X-API-Key`); `/healthz`, the two pages and their icons stay open because they hold no data. The access log names the key behind each request.
+- **API keys.** `memoryd keys add <name>` creates a named key and prints it once; the keys file holds only SHA-256 hashes and is re-read on change, so adding or revoking needs no restart. Once any key exists, every `/v1` route needs one (`Authorization: Bearer <key>` or `X-API-Key`); `/healthz`, the pages and their icons stay open because they hold no data. The access log names the key behind each request.
 - **Required off loopback.** On any other address memoryd refuses to start without a key (unless `BISHOP_ALLOW_NO_AUTH=1`), and revoking the last key refuses every request rather than opening the service.
 - **Transport.** A key over plain HTTP can be read on the wire. On your own network, use built-in TLS with a certificate from your own mkcert CA, which clients trust through `BISHOP_MEMORY_CA_FILE` in `client.env` ([Home Server Setup](docs/wiki/Home-Server-Setup.md)). Alternatives: Tailscale or WireGuard, built-in TLS (`TLS_CERT_FILE`, `TLS_KEY_FILE`), a reverse proxy such as Caddy in front of a loopback-bound memoryd (create a key first: on loopback with none it is open), or an SSH tunnel. memoryd warns at start when it serves plain HTTP on a network address.
 - **Every key has full access.** There are no roles and no rate limiting. What agents can do is still limited by the `mcpd` tool lists (see [MCP tools](#mcp-tools)). `POST /v1/documents/sync` reads any server path a caller names (except `/`), so a key can also pull Markdown and JSONL from any directory the service user can read into search.
@@ -200,7 +200,7 @@ CI (`.github/workflows/ci.yml`) runs build, vet, gofmt, test and test -race on L
 cmd/memoryd         HTTP daemon          internal/api        handlers and router
 cmd/mcpd            MCP adapter          internal/store      SQLite, schema, migrations
 db/schema.sql       schema               internal/importer   Markdown → FTS5
-db/finding-categories.json  taxonomy     internal/ui         the four pages: /triage, /missions, /performance, /crew
+db/finding-categories.json  taxonomy     internal/ui         the pages: /triage, /missions, /performance, /crew
 scripts/            installers, reconciler, triage, wiki     .claude/agents, .claude/skills   the triage agents
                                                              .opencode/agents                 their OpenCode twins
 docs/               roadmap, progress, plans   docs/wiki/    user and developer pages (published to the wiki)

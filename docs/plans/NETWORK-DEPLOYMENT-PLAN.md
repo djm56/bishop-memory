@@ -82,7 +82,7 @@ pages in the browser.
 - **Header:** `Authorization: Bearer <key>` (also `X-API-Key: <key>`).
   Comparison is constant-time over the SHA-256.
 - **What needs a key:** every `/v1` route. `/healthz` stays open and says
-  only ok/not ok. The two pages (`/triage`, `/missions`) and the icons are
+  only ok/not ok. The pages and the icons are
   static and hold no data, so they load without a key; the data they fetch
   is under `/v1`.
 - **The browser:** when a `/v1` call answers 401, the page asks for a key,

@@ -10,8 +10,8 @@
 # 2. Loads the taxonomy and the made-up demo findings and missions in
 #    scripts/screenshots/demo.json, through the HTTP API; the missions' files
 #    go in a throwaway harness memory tree in the same directory.
-# 3. Captures each tab of /triage, and /missions, with headless Chrome
-#    (scripts/screenshots/capture.js) into docs/wiki/images/, which
+# 3. Captures the pages that the shot list in capture.js names, with headless
+#    Chrome (scripts/screenshots/capture.js) into docs/wiki/images/, which
 #    `make wiki-publish` uploads with the wiki pages.
 # 4. Stops the service and removes the temporary directory (--keep leaves
 #    the service running and prints its URL, to look at the demo page).

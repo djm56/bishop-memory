@@ -233,7 +233,7 @@ When keys are required:
 
 Revoking the last key of a service on a network address does not open it: with no key left, every `/v1` request gets 401 until you add one. On loopback, by contrast, revoking the last key returns it to the open single-machine mode, which matters behind a reverse proxy (see [section 1](#1-choose-how-clients-reach-the-server)).
 
-What needs a key: every `/v1` route. `/healthz` (which only says ok or not), the two pages and their icons hold no data and load without one.
+What needs a key: every `/v1` route. `/healthz` (which only says ok or not), the pages and their icons hold no data and load without one.
 
 ## 7. Set up each client machine
 
