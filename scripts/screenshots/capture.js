@@ -31,12 +31,12 @@ const SHOTS = [
   { name: 'missions-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors' },
   { name: 'missions-dark', theme: 'dark', viewport: DESKTOP, mission: 'Retry transient provider errors' },
   { name: 'missions-steps-light', theme: 'light', viewport: DESKTOP, mission: 'Retry transient provider errors',
-    after: async (page) => { await scrollToSection(page, 2); } },
+    after: async (page) => { await showMissionSection(page, { tab: 'steps', heading: 'Steps', must: '.steps' }); } },
   { name: 'missions-phone-light', theme: 'light', viewport: PHONE, mission: 'Retry transient provider errors',
-    after: async (page) => { await scrollToSection(page, -1); } },
+    after: async (page) => { await showMissionHead(page); } },
   // The set-aside mission from demo.json: its Grade section carries the large N/A badge.
   { name: 'missions-na-light', theme: 'light', viewport: DESKTOP, mission: 'Dry run of the release checklist',
-    after: async (page) => { await scrollToGrade(page); } },
+    after: async (page) => { await showMissionSection(page, { heading: 'Grade', must: '.verdict' }); } },
   { name: 'performance-light', theme: 'light', viewport: DESKTOP, page: '/performance' },
   { name: 'performance-dark', theme: 'dark', viewport: DESKTOP, page: '/performance' },
   { name: 'phone-light', theme: 'light', viewport: PHONE, tab: 'pending',
@@ -51,28 +51,42 @@ const SHOTS = [
     } },
 ];
 
-// Scrolls the mission view so section i (-1: the mission header) sits just
-// below the sticky header.
-async function scrollToSection(page, i) {
-  await page.evaluate(i => {
-    const el = i < 0 ? document.querySelector('#view') : document.querySelectorAll('#view section.sec')[i];
+// Makes a mission tab current, when one is given, then scrolls the mission view
+// so the section with this heading sits just below the sticky header. The
+// section is found by its heading, never by its position: the panes hide the
+// sections of other tabs, so a position can name a hidden one. The shot fails
+// unless the section is visible and its `must` element is on screen afterwards.
+async function showMissionSection(page, { tab, heading, must }) {
+  if (tab) {
+    await page.click(`#mtabs button[data-mt="${tab}"]`);
+    await page.waitForTimeout(300);
+  }
+  await page.evaluate(({ heading, must }) => {
+    const sec = [...document.querySelectorAll('#view section.sec')]
+      .find(s => (s.querySelector('h3')?.childNodes[0]?.textContent || '').trim() === heading);
+    if (!sec || sec.hidden || sec.getClientRects().length === 0) throw new Error(`no visible "${heading}" section`);
     const header = document.querySelector('header.top').offsetHeight;
-    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - header - 12);
-  }, i);
+    window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - header - 12);
+    const target = must ? sec.querySelector(must) : sec;
+    const r = target ? target.getBoundingClientRect() : null;
+    if (!r || r.height === 0 || r.top < header || r.top >= window.innerHeight) {
+      throw new Error(`"${heading}" ${must || 'section'} is not on screen after scrolling`);
+    }
+  }, { heading, must });
   await page.waitForTimeout(300);
 }
 
-// Scrolls the mission view so its Grade section sits just below the sticky
-// header. The section is found by its heading, because the panes hide sections
-// that belong to other tabs, so a numeric index can name a hidden one. Throws
-// when there is no Grade section, so the shot fails rather than capturing the top.
-async function scrollToGrade(page) {
+// Scrolls the mission view so its header (#view, which holds the mission head)
+// sits just below the sticky header. Fails unless the head is on screen afterwards.
+async function showMissionHead(page) {
   await page.evaluate(() => {
-    const sec = [...document.querySelectorAll('#view section.sec')]
-      .find(s => s.querySelector('h3')?.textContent.trim() === 'Grade');
-    if (!sec) throw new Error('no Grade section in the mission view');
+    const view = document.querySelector('#view');
+    const head = view.querySelector('.head');
+    if (!head || head.getClientRects().length === 0) throw new Error('no visible mission head');
     const header = document.querySelector('header.top').offsetHeight;
-    window.scrollTo(0, sec.getBoundingClientRect().top + window.scrollY - header - 12);
+    window.scrollTo(0, view.getBoundingClientRect().top + window.scrollY - header - 12);
+    const r = head.getBoundingClientRect();
+    if (r.bottom <= header || r.top >= window.innerHeight) throw new Error('the mission head is not on screen');
   });
   await page.waitForTimeout(300);
 }
