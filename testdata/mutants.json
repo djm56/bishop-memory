@@ -8877,8 +8877,8 @@
       "file": "scripts/triage-deploy.sh",
       "line": 178,
       "before": "if ! make -C \"$DIR\" build-mcpd; then",
-      "after": "if false; then",
-      "property": "A failed build exits 3; the mutant ignores the failure and exits 0",
+      "after": "make -C \"$DIR\" build-mcpd || true; if false; then",
+      "property": "A failed build exits 3; the mutant still runs the build and ignores its status, so the success path is taken",
       "mirror": "DEPLOY-BUILD-MESSAGE-DROPPED",
       "suite": "scripts/test_triage_deploy.py",
       "killers": [
@@ -8909,26 +8909,27 @@
       "before": "rm -f \"$DIR/bin/mcpd\"",
       "after": "true",
       "property": "bin/mcpd is removed before the build, so a failed build leaves no earlier binary; the mutant keeps the old binary",
-      "mirror": "DEPLOY-NO-REBUILD",
+      "mirror": "DEPLOY-BUILD-ONLY-WHEN-MISSING",
       "suite": "scripts/test_triage_deploy.py",
       "killers": [
         "DeployBuildFetchAndUsage.test_a_build_failure_exits_3_and_removes_the_old_binary"
       ]
     },
     {
-      "id": "DEPLOY-NO-REBUILD",
+      "id": "DEPLOY-BUILD-ONLY-WHEN-MISSING",
       "status": "active",
       "language": "py",
       "file": "scripts/triage-deploy.sh",
-      "line": 178,
-      "before": "if ! make -C \"$DIR\" build-mcpd; then",
-      "after": "if ! true; then",
-      "property": "bin/mcpd is rebuilt from the checked-out commit on every run; the mutant skips the build",
+      "line": 177,
+      "before": "rm -f \"$DIR/bin/mcpd\"\nif ! make -C \"$DIR\" build-mcpd; then",
+      "after": "if [[ ! -x \"$DIR/bin/mcpd\" ]] && ! make -C \"$DIR\" build-mcpd; then",
+      "property": "bin/mcpd is rebuilt from the checked-out commit on every run; the mutant builds only when no binary exists, so a stale binary survives a fast-forward",
       "mirror": "DEPLOY-STALE-BIN-KEPT",
       "suite": "scripts/test_triage_deploy.py",
       "killers": [
         "DeployCreatesAndUpdates.test_a_worktree_behind_origin_main_is_fast_forwarded_and_rebuilt"
-      ]
+      ],
+      "summary": "Removes the removal of the old binary and the unconditional build: the build runs only when bin/mcpd is missing"
     },
     {
       "id": "DEPLOY-FETCH-FAILURE-IGNORED",

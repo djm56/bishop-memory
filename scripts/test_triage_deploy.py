@@ -196,7 +196,7 @@ class DeployCreatesAndUpdates(DeployCase):
     def test_a_worktree_behind_origin_main_is_fast_forwarded_and_rebuilt(self):
         """Path: an existing deploy worktree at the old origin/main, and origin/main advanced by one commit. The worktree moves to the new commit and bin/mcpd is built from it.
 
-        Recorded against mutant DEPLOY-NO-FAST-FORWARD, which skips the move, and DEPLOY-NO-REBUILD, which skips the build, both of which fail here. The control is the binary before the advance: it prints v1.
+        Recorded against mutant DEPLOY-NO-FAST-FORWARD, which skips the move, and DEPLOY-BUILD-ONLY-WHEN-MISSING, which skips the build whenever a binary exists, both of which fail here. The control is the binary before the advance: it prints v1.
         """
         self.deploy_once()
         self.assertEqual(self.says(self.deploy), "mcpd fixture v1", "control: the first deploy builds v1")
@@ -385,6 +385,7 @@ class DeployBuildFetchAndUsage(DeployCase):
         """
         proc = self.run_make("triage-deploy", "DEPLOY_DIR=" + self.deploy)
         self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertTrue(os.path.isdir(self.deploy), "the worktree must be at the override path: " + verdict(proc))
         self.assertEqual(self.sha(self.deploy), self.origin_main(), "control: the worktree is at the override path")
         self.assertFalse(os.path.exists(os.path.join(self.home, "bishop-memory-deploy")),
                          "the default path under HOME must not be used when DEPLOY_DIR is set")
@@ -439,17 +440,19 @@ class DeployBuildFetchAndUsage(DeployCase):
         self.assertEqual(self.sha(self.deploy), self.origin_main(), "control: an absolute path is accepted")
 
     def test_a_missing_make_or_git_on_path_exits_2_before_anything_changes(self):
-        """Path: PATH holds only dirname and one of git or make. The run exits 2 and names the missing tool, before any fetch or any worktree is created.
+        """Path: PATH holds every program in /bin and /usr/bin except one of git or make. The run exits 2 and names the missing tool, before any fetch or any worktree is created.
 
-        Each case is run with a PATH that has the tool it needs; the control is the full PATH, under which the same run deploys.
-        Mutant DEPLOY-TOOL-CHECK-REMOVED, which drops the command -v check, is recorded against this test, because without the check the run fails later with a message about the build, not the tool.
+        Only the named tool is absent, so the script fails at the check and not at a later coreutil. The control is the full PATH, under which the same run deploys.
+        Recorded against mutant DEPLOY-TOOL-CHECK-REMOVED, which drops the make check, and DEPLOY-TOOL-CHECK-INVERTED, which refuses the tools that are present.
         """
-        for missing, keep in (("make", "git"), ("git", "make")):
+        for missing in ("make", "git"):
             with self.subTest(missing=missing):
                 stub = os.path.join(self.tmp, "path-without-" + missing)
                 os.makedirs(stub)
-                for tool in ("dirname", keep):
-                    os.symlink(shutil.which(tool), os.path.join(stub, tool))
+                for directory in ("/bin", "/usr/bin"):
+                    for name in os.listdir(directory):
+                        if name != missing and not os.path.lexists(os.path.join(stub, name)):
+                            os.symlink(os.path.join(directory, name), os.path.join(stub, name))
                 proc = self.run_script("--dir", self.deploy, path=stub)
                 self.assertEqual(proc.returncode, 2, verdict(proc))
                 self.assertIn("%s is not on PATH" % missing, proc.stderr, verdict(proc))
