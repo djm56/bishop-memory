@@ -196,8 +196,8 @@ mission the run does not know. Each mission with journal events gets a
 skipped at the cap exits 3; a failed operation or fetch exits 1 and outranks it.
 The step WARN is printed only after that mission's existing-steps fetch
 succeeds. `JOURNAL_MAX_PAGES` stays 1000, and the known-id set is the ids
-`parse_missions` returns. Status: decided, and shipped with the change that
-carries this record (`reconcile_journal` and `main()` in
+`parse_missions` returns. Status: decided, and shipped in PR #11 (`2cada81`)
+(`reconcile_journal` and `main()` in
 `scripts/reconcile-memory.py`).
 
 **`normalize_empty` unescapes `\|` without a reason to.** It copies `clean()`,
@@ -348,7 +348,7 @@ except the operational ones, which name their evidence instead.
 
 **Reconciler**
 
-- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped with the change that carries this entry (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
+- The `[flight-recorder]` summary sums to `parsed`: the buckets in `JOURNAL_SUMMED_BUCKETS` add up to it, an `out of scope` bucket names events of a mission the run does not know, and each mission with journal events gets a `[flight-recorder] <id>:` detail line. Shipped in PR #11 (`2cada81`) (`scripts/reconcile-memory.py`: `reconcile_journal`, `main()`). Not run against the live service.
 - Operational, no commit (live system, 2026-10-21, operator-reported): memoryd
   was redeployed at 06:35 UTC with the flight-recorder paging from PR #9
   (`1c4def9`). A full journal reconcile of the live service was clean, with 13
@@ -406,7 +406,7 @@ except the operational ones, which name their evidence instead.
 - Operator N/A for missions that should not count: `mission_grades.state`
   admits `excluded`, set and lifted by the operator's `PUT` and `DELETE` on
   `/v1/mission-grades/:missionID/exclusion`; the grader skips such missions;
-  N/A on the HUD and the Performance page (PR #TBD, mission-20261022-05).
+  N/A on the HUD and the Performance page (PR #13, mission-20261022-05).
 - Mission grading: `mission_grades`, the `mission-grader` agent, the
   `/performance` page, `make triage-grade` (c83fdbf, merged in ae14630).
   Grader packets as readable text (5538d6d).

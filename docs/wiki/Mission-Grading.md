@@ -115,11 +115,13 @@ On a Mac, from the checkout:
 export DB_PATH=data/memory.db
 : "${DB_PATH:?set DB_PATH first}"
 bin/memoryd backup data/memory-before-na.db
-# or, with the sqlite3 command line tool:
-sqlite3 "$DB_PATH" ".backup data/memory-before-na.db"
+# alternative to the line above, with the sqlite3 command line tool; use one, not both:
+# sqlite3 "$DB_PATH" ".backup data/memory-before-na.db"
 # the copy must hold the tables, not be empty: this lists mission_grades
 sqlite3 data/memory-before-na.db ".tables"
 ```
+
+Run `bin/memoryd backup` from the checkout, as above. `DB_PATH` is relative, so a run from any other directory (for example, with the full path to the binary) opens and creates an empty `data/memory.db` there, because `store.Open` creates the database file on open (`internal/store/sqlite.go:39-43`). The backup is then empty and the stray file must be removed. The `.tables` check catches the empty copy; do not restart on it.
 
 On Linux the database is in the service user's StateDirectory (`scripts/bishop-memory.service:68`), so run the backup as that user and keep the target inside that directory. The unit's own comment uses `sudo -u bishop-memory env DB_PATH=... <bin>/memoryd keys add` (`scripts/bishop-memory.service:73`), and `scripts/install.sh:176` runs the same pattern with `runuser -u`. `<install root>` is the directory the unit runs `bin/memoryd` from (`scripts/bishop-memory.service:54`):
 
