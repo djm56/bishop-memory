@@ -5075,6 +5075,200 @@
       "killers": [
         "TestNAGradeSourceText/perf_set_aside_subline"
       ]
+    },
+    {
+      "id": "BISHOP-ERR-IGNORED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 933,
+      "before": "if bishop_errors:",
+      "after": "if False:",
+      "property": "A bishop-triage call that ends in error fails the run, and the ERROR line names it; the mutant drops that reason, so a failed bishop-triage call reads as a clean run",
+      "mirror": "BISHOP-ERR-ANY-TOOL",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_process_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_replays_the_2026_10_21_failure_exits_1"
+      ]
+    },
+    {
+      "id": "BISHOP-ERR-ANY-TOOL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 921,
+      "before": "if name.startswith(BISHOP):",
+      "after": "if True:",
+      "property": "An error from a tool that is not bishop-triage does not fail the run; the mutant counts every tool error as a bishop-triage error (the opposite edge of BISHOP-ERR-IGNORED)",
+      "mirror": "BISHOP-ERR-IGNORED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_process_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_replays_read_errors_beside_a_completed_chain_exits_0"
+      ]
+    },
+    {
+      "id": "BISHOP-NOT-DONE-NEVER",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 944,
+      "before": "if not_done:",
+      "after": "if False:",
+      "property": "A run that did not complete triage_run_start, or the kind's read of its work, fails; the mutant never reports an incomplete run",
+      "mirror": "BISHOP-NOT-DONE-INVERTED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_process_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_classify_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_process_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_classify_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_process_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_replays_the_2026_10_21_failure_exits_1"
+      ]
+    },
+    {
+      "id": "BISHOP-NOT-DONE-INVERTED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 939,
+      "before": "if BISHOP + \"triage_run_start\" not in completed:",
+      "after": "if BISHOP + \"triage_run_start\" in completed:",
+      "property": "A run that completed triage_run_start and the kind's read is not failed for them; the mutant reports a completed start as missing (the opposite edge of BISHOP-NOT-DONE-NEVER)",
+      "mirror": "BISHOP-NOT-DONE-NEVER",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_clean_run_exits_0",
+        "RunDecidesOnBishopCalls.test_process_clean_run_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_clean_run_exits_0",
+        "RunDecidesOnBishopCalls.test_classify_nothing_to_do_run_exits_0",
+        "RunDecidesOnBishopCalls.test_process_nothing_to_do_run_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_nothing_to_do_run_exits_0",
+        "RunDecidesOnBishopCalls.test_classify_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_process_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_other_tool_error_still_exits_0",
+        "RunDecidesOnBishopCalls.test_classify_reclassify_read_by_finding_list_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_replays_the_2026_10_22_clean_run_exits_0",
+        "RunDecidesOnBishopCalls.test_grade_replays_read_errors_beside_a_completed_chain_exits_0"
+      ]
+    },
+    {
+      "id": "BISHOP-START-NOT-REQUIRED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 939,
+      "before": "if BISHOP + \"triage_run_start\" not in completed:",
+      "after": "if False:",
+      "property": "A run whose triage_run_start never completed fails, even when the kind's read completed",
+      "mirror": "BISHOP-READ-NOT-REQUIRED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_process_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_read_completed_but_no_start_exits_1"
+      ]
+    },
+    {
+      "id": "BISHOP-READ-NOT-REQUIRED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 942,
+      "before": "if not any(r in completed for r in reads):",
+      "after": "if False:",
+      "property": "A run whose kind's read of its work never completed fails, even when triage_run_start completed (the opposite requirement of BISHOP-START-NOT-REQUIRED)",
+      "mirror": "BISHOP-START-NOT-REQUIRED",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_process_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_start_completed_but_no_read_exits_1"
+      ]
+    },
+    {
+      "id": "BISHOP-CLASSIFY-NO-RECLASSIFY-READ",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 895,
+      "before": "\"classify\": (\"triage_next_unclassified\", \"finding_list\"),",
+      "after": "\"classify\": (\"triage_next_unclassified\",),",
+      "property": "A classify --reclassify run, which reads its category with finding_list, is not failed for it; the mutant accepts only triage_next_unclassified",
+      "mirror": "BISHOP-CLASSIFY-NO-NEXT-READ",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_reclassify_read_by_finding_list_exits_0"
+      ]
+    },
+    {
+      "id": "BISHOP-CLASSIFY-NO-NEXT-READ",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 895,
+      "before": "\"classify\": (\"triage_next_unclassified\", \"finding_list\"),",
+      "after": "\"classify\": (\"finding_list\",),",
+      "property": "A classify run that reads with triage_next_unclassified is not failed for it, so an empty classify run stays exit 0; the mutant accepts only finding_list (the opposite edge of BISHOP-CLASSIFY-NO-RECLASSIFY-READ)",
+      "mirror": "BISHOP-CLASSIFY-NO-RECLASSIFY-READ",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_clean_run_exits_0",
+        "RunDecidesOnBishopCalls.test_classify_nothing_to_do_run_exits_0",
+        "RunDecidesOnBishopCalls.test_classify_other_tool_error_still_exits_0"
+      ]
+    },
+    {
+      "id": "BISHOP-TEXT-TOOL-ERRORS",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 937,
+      "before": "bishop-triage tool errors: ",
+      "after": "tool errors: ",
+      "property": "The ERROR line for a bishop-triage tool error says 'bishop-triage tool errors:' and names the tool; the mutant drops the bishop-triage wording",
+      "mirror": "BISHOP-TEXT-NOT-DONE",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_process_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_bishop_tool_error_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_replays_the_2026_10_21_failure_exits_1"
+      ]
+    },
+    {
+      "id": "BISHOP-TEXT-NOT-DONE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/triage-run.sh",
+      "line": 945,
+      "before": "no completed bishop-triage call (not completed: ",
+      "after": "no completed call (not completed: ",
+      "property": "The ERROR line for an incomplete run says 'no completed bishop-triage call' and names the calls not completed; the mutant drops the bishop-triage wording (the other reason text of BISHOP-TEXT-TOOL-ERRORS)",
+      "mirror": "BISHOP-TEXT-TOOL-ERRORS",
+      "suite": "scripts/test_triage_run.py",
+      "killers": [
+        "RunDecidesOnBishopCalls.test_classify_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_process_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_no_completed_bishop_call_exits_1",
+        "RunDecidesOnBishopCalls.test_classify_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_process_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_start_completed_but_no_read_exits_1",
+        "RunDecidesOnBishopCalls.test_classify_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_process_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_read_completed_but_no_start_exits_1",
+        "RunDecidesOnBishopCalls.test_grade_replays_the_2026_10_21_failure_exits_1"
+      ]
     }
   ]
 }
