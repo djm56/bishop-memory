@@ -1768,13 +1768,13 @@ class RunDecidesOnBishopCalls(TriageRunCase):
     The run summary in run_agent, on the opencode engine. A bishop-triage call
     that ends in error fails the run unless a later completed call of the same
     tool forgives it. A run also fails unless triage_run_start, the kind's read
-    of its work and triage_run_finish all completed. A run with no steps fails
-    with a reason of its own, and so does a result with lines that do not parse
-    as JSON and no steps, a result with steps and no parsed tool calls, and one
-    whose tool calls carry no name or no status. Each test runs the
-    copied script for one kind with a stub result stream, so the exit code and
-    the last triage.log line are the summary's decision. Each docstring names the
-    path and the control, and lists the mutants of scripts/triage-run.sh the test kills.
+    of its work and triage_run_finish all completed. A run that fails with no
+    bishop-triage call to name gets a reason of its own: the tests for them say
+    which. Each test runs the copied script for one kind with a stub result
+    stream, so the exit code and the last triage.log line are the summary's
+    decision. Each docstring names the path and the control, and lists the
+    mutants of scripts/triage-run.sh the test kills. The mutant record lists
+    those killers for this class only; a row may fail tests in other classes too.
     """
 
     def judge(self, kind, flags=(), before="", **shape):
@@ -2234,6 +2234,175 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "ERROR steps=2 tool_errors=0 ", label)
         self.assert_logged(proc, "reason=tool calls parsed from the result carry no name or status (format changed?)", label)
         self.assertNotIn("no completed bishop-triage call", self.log(), "%s: the missing calls are named" % label)
+
+    def assert_drift(self, label, field, **shape):
+        """
+        Run grade on the stream kind_run builds from `shape` and assert it fails with
+        drift named under `field` and nothing else: no traceback, and no missing call.
+        """
+        proc = self.judge("grade", **shape)
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=", label)
+        self.assert_logged(proc, "reason=result fields not in the expected shape (format changed?): %s ::" % field, label)
+        self.assertNotIn("Traceback", proc.stderr + self.log(), "%s: the summary raised; %s" % (label, self.verdict(proc)))
+        self.assertNotIn("no completed bishop-triage call", self.log(), "%s: a missing call is named; %s" % (label, self.verdict(proc)))
+        return proc
+
+    def test_stray_non_json_line_in_a_run_with_steps_exits_0(self):
+        """Path: grade, every call completed, and one line of the stream is a truncated JSON event. The calls decide, so the run is read as done.
+
+        A line that is not JSON counts in unparsed, which only a run with no steps is judged
+        on. The controls are test_unparsed_lines_without_steps_give_the_parse_reason, where
+        the same kind of line with no steps fails, and the clean run. Mutant
+        BISHOP-PARSE-REASON-ON-STEPPED-RUN, which drops the steps == 0 operand, fails it.
+        """
+        truncated = '{"type":"tool_use","part":{"tool":"bishop-triage_triage_run_fin\n'
+        label = "grade with a truncated line in a run with steps"
+        proc = self.assert_exit("grade", 0, {"extra": (truncated,)}, label)
+        self.assert_logged(proc, "] done steps=", label)
+        self.assertNotIn("format changed", self.log(), "%s: the parse reason is given; %s" % (label, self.verdict(proc)))
+
+    def test_json_line_that_is_not_an_object_is_named_as_drift(self):
+        """Path: grade, a clean run with the JSON number 42 as one of its lines. A line that is not an object is not an event.
+
+        The summary used to raise on it and fail the run with an empty reason. The control is
+        the clean run. Mutant BISHOP-DRIFT-LINE-NEVER-RECORDED fails it.
+        """
+        self.assert_drift("grade with the line 42", "line", extra=("42\n",))
+
+    def test_null_line_is_named_as_drift(self):
+        """Path: grade, a clean run with the JSON null as one of its lines. Null at the top of a line is not an empty event.
+
+        Null in a field reads as empty (test_event_with_no_part_is_read_as_empty), but a line
+        that is null is drift. Mutant BISHOP-DRIFT-LINE-NULL-TOLERATED fails it.
+        """
+        self.assert_drift("grade with the line null", "line", extra=("null\n",))
+
+    def test_event_part_that_is_not_an_object_is_named_as_drift(self):
+        """Path: grade, a clean run with a tool_use event whose part is a string.
+
+        Mutant BISHOP-DRIFT-PART-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "tool_use", "part": "oops"}) + "\n"
+        self.assert_drift("grade with a part that is a string", "part", extra=(bad,))
+
+    def test_text_that_is_not_a_string_is_named_as_drift(self):
+        """Path: grade, a clean run with a text event whose text is the number 5.
+
+        Mutant BISHOP-DRIFT-TEXT-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "text", "part": {"type": "text", "messageID": "msg_1", "text": 5}}) + "\n"
+        self.assert_drift("grade with a text that is a number", "text", extra=(bad,))
+
+    def test_step_cost_that_is_not_a_number_is_named_as_drift(self):
+        """Path: grade, a clean run with a step_finish event whose cost is the string "0.01".
+
+        Mutant BISHOP-DRIFT-COST-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "stop", "cost": "0.01"}}) + "\n"
+        self.assert_drift("grade with a cost that is a string", "cost", extra=(bad,))
+
+    def test_tool_state_that_is_not_an_object_is_named_as_drift_not_as_a_missing_call(self):
+        """Path: grade, triage_run_finish arrives with a state that is a string and is the only finish call. The state is drift.
+
+        The finish call is not read as completed, yet the reason names the state and does not
+        name triage_run_finish as missing: a call the parser could not read is not reported as
+        one that was not made. Mutant BISHOP-DRIFT-STATE-UNREAD fails it.
+        """
+        bad = raw_tool_use({"type": "tool", "tool": BISHOP + "triage_run_finish", "state": "completed"})
+        self.assert_drift("grade with a finish whose state is a string", "state", finish=None, extra=(bad,))
+
+    def test_finish_input_that_is_not_an_object_is_named_as_drift(self):
+        """Path: grade, triage_run_finish completes with an input that is a string, so its status cannot be read.
+
+        The run could have closed as failed, so it is not read as done. Mutant
+        BISHOP-DRIFT-INPUT-UNREAD fails it.
+        """
+        bad = call_event(BISHOP + "triage_run_finish", "completed", input="closed", output='{"id":111,"status":"done","updated":true}')
+        self.assert_drift("grade with a finish whose input is a string", "input", finish=None, extra=(bad, step_done()))
+
+    def test_error_event_whose_error_is_not_an_object_is_named_as_drift(self):
+        """Path: grade, a clean run with an error event whose error is the string boom.
+
+        The error event also fails the run on its own; the reason names the drift. Mutant
+        BISHOP-DRIFT-ERROR-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "error", "error": "boom"}) + "\n"
+        self.assert_drift("grade with an error that is a string", "error", extra=(bad,))
+
+    def test_error_data_that_is_not_an_object_is_named_as_drift(self):
+        """Path: grade, a clean run with an error event whose data is a string and whose message is boom.
+
+        Mutant BISHOP-DRIFT-DATA-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "error", "error": {"name": "APIError", "data": "oops", "message": "boom"}}) + "\n"
+        proc = self.assert_drift("grade with an error data that is a string", "error data", extra=(bad,))
+        self.assert_logged(proc, "errors=boom ", "grade with an error data that is a string")
+
+    def test_error_message_that_is_not_a_string_is_named_as_drift(self):
+        """Path: grade, a clean run with an error event whose message is the number 5.
+
+        Mutant BISHOP-DRIFT-MESSAGE-UNREAD fails it.
+        """
+        bad = json.dumps({"type": "error", "error": {"name": "APIError", "message": 5}}) + "\n"
+        self.assert_drift("grade with an error message that is a number", "error message", extra=(bad,))
+
+    def test_event_with_no_part_is_read_as_empty(self):
+        """Path: grade, a clean run with a step_start event that has no part. The control for the drift tests.
+
+        An absent field is read as empty and is not drift. Mutant BISHOP-DRIFT-READ-NULL-RECORDED,
+        which records an absent field as drift, fails it.
+        """
+        label = "grade with an event that has no part"
+        proc = self.assert_exit("grade", 0, {"extra": ('{"type":"step_start"}\n',)}, label)
+        self.assert_logged(proc, "] done steps=", label)
+        self.assertNotIn("expected shape", self.log(), "%s: drift is named; %s" % (label, self.verdict(proc)))
+
+    def test_error_event_with_no_data_is_read_for_its_message(self):
+        """Path: grade, a clean run with an error event that has a message and no data. The control for the error drift tests.
+
+        The message reaches the log and no drift is named. Mutants BISHOP-DRIFT-ERROR-ALWAYS,
+        BISHOP-DRIFT-MESSAGE-ALWAYS and BISHOP-DRIFT-READ-ACCEPTS-NONE each fail it.
+        """
+        label = "grade with an error event that has no data"
+        proc = self.assert_exit("grade", 1, {"extra": (ERROR_EVENT,)}, label)
+        self.assert_logged(proc, "errors=Agent not found", label)
+        self.assertNotIn("expected shape", self.log(), "%s: drift is named; %s" % (label, self.verdict(proc)))
+
+    def test_error_event_with_data_is_read_for_the_message_in_it(self):
+        """Path: grade, a clean run with an error event whose message is in its data object. The control for the data drift test.
+
+        Mutant BISHOP-DRIFT-DATA-ALWAYS fails it.
+        """
+        label = "grade with an error event that has data"
+        event = json.dumps({"type": "error", "error": {"name": "APIError", "data": {"message": "Rate limited"}}}) + "\n"
+        proc = self.assert_exit("grade", 1, {"extra": (event,)}, label)
+        self.assert_logged(proc, "errors=Rate limited", label)
+        self.assertNotIn("expected shape", self.log(), "%s: drift is named; %s" % (label, self.verdict(proc)))
+
+    def test_whole_number_step_cost_is_read(self):
+        """Path: grade, a clean run with a step_finish event whose cost is the whole number 2. The control for the cost drift test.
+
+        Mutant BISHOP-DRIFT-COST-INT-DROPPED, which reads only floats, fails it.
+        """
+        label = "grade with a whole-number cost"
+        event = json.dumps({"type": "step_finish", "part": {"type": "step-finish", "reason": "stop", "cost": 2}}) + "\n"
+        proc = self.assert_exit("grade", 0, {"extra": (event,)}, label)
+        self.assert_logged(proc, "] done steps=", label)
+        self.assertNotIn("expected shape", self.log(), "%s: drift is named; %s" % (label, self.verdict(proc)))
+
+    def test_late_error_of_one_tool_beside_an_unresolved_error_of_another_names_both(self):
+        """Path: grade, grade_write completes and then errors with no completed call after it, and pattern_list errors and never completes.
+
+        Both fail the run, so the exit status is 1 whichever of them a mutant drops; the reason
+        text is what separates them: it names each tool once. Mutant
+        BISHOP-ORDER-LATE-ERROR-FORGIVEN-AT-APPEND, which never appends the late error, fails it.
+        """
+        label = "grade with a late write error beside an unresolved pattern_list error"
+        late = call_event(BISHOP + "grade_write", "error", input={}, error="Rejected after the write completed.")
+        other = call_event(BISHOP + "pattern_list", "error", input={}, error="No such pattern list.")
+        proc = self.assert_exit("grade", 1, {"extra": (late, other)}, label)
+        self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_grade_write x1, bishop-triage_pattern_list x1", label)
 
     def test_classify_reclassify_read_by_finding_list_exits_0(self):
         """Path: classify --reclassify, which reads its category with finding_list, not triage_next_unclassified.
