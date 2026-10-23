@@ -1750,31 +1750,40 @@ NOT_DONE = {
     "grade": "bishop-triage_grade_claim",
 }
 
+# The read of another kind's work. A run of each kind makes it in place of its own read.
+OTHER_READ = {
+    "classify": "triage_category_findings",
+    "process": "triage_next_unclassified",
+    "grade": "triage_category_findings",
+}
+
 
 class RunDecidesOnBishopCalls(TriageRunCase):
     """
-    The run summary in run_agent, on the opencode engine. A run fails when a
-    bishop-triage call ended in error, or when it did not complete both
-    triage_run_start and the kind's read of its work. Each test runs the copied
-    script for one kind with a stub result stream, so the exit code and the last
-    triage.log line are the summary's decision. Each docstring names the path and
-    the control, and lists the mutants of scripts/triage-run.sh the test kills.
+    The run summary in run_agent, on the opencode engine. A bishop-triage call
+    that ends in error fails the run unless a later call of the same tool
+    completes. A run also fails unless triage_run_start, the kind's read of its
+    work and triage_run_finish all completed. A run with no steps, or with steps
+    and no parsed tool calls, fails with a reason of its own. Each test runs the
+    copied script for one kind with a stub result stream, so the exit code and
+    the last triage.log line are the summary's decision. Each docstring names the
+    path and the control, and lists the mutants of scripts/triage-run.sh the test kills.
     """
 
-    def judge(self, kind, flags=(), **shape):
-        """Run the copied script for `kind` on the stream kind_run builds from `shape`."""
+    def judge(self, kind, flags=(), before="", **shape):
+        """Run the copied script for `kind` on the stream kind_run builds from `shape`, after the events in `before`."""
         agent = KIND_AGENT[kind]
         return self.run_script(kind, [self.agent_entry(agent, RULES[agent])], flags=flags,
-                               run_out=kind_run(kind, **shape))
+                               run_out=before + kind_run(kind, **shape))
 
     def verdict(self, proc):
         """The exit code and the last triage.log line, on one line, for an assertion message."""
         lines = self.log().strip().splitlines()
         return "exit %d; triage.log: %s" % (proc.returncode, lines[-1] if lines else "(empty)")
 
-    def assert_exit(self, kind, want, shape, label, flags=()):
+    def assert_exit(self, kind, want, shape, label, flags=(), before=""):
         """Run `kind` on the stream `shape` builds and assert the exit code. `label` opens the message."""
-        proc = self.judge(kind, flags=flags, **shape)
+        proc = self.judge(kind, flags=flags, before=before, **shape)
         self.assertEqual(proc.returncode, want, "%s: %s" % (label, self.verdict(proc)))
         return proc
 
@@ -1788,7 +1797,7 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assertIn("] done steps=", self.log(), "%s clean run: no done line; %s" % (kind, self.verdict(proc)))
 
     def check_nothing_to_do(self, kind):
-        """The read finds nothing and the run closes done with zero items: exit 0, as the doctrine has it."""
+        """The read finds nothing and the run closes done with zero items: exit 0."""
         proc = self.assert_exit(kind, 0, {"write": None, "considered": 0}, "%s nothing to do" % kind)
         self.assertIn("] done steps=", self.log(), "%s nothing to do: no done line; %s" % (kind, self.verdict(proc)))
 
@@ -1801,12 +1810,12 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_triage_run_finish x1", label)
 
     def check_no_completed_call(self, kind):
-        """No bishop-triage call completed or errored; the agent read the doctrine and stopped: exit 1, both reasons named."""
+        """No bishop-triage call completed or errored; the agent read the doctrine and stopped: exit 1, every call not completed named."""
         label = "%s no completed bishop call" % kind
         proc = self.assert_exit(kind, 1, {"start": None, "read": None, "write": None, "finish": None,
                                           "extra": (call_event("read", "completed", output="doctrine read"),)}, label)
-        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, %s)"
-                           % NOT_DONE[kind], label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, %s, "
+                                 "bishop-triage_triage_run_finish)" % NOT_DONE[kind], label)
 
     def check_start_without_read(self, kind):
         """triage_run_start completed; the read of the work never did: exit 1, the read named."""
@@ -1827,6 +1836,34 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         proc = self.assert_exit(kind, 0, shape, label)
         self.assert_logged(proc, "tool_errors=1 ", label)
         self.assert_logged(proc, "] done steps=", label)
+
+    def check_error_then_completed_retry(self, kind):
+        """triage_run_start ends in error, the run retries it and the retry completes: exit 0, the error counted."""
+        label = "%s start retried" % kind
+        first = call_event(BISHOP + "triage_run_start", "error", input={"kind": kind, "model": "test-model"})
+        proc = self.assert_exit(kind, 0, {}, label, before=first + step_done())
+        self.assert_logged(proc, "tool_errors=1 ", label)
+        self.assert_logged(proc, "] done steps=", label)
+
+    def check_error_not_forgiven_by_another_tool(self, kind):
+        """The write ends in error and every other call completes, the close included: exit 1, the write named."""
+        label = "%s write fails, the rest completes" % kind
+        proc = self.assert_exit(kind, 1, {"write": "error"}, label)
+        self.assert_logged(proc, "ERROR steps=", label)
+        self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_%s x1" % KIND_CALLS[kind]["write"], label)
+
+    def check_no_finish(self, kind):
+        """triage_run_start and the kind's read completed; the run never closed: exit 1, triage_run_finish named."""
+        label = "%s no finish" % kind
+        proc = self.assert_exit(kind, 1, {"write": None, "finish": None}, label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_finish)", label)
+
+    def check_read_of_another_kind(self, kind):
+        """triage_run_start, another kind's read and the close completed; the kind's own read never did: exit 1, the own read named."""
+        label = "%s reads another kind's work" % kind
+        other = call_event(BISHOP + OTHER_READ[kind], "completed", input={}, output="[]")
+        proc = self.assert_exit(kind, 1, {"read": None, "write": None, "extra": (other,)}, label)
+        self.assert_logged(proc, "no completed bishop-triage call (not completed: %s)" % NOT_DONE[kind], label)
 
     def test_classify_clean_run_exits_0(self):
         """Path: classify, every call completed, run closed done. The control for the classify failures.
@@ -1976,6 +2013,117 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         """
         self.check_other_tool_error("grade")
 
+    def test_classify_error_then_completed_retry_exits_0(self):
+        """Path: classify, triage_run_start ends in error and the retry completes; the run closes done. The control for the retry rule.
+
+        Mutant BISHOP-RETRY-NEVER-FORGIVEN fails it.
+        """
+        self.check_error_then_completed_retry("classify")
+
+    def test_process_error_then_completed_retry_exits_0(self):
+        """Path: process, triage_run_start ends in error and the retry completes; the run closes done. The control for the retry rule.
+
+        Mutant BISHOP-RETRY-NEVER-FORGIVEN fails it.
+        """
+        self.check_error_then_completed_retry("process")
+
+    def test_grade_error_then_completed_retry_exits_0(self):
+        """Path: grade, triage_run_start ends in error and the retry completes; the run closes done. The control for the retry rule.
+
+        Mutant BISHOP-RETRY-NEVER-FORGIVEN fails it.
+        """
+        self.check_error_then_completed_retry("grade")
+
+    def test_classify_error_not_forgiven_by_another_tool_exits_1(self):
+        """Path: classify, triage_classify ends in error and every other call completes, the close included. Only the write's error is wrong.
+
+        Mutant BISHOP-RETRY-FORGIVEN-BY-ANY-TOOL, which lets any completed call forgive an error, fails it.
+        """
+        self.check_error_not_forgiven_by_another_tool("classify")
+
+    def test_process_error_not_forgiven_by_another_tool_exits_1(self):
+        """Path: process, triage_recommend ends in error and every other call completes, the close included. Only the write's error is wrong.
+
+        Mutant BISHOP-RETRY-FORGIVEN-BY-ANY-TOOL fails it.
+        """
+        self.check_error_not_forgiven_by_another_tool("process")
+
+    def test_grade_error_not_forgiven_by_another_tool_exits_1(self):
+        """Path: grade, grade_write ends in error and every other call completes, the close included. Only the write's error is wrong.
+
+        Mutant BISHOP-RETRY-FORGIVEN-BY-ANY-TOOL fails it.
+        """
+        self.check_error_not_forgiven_by_another_tool("grade")
+
+    def test_classify_read_of_another_kind_exits_1(self):
+        """Path: classify, triage_run_start and process's read completed, and the run closed. Classify's own read never did.
+
+        No row of testdata/mutants.json names this test as a killer; testdata/README.md says why.
+        """
+        self.check_read_of_another_kind("classify")
+
+    def test_process_read_of_another_kind_exits_1(self):
+        """Path: process, triage_run_start and classify's read completed, and the run closed. Process's own read never did.
+
+        Mutant BISHOP-PROCESS-READ-WIDENED, which accepts classify's read for process, fails it.
+        """
+        self.check_read_of_another_kind("process")
+
+    def test_grade_read_of_another_kind_exits_1(self):
+        """Path: grade, triage_run_start and process's read completed, and the run closed. grade_claim never completed.
+
+        Mutant BISHOP-GRADE-READ-WIDENED, which accepts process's read for grade, fails it.
+        """
+        self.check_read_of_another_kind("grade")
+
+    def test_classify_no_finish_exits_1(self):
+        """Path: classify, triage_run_start and the read completed; the run never closed. The reason names triage_run_finish.
+
+        Mutant BISHOP-FINISH-NOT-REQUIRED fails it.
+        """
+        self.check_no_finish("classify")
+
+    def test_process_no_finish_exits_1(self):
+        """Path: process, triage_run_start and the read completed; the run never closed. The reason names triage_run_finish.
+
+        Mutant BISHOP-FINISH-NOT-REQUIRED fails it.
+        """
+        self.check_no_finish("process")
+
+    def test_grade_no_finish_exits_1(self):
+        """Path: grade, triage_run_start and grade_claim completed; the run never closed. The reason names triage_run_finish.
+
+        Mutant BISHOP-FINISH-NOT-REQUIRED fails it.
+        """
+        self.check_no_finish("grade")
+
+    def test_empty_result_stream_gives_the_no_steps_reason(self):
+        """Path: grade, the result stream is empty, so the run has no steps. The reason is the missing steps, not the missing calls.
+
+        Nothing else is in the stream, so the reason is the steps check alone. Mutant
+        BISHOP-NO-STEPS-REASON-MISSING fails it.
+        """
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out="")
+        label = "grade with an empty result stream"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=0 tool_errors=0 ", label)
+        self.assert_logged(proc, "reason=no steps in the result", label)
+        self.assertNotIn("no completed bishop-triage call", self.log(), "%s: the missing calls are named" % label)
+
+    def test_result_with_steps_and_no_parsed_tool_calls_gives_the_format_reason(self):
+        """Path: grade, the result has two steps and no tool_use event parses. The reason says the format may have changed.
+
+        No missing call is named, because the stream holds no call to be missing from. Mutant
+        BISHOP-FORMAT-REASON-MISSING fails it.
+        """
+        stream = step_done() + said("Graded nothing.") + step_done()
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)], run_out=stream)
+        label = "grade with steps and no tool_use event"
+        self.assertEqual(proc.returncode, 1, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "ERROR steps=2 tool_errors=0 ", label)
+        self.assert_logged(proc, "reason=no tool calls parsed from the result (format changed?)", label)
+        self.assertNotIn("no completed bishop-triage call", self.log(), "%s: the missing calls are named" % label)
+
     def test_classify_reclassify_read_by_finding_list_exits_0(self):
         """Path: classify --reclassify, which reads its category with finding_list, not triage_next_unclassified.
 
@@ -1987,10 +2135,13 @@ class RunDecidesOnBishopCalls(TriageRunCase):
                          flags=("--reclassify", "demo"))
 
     def test_grade_replays_the_2026_10_21_failure_exits_1(self):
-        """Path: the grade run of 2026-10-21 15:35 UTC, replayed from its result file (triage-grade-2026-10-21T153534Z.jsonl).
+        """Path: the grade run of 2026-10-21 15:35 UTC, reconstructed from its result file (triage-grade-2026-10-21T153534Z.jsonl).
+
+        The events are written out by hand; the test does not read that file. Their
+        step and tool counts were checked against the file.
 
         Its triage_run_start was refused twice and its triage_run_finish once, all as
-        No tool named calls. No call completed, so the run is failed, with both reasons
+        No tool named calls. No call completed, so the run is failed, with the reasons
         on the ERROR line. The run exited 0 in production. Mutants BISHOP-ERR-IGNORED,
         BISHOP-NOT-DONE-NEVER and the two BISHOP-TEXT rows each fail it.
         """
@@ -2014,10 +2165,13 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "bishop-triage tool errors: bishop-triage_triage_run_start x2, "
                                  "bishop-triage_triage_run_finish x1", label)
         self.assert_logged(proc, "no completed bishop-triage call (not completed: bishop-triage_triage_run_start, "
-                                 "bishop-triage_grade_claim)", label)
+                                 "bishop-triage_grade_claim, bishop-triage_triage_run_finish)", label)
 
     def test_grade_replays_the_2026_10_22_clean_run_exits_0(self):
-        """Path: the grade run of 2026-10-22 04:33 UTC, replayed from its result file (triage-grade-2026-10-22T043342Z.jsonl).
+        """Path: the grade run of 2026-10-22 04:33 UTC, reconstructed from its result file (triage-grade-2026-10-22T043342Z.jsonl).
+
+        The events are written out by hand; the test does not read that file. Their
+        step and tool counts were checked against the file.
 
         Every bishop-triage call completed and the run closed done. The run exited 0
         and logged done steps=5 tool_errors=0. Mutant BISHOP-NOT-DONE-INVERTED fails it.
@@ -2042,7 +2196,10 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "] done steps=5 tool_errors=0 ", "grade replay of 2026-10-22 04:33")
 
     def test_grade_replays_read_errors_beside_a_completed_chain_exits_0(self):
-        """Path: the grade run of 2026-10-21 19:40 UTC, replayed from its result file (triage-grade-2026-10-21T194001Z.jsonl).
+        """Path: the grade run of 2026-10-21 19:40 UTC, reconstructed from its result file (triage-grade-2026-10-21T194001Z.jsonl).
+
+        The events are written out by hand; the test does not read that file. Their
+        step and tool counts were checked against the file.
 
         Two non-bishop read calls ended in error; every bishop-triage call completed.
         The run exited 0 and logged done steps=7 tool_errors=2. Mutant BISHOP-ERR-ANY-TOOL
