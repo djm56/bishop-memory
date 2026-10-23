@@ -863,10 +863,13 @@ run_agent() {
 import json, sys
 path, engine, task = sys.argv[1], sys.argv[2], sys.argv[3]
 
-# The claude engine result is one JSON object with no per-tool results. That shape
-# is read from the documented output of the claude CLI and was not observed in a
-# local result file, so the bishop-triage rules below cannot be judged on it.
-# is_error is its only signal.
+# The claude engine result is the single JSON object that --output-format json prints.
+# The headless page at https://code.claude.com/docs/en/headless documents it as structured
+# JSON with result, session ID, and metadata, and says the payload includes total_cost_usd.
+# It does not document is_error, num_turns or stop_reason, which are read here as the code
+# names them. Nothing in this branch looks for per-tool calls, so the bishop-triage rules
+# below are not applied to a claude run. A result that does not parse is printed as such
+# and exits 0. is_error is the only failure signal read.
 if engine == "claude":
     try:
         d = json.load(open(path))
@@ -887,12 +890,14 @@ if engine == "claude":
 # apostrophe paired. Tested on 3.2.57: an unpaired one fails the parse.)
 #
 # A bishop-triage call is read from its tool_use event, with status completed or
-# error. A call that ends in error fails the run unless a later call of the same
-# tool completes. The run also fails unless triage_run_start, one read of the work
-# for this kind, and triage_run_finish all completed. A run with nothing to do still
-# makes that read, so it passes. A run with no steps, or with steps and no tool_use
-# event, has a reason of its own. Errors from other tools are counted in tool_errors
-# and are not judged here.
+# error. An error is forgiven by a later completed call of the same tool, and by no
+# other call; an error that is not forgiven fails the run. The run also fails unless
+# triage_run_start, one read of the work for this kind, and triage_run_finish all
+# completed. A run with nothing to do still makes that read, so it passes. Each of the
+# following has a reason of its own, and no missing call is named from a result the parser
+# could not read: lines that do not parse with no steps; no steps at all; steps with no
+# tool_use event; tool_use events with no tool name or no status. Errors from other tools
+# are counted in tool_errors and are not judged here.
 BISHOP = "bishop-triage_"
 # The reads of its work that each kind makes, without the prefix. Classify reads
 # with triage_next_unclassified, or with finding_list when it reclassifies a category.
@@ -906,11 +911,14 @@ WORK_READS = {
 steps, cost, reason, last_msg = 0, 0.0, None, None
 texts, errors, tool_errors, run_failed = [], [], 0, False
 tool_uses = 0  # tool_use events parsed, whatever their status
+shaped = 0  # tool_use events with a tool name and a status, the shape the rules read
+unparsed = 0  # lines that are not JSON
 bishop_errors, completed = [], set()  # bishop-triage errors not yet forgiven, in order; completed ones by name
 for line in open(path):
     try:
         e = json.loads(line)
     except ValueError:
+        unparsed += 1
         continue
     kind, part = e.get("type"), e.get("part") or {}
     state = part.get("state") or {}
@@ -924,7 +932,9 @@ for line in open(path):
         texts.append(part.get("text") or "")
     elif kind == "tool_use":
         tool_uses += 1
-        name, status = str(part.get("tool", "")), state.get("status")
+        name, status = str(part.get("tool") or ""), state.get("status")
+        if name and status:
+            shaped += 1
         if status == "error":
             tool_errors += 1
             if name.startswith(BISHOP):
@@ -946,12 +956,18 @@ if bishop_errors:
     for name in bishop_errors:
         counts[name] = counts.get(name, 0) + 1
     problems.append("bishop-triage tool errors: " + ", ".join("%s x%d" % (n, c) for n, c in counts.items()))
-if steps == 0:
+if steps == 0 and unparsed:
+    # Lines that are not JSON and no step_finish to judge a run by. The format changed under the parser.
+    problems.append("result lines do not parse as JSON (format changed?)")
+elif steps == 0:
     # steps counts step_finish events. With none there is no run whose calls could be judged.
     problems.append("no steps in the result")
 elif tool_uses == 0:
     # Steps ran but no tool_use event parsed. The format may have changed, so no call is named as missing.
     problems.append("no tool calls parsed from the result (format changed?)")
+elif shaped == 0:
+    # tool_use events parsed, but none has both a tool name and a status. Same reading: no call is named as missing.
+    problems.append("tool calls parsed from the result carry no name or status (format changed?)")
 else:
     not_done = []
     if BISHOP + "triage_run_start" not in completed:
