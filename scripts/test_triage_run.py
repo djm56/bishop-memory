@@ -2857,6 +2857,23 @@ class RunDecidesOnBishopCalls(TriageRunCase):
         self.assert_logged(proc, "] done steps=", label)
         self.assert_logged(proc, "caf\u00e9 \u2713 \U0001f600", label)
 
+    def test_text_in_utf8_that_is_not_ascii_is_printed_when_the_environment_asks_for_ascii(self):
+        """Path: grade, a clean run and then the text event of the test above, run with PYTHONIOENCODING=ascii in the environment. The summary's stdout is pinned to UTF-8, so the closing words print and the run exits 0.
+
+        The control is test_text_in_utf8_that_is_not_ascii_is_read_and_printed, the same run without the variable.
+        Mutant STDOUT-PIN-REMOVED, which deletes the pin, fails this test: the print raises, the summary stops on
+        UnicodeEncodeError and the run exits 1. Mutant STDOUT-PIN-ASCII, which pins the summary to ASCII with
+        errors="replace", fails it too, because the closing words are logged with replacement characters.
+        """
+        event = json.dumps({"type": "text", "part": {"messageID": "msg_2", "text": "café ✓ \U0001f600"}}, ensure_ascii=False) + "\n"
+        label = "grade with text that is not ASCII under PYTHONIOENCODING=ascii"
+        proc = self.run_script("grade", [self.agent_entry("mission-grader", GRADER_RULES)],
+                               run_out=(kind_run("grade") + event).encode("utf8"),
+                               extra_env={"PYTHONIOENCODING": "ascii"})
+        self.assertEqual(proc.returncode, 0, "%s: %s" % (label, self.verdict(proc)))
+        self.assert_logged(proc, "] done steps=", label)
+        self.assert_logged(proc, "café ✓ \U0001f600", label)
+
     def test_line_nested_deeply_but_readable_is_read(self):
         """Path: grade, a clean run and then a line nested 100 deep, which json.loads reads. The control for the nesting test.
 

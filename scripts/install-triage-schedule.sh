@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/install-triage-schedule.sh
 #
-# Install (or remove) the three nightly triage launchd user agents:
+# Install (or remove) the nightly triage launchd user agents:
 #
 #   com.bishop-memory.triage-classify   runs scripts/triage-run.sh classify
 #   com.bishop-memory.triage-process    runs scripts/triage-run.sh process
@@ -9,13 +9,23 @@
 #
 # Usage:
 #   scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM]
-#                                      [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
+#                                      [--grade-at HH:MM] [--url URL] [--log-dir DIR]
+#                                      [--root DIR] [--dry-run]
 #   scripts/install-triage-schedule.sh --uninstall
 #
 # Defaults: classify at 21:00, process at 21:20, grade at 21:40, URL
-# http://127.0.0.1:8787, logs in ~/Library/Logs/bishop-memory. macOS only
-# (launchd); on Linux write a systemd timer that runs the same three commands
+# http://127.0.0.1:8787, logs in ~/Library/Logs/bishop-memory, and the root the
+# jobs run from is the checkout that holds this script. macOS only
+# (launchd); on Linux write a systemd timer that runs the same commands
 # — see the wiki page Developer-Triage-Agents.
+#
+# --root DIR runs the jobs from the checkout at DIR instead, such as the deploy
+# worktree that `make triage-deploy` keeps at origin/main. DIR must hold
+# scripts/triage-run.sh as an executable file and an executable bin/mcpd; if it
+# does not, the script refuses before it writes anything. A relative DIR is
+# resolved against the current directory and written into the plists as an
+# absolute path. The plist template is always the one beside this script.
+# --uninstall ignores --root.
 #
 # Idempotent: re-running unloads and reloads every job with the new plists.
 # Loading never triggers a run (RunAtLoad is false); to run now use
@@ -40,6 +50,8 @@ URL="http://127.0.0.1:8787"
 LOG_DIR="$HOME/Library/Logs/bishop-memory"
 DRY_RUN=0
 UNINSTALL=0
+ROOT_GIVEN=0
+ROOT_ARG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,9 +65,13 @@ while [[ $# -gt 0 ]]; do
     --url=*) URL="${1#*=}"; shift ;;
     --log-dir) LOG_DIR="${2:-}"; shift 2 ;;
     --log-dir=*) LOG_DIR="${1#*=}"; shift ;;
+    --root)
+      [[ $# -ge 2 ]] || { echo "install-triage-schedule.sh: --root needs a directory" >&2; exit 64; }
+      ROOT_ARG="$2"; ROOT_GIVEN=1; shift 2 ;;
+    --root=*) ROOT_ARG="${1#*=}"; ROOT_GIVEN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install-triage-schedule.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
@@ -70,6 +86,28 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     fi
   done
   exit 0
+fi
+
+# --root is checked before anything is written, so a refused root leaves the agents directory and the log directory alone.
+if [[ "$ROOT_GIVEN" -eq 1 ]]; then
+  if [[ -z "$ROOT_ARG" ]]; then
+    echo "install-triage-schedule.sh: --root needs a directory" >&2
+    exit 64
+  fi
+  if [[ ! -d "$ROOT_ARG" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG is not a directory" >&2
+    exit 64
+  fi
+  if [[ ! -f "$ROOT_ARG/scripts/triage-run.sh" || ! -x "$ROOT_ARG/scripts/triage-run.sh" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG has no executable scripts/triage-run.sh" >&2
+    exit 64
+  fi
+  if [[ ! -x "$ROOT_ARG/bin/mcpd" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG has no executable bin/mcpd (run make triage-deploy, or make build-mcpd, in it)" >&2
+    exit 64
+  fi
+  # Logical absolute path, as the default root is derived, so a relative DIR is written as an absolute one.
+  BISHOP_ROOT="$(cd "$ROOT_ARG" && pwd)"
 fi
 
 parse_time() {

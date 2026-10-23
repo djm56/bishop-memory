@@ -861,6 +861,10 @@ run_agent() {
   local summary
   summary="$(python3 - "$RESULT_FILE" "$ENGINE" "$KIND" <<'PY'
 import json, sys
+# The summary is printed to stdout and read by the shell. It is pinned to UTF-8 so that closing
+# text with non-ASCII characters prints whatever PYTHONIOENCODING or the locale says. Without the
+# pin such a run stops on UnicodeEncodeError and fails.
+sys.stdout.reconfigure(encoding="utf-8")
 path, engine, task = sys.argv[1], sys.argv[2], sys.argv[3]
 
 # The claude engine result is the single JSON object that --output-format json prints.
