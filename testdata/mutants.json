@@ -8672,7 +8672,8 @@
       "mirror": "DEPLOY-CLEAN-REFUSED",
       "suite": "scripts/test_triage_deploy.py",
       "killers": [
-        "DeployRefuses.test_a_modified_tracked_file_is_refused_naming_the_path_and_head_is_kept"
+        "DeployRefuses.test_a_modified_tracked_file_is_refused_naming_the_path_and_head_is_kept",
+        "DeployRefuses.test_a_modified_file_the_fast_forward_would_carry_is_still_refused"
       ]
     },
     {

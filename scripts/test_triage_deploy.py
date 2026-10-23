@@ -245,6 +245,25 @@ class DeployRefuses(DeployCase):
         self.deploy_once()
         self.assertEqual(self.sha(self.deploy), new, "control: with the edit reverted the same run deploys")
 
+    def test_a_modified_file_the_fast_forward_would_carry_is_still_refused(self):
+        """Path: a tracked file that origin's new commit does not touch is modified in the deploy worktree. git's own fast-forward would carry the edit into the new HEAD, so only the script's check can refuse it. The run is refused, names go.mod, and HEAD does not move.
+
+        The control reverts the edit; the same run then deploys.
+        Recorded against mutant DEPLOY-DIRTY-IGNORED, which removes the script's check and leaves the decision to git, and fails here: git merges the edit and the run exits 0.
+        """
+        self.deploy_once()
+        write_text(os.path.join(self.deploy, "go.mod"), GO_MOD + "// local edit\n")
+        new = self.advance_origin("v2")
+        head = self.sha(self.deploy)
+        proc = self.run_script("--dir", self.deploy)
+        self.assertEqual(proc.returncode, 1, verdict(proc))
+        self.assertIn("go.mod", proc.stderr, verdict(proc))
+        self.assertEqual(self.sha(self.deploy), head, "HEAD must not move")
+        self.assertEqual(read_text(os.path.join(self.deploy, "go.mod")), GO_MOD + "// local edit\n", "the local edit must survive the refusal")
+        self.git(self.deploy, "checkout", "--", "go.mod")
+        self.deploy_once()
+        self.assertEqual(self.sha(self.deploy), new, "control: with the edit reverted the same run deploys")
+
     def test_an_untracked_file_is_refused_like_a_modified_one(self):
         """Path: an untracked file in the deploy worktree. The run is refused, names scratch.txt, and HEAD does not move. bin/mcpd is present and ignored, so it must not be what blocks the run.
 
