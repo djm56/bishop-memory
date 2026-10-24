@@ -1,7 +1,8 @@
 """
 Tests for scripts/install-triage-schedule.sh: the --root option, the --env-file
-option, and the defaults they replace; and for the ENV_FILE passthrough in the
-Makefile's triage-install target.
+option, and the defaults they replace; and for the ROOT and ENV_FILE passthroughs
+in the Makefile's triage-install target, which take a value from the make command
+line and never from the shell's environment.
 
 Each install test runs the script with HOME in a temporary directory, so the agents
 directory and the log directory are temporary too. Every run that is not a dry
@@ -76,8 +77,8 @@ def env_file_of(text):
 
 
 def real(path):
-    """The resolved path, so two spellings of one directory compare equal; None stays None."""
-    return None if path is None else os.path.realpath(path)
+    """The resolved path, so two spellings of one directory compare equal; None and the empty string stay as they are, because the real path of the empty string is the working directory."""
+    return os.path.realpath(path) if path else path
 
 
 @unittest.skipUnless(sys.platform == "darwin", "install-triage-schedule.sh is macOS-only (launchd)")
@@ -449,13 +450,15 @@ class EnvFileRefused(InstallCase):
     """An env file path the plist render cannot carry, and an --env-file with no value, are refused before anything is written."""
 
     def test_an_env_file_path_with_a_character_the_render_cannot_carry_is_refused_before_any_write(self):
-        """Path: --env-file names a file whose path contains a pipe, an ampersand, a backslash, a less-than, a greater-than, or a newline. Each is refused with exit 64, naming the path, and nothing is written. Then the same check is run on a relative name made absolute in a directory whose name holds a pipe, and on the default .env of a checkout whose path holds one.
+        """Path: --env-file names a file whose path contains a pipe, an ampersand, a backslash, a less-than, or a newline. Each is refused with exit 64, naming the path, and nothing is written. Then the same check is run on a relative name made absolute in a directory whose name holds a pipe, and on the default .env of a checkout whose path holds one.
 
+        Each of the five is one that the installer's sed expression or plutil -lint cannot take; the comment above the refusal in the script says which fails for which. A greater-than is not among them: test_an_env_file_path_with_a_greater_than_is_installed_and_read_back_unchanged installs one.
         The control is test_env_file_names_the_file_in_every_plist_and_warns_about_nothing, which admits a plain path through the same checks.
         Recorded against mutant ENVFILE-UNSAFE-UNCHECKED, which removes the refusal, and fails here. Recorded against mutant ENVFILE-UNSAFE-OVER-REFUSED, which refuses every path; the control kills that one, not this test.
+        Recorded against mutant ENVFILE-UNSAFE-LT-ADMITTED, which drops the less-than from the refusal, and fails here for that character.
         """
         _, script = self.copy_checkout()
-        characters = {"pipe": "|", "ampersand": "&", "backslash": "\\", "less-than": "<", "greater-than": ">", "newline": "\n"}
+        characters = {"pipe": "|", "ampersand": "&", "backslash": "\\", "less-than": "<", "newline": "\n"}
         for label, char in sorted(characters.items()):
             with self.subTest(character=label):
                 path = os.path.join(self.tmp, "a%sb.env" % char)
@@ -464,10 +467,10 @@ class EnvFileRefused(InstallCase):
         pipe_dir = os.path.join(self.tmp, "d|x")
         os.makedirs(pipe_dir)
         proc = self.run_install("--env-file", "creds.env", cwd=pipe_dir, script=script)
-        self.assert_refused_before_any_write(proc, "holds | & \\ < > or a newline")
+        self.assert_refused_before_any_write(proc, "holds | & \\ < or a newline")
         tree, tree_script = self.copy_checkout(name="t|x")
         proc = self.run_install("--dry-run", script=tree_script)
-        self.assert_refused_before_any_write(proc, "holds | & \\ < > or a newline")
+        self.assert_refused_before_any_write(proc, "holds | & \\ < or a newline")
         self.assertIn(os.path.basename(tree), proc.stderr, "the refusal must name the default path: " + verdict(proc))
 
     def test_an_env_file_without_a_value_is_refused_before_any_write(self):
@@ -488,17 +491,18 @@ class EnvFileRefused(InstallCase):
                 self.assert_refused_before_any_write(proc, "--env-file needs a file")
 
 
-class MakeEnvFile(unittest.TestCase):
-    """make triage-install passes ENV_FILE on as --env-file, and passes no flag when it is unset."""
+class MakeTriageInstall(unittest.TestCase):
+    """make triage-install passes ROOT as --root and ENV_FILE as --env-file when they are set on the make command line, and passes neither flag otherwise, whatever the shell has exported."""
 
-    def make_dry(self, *assignments):
-        """make -n triage-install with the given assignments on the command line. HOME and BISHOP_MEMORY_CLIENT_ENV point at a temporary directory, so the Makefile's read of the client env file finds nothing. ROOT, ENV_FILE, BISHOP_MEMORY_URL and BISHOP_MEMORY_CLIENT_ENV are removed from the environment, so only the command line can set them."""
+    def make_dry(self, *assignments, exported=None):
+        """make -n triage-install with the given assignments on the command line, and with the variables in the exported dict set in the environment make is started with. HOME and BISHOP_MEMORY_CLIENT_ENV point at a temporary directory, so the Makefile's read of the client env file finds nothing. ROOT, ENV_FILE, BISHOP_MEMORY_URL and BISHOP_MEMORY_CLIENT_ENV are removed from the inherited environment first, so only the command line and the exported dict can set them."""
         tmp = tempfile.mkdtemp(prefix="install-triage-make-")
         self.addCleanup(shutil.rmtree, tmp, True)
         env = {k: v for k, v in os.environ.items()
                if k not in ("ROOT", "ENV_FILE", "BISHOP_MEMORY_URL", "BISHOP_MEMORY_CLIENT_ENV")}
         env["HOME"] = tmp
         env["BISHOP_MEMORY_CLIENT_ENV"] = os.path.join(tmp, "absent.env")
+        env.update(exported or {})
         return subprocess.run(["make", "-n", "-C", REPO_ROOT, "triage-install", *assignments],
                               env=env, capture_output=True, text=True, stdin=subprocess.DEVNULL)
 
@@ -507,6 +511,7 @@ class MakeEnvFile(unittest.TestCase):
 
         The control is that the installer command is printed at all, which test_make_triage_install_without_env_file_passes_no_flag also relies on.
         Recorded against mutant MAKE-ENVFILE-DROPPED, which misspells the variable in the passthrough so the flag is never passed, and fails here.
+        Recorded against mutant MAKE-ENVFILE-ENVIRONMENT-ONLY, which accepts a value only from the environment, and fails here.
         """
         proc = self.make_dry("ENV_FILE=/triage-test/creds.env")
         self.assertEqual(proc.returncode, 0, verdict(proc))
@@ -523,6 +528,66 @@ class MakeEnvFile(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, verdict(proc))
         self.assertIn("scripts/install-triage-schedule.sh", proc.stdout, "control: the installer command must be printed: " + verdict(proc))
         self.assertNotIn("--env-file", proc.stdout, verdict(proc))
+
+    def test_make_triage_install_passes_root_as_the_flag(self):
+        """Path: make -n triage-install ROOT=/triage-test/checkout. The printed installer command carries --root "/triage-test/checkout". make -n runs no recipe, so nothing is read or written.
+
+        The control is that the installer command is printed at all.
+        Recorded against mutant MAKE-ROOT-ENVIRONMENT-ONLY, which accepts a value only from the environment, and fails here.
+        """
+        proc = self.make_dry("ROOT=/triage-test/checkout")
+        self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertIn("scripts/install-triage-schedule.sh", proc.stdout, "control: the installer command must be printed: " + verdict(proc))
+        self.assertIn('--root "/triage-test/checkout"', proc.stdout, verdict(proc))
+
+    def test_an_env_file_exported_in_the_shell_is_not_passed_as_the_flag(self):
+        """Path: make -n triage-install with ENV_FILE=/triage-test/exported.env in the environment and nothing on the command line. The printed installer command has no --env-file and does not carry the exported path. A second run puts ENV_FILE=/triage-test/cmdline.env on the command line with the same variable exported: the command carries --env-file "/triage-test/cmdline.env" and not the exported path.
+
+        The control is that second run, in the same test: the same exported variable is present, the installer command is printed, and the command-line value is passed, so the first run's absent flag is not a command that carries no flags at all.
+        Recorded against mutant MAKE-ENVFILE-FROM-ENVIRONMENT, which passes the value whatever its origin, and fails here on the first run.
+        Recorded against mutant MAKE-ENVFILE-ENVIRONMENT-ONLY, which accepts a value only from the environment, and fails here on both runs.
+        """
+        exported = {"ENV_FILE": "/triage-test/exported.env"}
+        proc = self.make_dry(exported=exported)
+        self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertIn("scripts/install-triage-schedule.sh", proc.stdout, "control: the installer command must be printed: " + verdict(proc))
+        self.assertNotIn("--env-file", proc.stdout, "an exported ENV_FILE must not be passed: " + verdict(proc))
+        self.assertNotIn("exported.env", proc.stdout, verdict(proc))
+        control = self.make_dry("ENV_FILE=/triage-test/cmdline.env", exported=exported)
+        self.assertEqual(control.returncode, 0, verdict(control))
+        self.assertIn('--env-file "/triage-test/cmdline.env"', control.stdout, "control: the command-line value is passed: " + verdict(control))
+        self.assertNotIn("exported.env", control.stdout, verdict(control))
+
+    def test_a_root_exported_in_the_shell_is_not_passed_as_the_flag(self):
+        """Path: make -n triage-install with ROOT=/triage-test/exported-root in the environment and nothing on the command line. The printed installer command has no --root and does not carry the exported path. A second run puts ROOT=/triage-test/cmdline-root on the command line with the same variable exported: the command carries --root "/triage-test/cmdline-root" and not the exported path.
+
+        The control is that second run, in the same test, as in the ENV_FILE test.
+        Recorded against mutant MAKE-ROOT-FROM-ENVIRONMENT, which passes the value whatever its origin, and fails here on the first run.
+        Recorded against mutant MAKE-ROOT-ENVIRONMENT-ONLY, which accepts a value only from the environment, and fails here on both runs.
+        """
+        exported = {"ROOT": "/triage-test/exported-root"}
+        proc = self.make_dry(exported=exported)
+        self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertIn("scripts/install-triage-schedule.sh", proc.stdout, "control: the installer command must be printed: " + verdict(proc))
+        self.assertNotIn("--root", proc.stdout, "an exported ROOT must not be passed: " + verdict(proc))
+        self.assertNotIn("exported-root", proc.stdout, verdict(proc))
+        control = self.make_dry("ROOT=/triage-test/cmdline-root", exported=exported)
+        self.assertEqual(control.returncode, 0, verdict(control))
+        self.assertIn('--root "/triage-test/cmdline-root"', control.stdout, "control: the command-line value is passed: " + verdict(control))
+        self.assertNotIn("exported-root", control.stdout, verdict(control))
+
+    def test_an_empty_value_on_the_command_line_is_still_passed_so_the_installer_refuses_it(self):
+        """Path: make -n triage-install ROOT= and make -n triage-install ENV_FILE=, each with an empty value on the command line. The printed installer command carries --root "" or --env-file "" respectively, where the installer refuses an empty value for either flag with exit 64; test_an_env_file_without_a_value_is_refused_before_any_write pins that for --env-file, and nothing here pins it for --root. A value left unset passes no flag, so an empty one is an explicit mistake and is not turned into a silent default.
+
+        The control is that each run prints the installer command, and that the same variable with a value, in the tests above, is passed.
+        Not recorded against a mutant pair: it is a consequence of gating on the origin of the variable, which the pairs of the exported-value tests already cover.
+        """
+        for flag, name in (("--root", "ROOT"), ("--env-file", "ENV_FILE")):
+            with self.subTest(variable=name):
+                proc = self.make_dry(name + "=")
+                self.assertEqual(proc.returncode, 0, verdict(proc))
+                self.assertIn("scripts/install-triage-schedule.sh", proc.stdout, "control: the installer command must be printed: " + verdict(proc))
+                self.assertIn(flag + ' ""', proc.stdout, verdict(proc))
 
 
 class UninstallIgnoresEnvFile(InstallCase):
@@ -568,6 +633,28 @@ class EnvFileRendering(InstallCase):
                 self.assertEqual(lint.returncode, 0, "plutil -lint rejected %s: %s" % (path, verdict(lint)))
                 with open(path) as fh:
                     self.assertEqual(real(env_file_of(fh.read())), real(env_file))
+
+    def test_an_env_file_path_with_a_greater_than_is_installed_and_read_back_unchanged(self):
+        """Path: a real install (not a dry run) under the stub launchctl, with --env-file naming an existing file in a directory whose name holds a greater-than, from a copy of the script in a temporary tree. The run exits 0 with no refusal. Every installed plist passes plutil -lint, and plutil reads TRIAGE_ENV_FILE back as exactly the path that was given, followed by the one newline its raw output ends with.
+
+        The control is the stub's launchctl record of the three loads, which shows the install went through to the write and the load for every job, and the exact-equality read-back, which shows the value was not dropped or altered on the way.
+        A greater-than is carried by the render and by the plist format, so the installer does not refuse it; test_an_env_file_path_with_a_character_the_render_cannot_carry_is_refused_before_any_write refuses the characters that are not.
+        Recorded against mutant ENVFILE-UNSAFE-GT-REFUSED, which adds the greater-than to the refusal, and fails here.
+        """
+        _, script = self.copy_checkout()
+        env_file = self.make_env_file("a>b", "triage.env")
+        proc = self.run_install("--env-file", env_file, script=script)
+        self.assertEqual(proc.returncode, 0, verdict(proc))
+        self.assertNotIn("holds", proc.stderr, "a greater-than must not be refused: " + verdict(proc))
+        self.assertTrue(self.calls_text(), "control: the stub must record the launchctl calls")
+        for kind in KINDS:
+            with self.subTest(kind=kind):
+                path = self.plist_path(kind)
+                lint = subprocess.run(["plutil", "-lint", path], capture_output=True, text=True)
+                self.assertEqual(lint.returncode, 0, "plutil -lint rejected %s: %s" % (path, verdict(lint)))
+                read = subprocess.run(["plutil", "-extract", "EnvironmentVariables.TRIAGE_ENV_FILE", "raw", path],
+                                      capture_output=True, text=True)
+                self.assertEqual(read.stdout, env_file + "\n", verdict(read))  # raw output ends with one newline
 
 
 if __name__ == "__main__":

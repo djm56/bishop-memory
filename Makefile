@@ -163,9 +163,12 @@ triage-deploy:
 # Install / remove the nightly launchd jobs (macOS). ROOT=DIR runs the jobs from the
 # checkout at DIR, such as the deploy worktree; unset, they run from this checkout.
 # ENV_FILE=FILE names the credentials file the jobs source; unset, it is .env in the
-# checkout that holds the installer, whatever ROOT says.
+# checkout that holds the installer, whatever ROOT says. Both are passed only when
+# they are on the make command line: a ROOT or ENV_FILE exported in the shell is
+# ignored, since either would silently redirect where the jobs run or what they read.
+# An empty value on the command line is passed, and the installer refuses it.
 triage-install:
-	scripts/install-triage-schedule.sh --url $(TRIAGE_URL) $(if $(ROOT),--root "$(ROOT)") $(if $(ENV_FILE),--env-file "$(ENV_FILE)")
+	scripts/install-triage-schedule.sh --url $(TRIAGE_URL) $(if $(filter command line,$(origin ROOT)),--root "$(ROOT)") $(if $(filter command line,$(origin ENV_FILE)),--env-file "$(ENV_FILE)")
 
 triage-uninstall:
 	scripts/install-triage-schedule.sh --uninstall

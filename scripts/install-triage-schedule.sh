@@ -34,8 +34,10 @@
 # relative FILE is written as an absolute path. A FILE that is not a readable
 # file is named on stderr, and the install goes ahead: the runner reads the file
 # only when it is there. The path, the default included, is refused before
-# anything is written if it holds | & \ < > or a newline, because those
-# characters break the plist render. --uninstall ignores --env-file.
+# anything is written if it holds | & \ < or a newline, because the plist render
+# cannot carry them: sed stops on | and a newline, writes the placeholder text back
+# in place of &, and drops \, and plutil -lint rejects <. --uninstall ignores
+# --env-file.
 #
 # Idempotent: re-running unloads and reloads every job with the new plists.
 # Loading never triggers a run (RunAtLoad is false); to run now use
@@ -142,11 +144,12 @@ if [[ "$ENV_FILE_GIVEN" -eq 1 ]]; then
 else
   ENV_FILE_PATH="$CHECKOUT_ROOT/.env"
 fi
-# The render passes the path through sed with | as the delimiter: & and \ are special in its replacement text,
-# a newline ends the substitution, and < and > would make the plist invalid XML.
+# The render passes the path through sed with | as the delimiter, into the plist. A path holding one of these
+# does not come out as given: | and a newline stop sed with an error, & is replaced by the text the pattern
+# matched (the placeholder), \ is dropped, and < makes the plist invalid XML, which plutil -lint rejects.
 case "$ENV_FILE_PATH" in
-  *'|'*|*'&'*|*'\'*|*'<'*|*'>'*|*$'\n'*)
-    echo "install-triage-schedule.sh: env file path $ENV_FILE_PATH holds | & \\ < > or a newline; the plist cannot carry it" >&2
+  *'|'*|*'&'*|*'\'*|*'<'*|*$'\n'*)
+    echo "install-triage-schedule.sh: env file path $ENV_FILE_PATH holds | & \\ < or a newline; the plist render cannot carry it" >&2
     exit 64 ;;
 esac
 if [[ ! -f "$ENV_FILE_PATH" || ! -r "$ENV_FILE_PATH" ]]; then
