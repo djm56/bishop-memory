@@ -9057,7 +9057,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 110,
+      "line": 128,
       "before": "BISHOP_ROOT=\"$(cd \"$ROOT_ARG\" && pwd)\"",
       "after": "BISHOP_ROOT=\"$BISHOP_ROOT\"",
       "property": "With --root, the plists name DIR; the mutant keeps the default root",
@@ -9072,7 +9072,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 42,
+      "line": 52,
       "before": "BISHOP_ROOT=\"$(cd \"$SCRIPT_DIR/..\" && pwd)\"",
       "after": "BISHOP_ROOT=\"\"",
       "property": "Without --root, the plists name the checkout that holds the script; the mutant renders an empty root",
@@ -9087,7 +9087,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 110,
+      "line": 128,
       "before": "BISHOP_ROOT=\"$(cd \"$ROOT_ARG\" && pwd)\"",
       "after": "BISHOP_ROOT=\"$ROOT_ARG\"",
       "property": "A relative --root is written into the plists as an absolute path; the mutant writes it as given",
@@ -9102,7 +9102,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 110,
+      "line": 128,
       "before": "BISHOP_ROOT=\"$(cd \"$ROOT_ARG\" && pwd)\"",
       "after": "BISHOP_ROOT=\"$PWD/$ROOT_ARG\"",
       "property": "An absolute --root is written as itself; the mutant prefixes the working directory, which corrupts an absolute path",
@@ -9117,7 +9117,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 71,
+      "line": 85,
       "before": "--root=*)",
       "after": "--rootz=*)",
       "property": "--root=DIR is accepted; the mutant removes that form, so it is refused as an unknown flag",
@@ -9132,7 +9132,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 68,
+      "line": 82,
       "before": "--root)",
       "after": "--rootz)",
       "property": "--root DIR is accepted; the mutant removes that form, so it is refused as an unknown flag",
@@ -9147,7 +9147,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 97,
+      "line": 115,
       "before": "if [[ ! -d \"$ROOT_ARG\" ]]; then",
       "after": "if false; then",
       "property": "A --root that is not a directory is refused before any write; the mutant drops the directory test",
@@ -9162,7 +9162,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 97,
+      "line": 115,
       "before": "if [[ ! -d \"$ROOT_ARG\" ]]; then",
       "after": "if [[ -d \"$ROOT_ARG\" ]]; then",
       "property": "A directory passes the --root check; the mutant refuses every directory, the inverse of the test",
@@ -9177,7 +9177,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 101,
+      "line": 119,
       "before": "if [[ ! -f \"$ROOT_ARG/scripts/triage-run.sh\" || ! -x \"$ROOT_ARG/scripts/triage-run.sh\" ]]; then",
       "after": "if false; then",
       "property": "A --root without an executable scripts/triage-run.sh is refused before any write; the mutant drops that test",
@@ -9192,7 +9192,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 101,
+      "line": 119,
       "before": "if [[ ! -f \"$ROOT_ARG/scripts/triage-run.sh\" || ! -x \"$ROOT_ARG/scripts/triage-run.sh\" ]]; then",
       "after": "if [[ -f \"$ROOT_ARG/scripts/triage-run.sh\" && -x \"$ROOT_ARG/scripts/triage-run.sh\" ]]; then",
       "property": "A root with an executable scripts/triage-run.sh passes the check; the mutant refuses it, the inverse of the test",
@@ -9207,7 +9207,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 105,
+      "line": 123,
       "before": "if [[ ! -x \"$ROOT_ARG/bin/mcpd\" ]]; then",
       "after": "if false; then",
       "property": "A --root without an executable bin/mcpd is refused before any write; the mutant drops that test",
@@ -9222,7 +9222,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 105,
+      "line": 123,
       "before": "if [[ ! -x \"$ROOT_ARG/bin/mcpd\" ]]; then",
       "after": "if [[ -x \"$ROOT_ARG/bin/mcpd\" ]]; then",
       "property": "A root with an executable bin/mcpd passes the check; the mutant refuses it, the inverse of the test",
@@ -9237,7 +9237,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 79,
+      "line": 97,
       "before": "if [[ \"$UNINSTALL\" -eq 1 ]]; then",
       "after": "if [[ \"$UNINSTALL\" -eq 1 && \"$ROOT_GIVEN\" -eq 0 ]]; then",
       "property": "--uninstall ignores --root; the mutant skips the uninstall branch when --root is given, so the root is checked and refused",
@@ -9252,7 +9252,7 @@
       "status": "active",
       "language": "py",
       "file": "scripts/install-triage-schedule.sh",
-      "line": 82,
+      "line": 100,
       "before": "if [[ -f \"$plist\" ]]; then",
       "after": "if [[ -f \"$plist\" && \"$ROOT_GIVEN\" -eq 0 ]]; then",
       "property": "--uninstall removes the installed plists whatever --root says; the mutant removes nothing when --root is given",
@@ -9320,6 +9320,337 @@
       "suite": "scripts/test_triage_deploy.py",
       "killers": [
         "DeployBuildFetchAndUsage.test_the_deploy_dir_variable_sets_the_default_for_the_script_without_a_flag"
+      ]
+    },
+    {
+      "id": "ENVFILE-DEFAULT-LOST",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 143,
+      "before": "ENV_FILE_PATH=\"$CHECKOUT_ROOT/.env\"",
+      "after": "ENV_FILE_PATH=\"\"",
+      "property": "Without --env-file, TRIAGE_ENV_FILE names .env in the checkout that holds the script; the mutant renders an empty value",
+      "mirror": "ENVFILE-DEFAULT-FOLLOWS-ROOT",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileDefault.test_without_env_file_every_job_names_the_env_file_of_the_checkout_that_holds_the_script"
+      ]
+    },
+    {
+      "id": "ENVFILE-DEFAULT-FOLLOWS-ROOT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 143,
+      "before": "ENV_FILE_PATH=\"$CHECKOUT_ROOT/.env\"",
+      "after": "ENV_FILE_PATH=\"$BISHOP_ROOT/.env\"",
+      "property": "Without --env-file, TRIAGE_ENV_FILE still names the checkout's .env under --root; the mutant takes the default from the --root directory",
+      "mirror": "ENVFILE-DEFAULT-LOST",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileDefault.test_with_root_and_no_env_file_the_env_file_is_still_the_checkout_env_file"
+      ]
+    },
+    {
+      "id": "ENVFILE-GIVEN-IGNORED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 133,
+      "before": "if [[ \"$ENV_FILE_GIVEN\" -eq 1 ]]; then",
+      "after": "if false; then",
+      "property": "--env-file FILE is the file every job is given; the mutant renders the checkout's .env whatever FILE says",
+      "mirror": "ENVFILE-SEPARATE-DROPPED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing"
+      ]
+    },
+    {
+      "id": "ENVFILE-SEPARATE-DROPPED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 86,
+      "before": "--env-file)",
+      "after": "--envfilez)",
+      "property": "--env-file FILE is accepted; the mutant removes that form, so it is refused as an unknown flag",
+      "mirror": "ENVFILE-GIVEN-IGNORED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing"
+      ]
+    },
+    {
+      "id": "ENVFILE-EQUALS-DROPPED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 89,
+      "before": "--env-file=*)",
+      "after": "--envfilez=*)",
+      "property": "--env-file=FILE is accepted; the mutant removes that form, so it is refused as an unknown flag",
+      "mirror": "ENVFILE-EQUALS-MISPARSED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_in_the_equals_form_renders_the_same_output_as_the_separate_form"
+      ]
+    },
+    {
+      "id": "ENVFILE-EQUALS-MISPARSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 89,
+      "before": "ENV_FILE_ARG=\"${1#*=}\"",
+      "after": "ENV_FILE_ARG=\"${1%%=*}\"",
+      "property": "--env-file=FILE renders the same as the separate form; the mutant keeps the flag name as the path",
+      "mirror": "ENVFILE-EQUALS-DROPPED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_in_the_equals_form_renders_the_same_output_as_the_separate_form"
+      ]
+    },
+    {
+      "id": "ENVFILE-RELATIVE-KEPT",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 140,
+      "before": "*) ENV_FILE_PATH=\"$PWD/$ENV_FILE_ARG\" ;;",
+      "after": "*) ENV_FILE_PATH=\"$ENV_FILE_ARG\" ;;",
+      "property": "A relative --env-file FILE is written into the plists as an absolute path; the mutant writes it as given",
+      "mirror": "ENVFILE-ABSOLUTE-BROKEN",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_a_relative_env_file_is_written_into_the_plists_as_an_absolute_path"
+      ]
+    },
+    {
+      "id": "ENVFILE-ABSOLUTE-BROKEN",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 139,
+      "before": "/*) ENV_FILE_PATH=\"$ENV_FILE_ARG\" ;;",
+      "after": "/*) ENV_FILE_PATH=\"$PWD/$ENV_FILE_ARG\" ;;",
+      "property": "An absolute --env-file FILE is written as itself; the mutant prefixes it with the working directory",
+      "mirror": "ENVFILE-RELATIVE-KEPT",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing"
+      ]
+    },
+    {
+      "id": "ENVFILE-WARNING-DROPPED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 152,
+      "before": "if [[ ! -f \"$ENV_FILE_PATH\" || ! -r \"$ENV_FILE_PATH\" ]]; then",
+      "after": "if false; then",
+      "property": "A missing --env-file is named on stderr; the mutant drops the warning",
+      "mirror": "ENVFILE-WARNING-INVERTED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_a_missing_env_file_is_named_on_stderr_and_the_install_still_writes_the_jobs"
+      ]
+    },
+    {
+      "id": "ENVFILE-WARNING-INVERTED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 152,
+      "before": "if [[ ! -f \"$ENV_FILE_PATH\" || ! -r \"$ENV_FILE_PATH\" ]]; then",
+      "after": "if [[ -f \"$ENV_FILE_PATH\" && -r \"$ENV_FILE_PATH\" ]]; then",
+      "property": "A present --env-file is not warned about; the mutant warns about it",
+      "mirror": "ENVFILE-WARNING-DROPPED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing",
+        "EnvFileGiven.test_a_missing_env_file_is_named_on_stderr_and_the_install_still_writes_the_jobs"
+      ]
+    },
+    {
+      "id": "ENVFILE-UNSAFE-UNCHECKED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 148,
+      "before": "*'|'*|*'&'*|*'\\'*|*'<'*|*'>'*|*$'\\n'*)",
+      "after": "__no_such_path__)",
+      "property": "A path holding | & \\ < > or a newline is refused before any write; the mutant removes the refusal",
+      "mirror": "ENVFILE-UNSAFE-OVER-REFUSED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileRefused.test_an_env_file_path_with_a_character_the_render_cannot_carry_is_refused_before_any_write"
+      ]
+    },
+    {
+      "id": "ENVFILE-UNSAFE-OVER-REFUSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 148,
+      "before": "*'|'*|*'&'*|*'\\'*|*'<'*|*'>'*|*$'\\n'*)",
+      "after": "*'|'*|*'&'*|*'\\'*|*'<'*|*'>'*|*$'\\n'*|*)",
+      "property": "A plain path is admitted through the same checks; the mutant refuses every path",
+      "mirror": "ENVFILE-UNSAFE-UNCHECKED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing"
+      ]
+    },
+    {
+      "id": "ENVFILE-EMPTY-UNCHECKED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 134,
+      "before": "if [[ -z \"$ENV_FILE_ARG\" ]]; then",
+      "after": "if false; then",
+      "property": "--env-file with an empty value is refused before any write; the mutant drops that test",
+      "mirror": "ENVFILE-EMPTY-INVERTED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileRefused.test_an_env_file_without_a_value_is_refused_before_any_write"
+      ]
+    },
+    {
+      "id": "ENVFILE-EMPTY-INVERTED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 134,
+      "before": "if [[ -z \"$ENV_FILE_ARG\" ]]; then",
+      "after": "if [[ -n \"$ENV_FILE_ARG\" ]]; then",
+      "property": "A non-empty --env-file value is accepted; the mutant refuses it",
+      "mirror": "ENVFILE-EMPTY-UNCHECKED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileGiven.test_env_file_names_the_file_in_every_plist_and_warns_about_nothing"
+      ]
+    },
+    {
+      "id": "MAKE-ENVFILE-DROPPED",
+      "status": "active",
+      "language": "py",
+      "file": "Makefile",
+      "line": 168,
+      "before": "$(if $(ENV_FILE),--env-file \"$(ENV_FILE)\")",
+      "after": "$(if $(ENV_FILEX),--env-file \"$(ENV_FILE)\")",
+      "property": "make triage-install ENV_FILE=FILE passes --env-file FILE; the mutant misspells the variable, so the flag is never passed",
+      "mirror": "MAKE-ENVFILE-UNCONDITIONAL",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "MakeEnvFile.test_make_triage_install_passes_env_file_as_the_flag"
+      ]
+    },
+    {
+      "id": "MAKE-ENVFILE-UNCONDITIONAL",
+      "status": "active",
+      "language": "py",
+      "file": "Makefile",
+      "line": 168,
+      "before": "$(if $(ENV_FILE),--env-file \"$(ENV_FILE)\")",
+      "after": "--env-file \"$(ENV_FILE)\"",
+      "property": "make triage-install with no ENV_FILE passes no --env-file; the mutant passes one whatever the variable holds",
+      "mirror": "MAKE-ENVFILE-DROPPED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "MakeEnvFile.test_make_triage_install_without_env_file_passes_no_flag"
+      ]
+    },
+    {
+      "id": "UNINSTALL-HONOURS-ENVFILE",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 97,
+      "before": "if [[ \"$UNINSTALL\" -eq 1 ]]; then",
+      "after": "if [[ \"$UNINSTALL\" -eq 1 && \"$ENV_FILE_GIVEN\" -eq 0 ]]; then",
+      "property": "--uninstall ignores --env-file; the mutant sends an uninstall that names one down the install path, where the refusal fires",
+      "mirror": "UNINSTALL-ENVFILE-SKIPS-REMOVAL",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "UninstallIgnoresEnvFile.test_uninstall_ignores_env_file_even_one_the_install_would_refuse"
+      ]
+    },
+    {
+      "id": "UNINSTALL-ENVFILE-SKIPS-REMOVAL",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 100,
+      "before": "if [[ -f \"$plist\" ]]; then",
+      "after": "if [[ -f \"$plist\" && \"$ENV_FILE_GIVEN\" -eq 0 ]]; then",
+      "property": "--uninstall with --env-file removes the installed plists; the mutant keeps them",
+      "mirror": "UNINSTALL-HONOURS-ENVFILE",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "UninstallIgnoresEnvFile.test_uninstall_ignores_env_file_even_one_the_install_would_refuse"
+      ]
+    },
+    {
+      "id": "ENVFILE-PLIST-UNRENDERED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/install-triage-schedule.sh",
+      "line": 202,
+      "before": "-e \"s|__ENV_FILE__|$ENV_FILE_PATH|g\" \\",
+      "after": "-e \"s|__ENV_FILE_UNRENDERED__|$ENV_FILE_PATH|g\" \\",
+      "property": "Every rendered plist carries TRIAGE_ENV_FILE with the path substituted; the mutant leaves the placeholder in the plist",
+      "mirror": "ENVFILE-PLIST-KEY-RENAMED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileDefault.test_without_env_file_every_job_names_the_env_file_of_the_checkout_that_holds_the_script"
+      ]
+    },
+    {
+      "id": "ENVFILE-PLIST-KEY-RENAMED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/com.bishop-memory.triage.plist",
+      "line": 51,
+      "before": "<key>TRIAGE_ENV_FILE</key>",
+      "after": "<key>TRIAGE_ENV_FIL</key>",
+      "property": "Every rendered plist carries the TRIAGE_ENV_FILE key; the mutant renames it",
+      "mirror": "ENVFILE-PLIST-UNRENDERED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileDefault.test_without_env_file_every_job_names_the_env_file_of_the_checkout_that_holds_the_script"
+      ]
+    },
+    {
+      "id": "ENVFILE-PLIST-UNCLOSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/com.bishop-memory.triage.plist",
+      "line": 52,
+      "before": "<string>__ENV_FILE__</string>",
+      "after": "<string>__ENV_FILE__<string>",
+      "property": "Every installed plist passes plutil -lint with --env-file; the mutant leaves the value element unclosed",
+      "mirror": "ENVFILE-PLIST-KEY-UNCLOSED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileRendering.test_jobs_installed_with_an_env_file_pass_plutil_lint"
+      ]
+    },
+    {
+      "id": "ENVFILE-PLIST-KEY-UNCLOSED",
+      "status": "active",
+      "language": "py",
+      "file": "scripts/com.bishop-memory.triage.plist",
+      "line": 51,
+      "before": "<key>TRIAGE_ENV_FILE</key>",
+      "after": "<key>TRIAGE_ENV_FILE<key>",
+      "property": "Every installed plist passes plutil -lint with --env-file; the mutant leaves the key element unclosed",
+      "mirror": "ENVFILE-PLIST-UNCLOSED",
+      "suite": "scripts/test_install_triage_schedule.py",
+      "killers": [
+        "EnvFileRendering.test_jobs_installed_with_an_env_file_pass_plutil_lint"
       ]
     }
   ]
