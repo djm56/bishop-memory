@@ -112,14 +112,52 @@ on either.
 when a grade run ends with bishop-triage tool errors and writes no grade. The
 2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this
 reason. Source: mission-20261021-05 DEBRIEF (harness repository), and FINDINGS
-2026-10-22 (`scripts/triage-run.sh`, grade success check). Status: open. The
-operator wants it handled as a follow-up mission.
+2026-10-22 (`scripts/triage-run.sh`, grade success check). Status: in progress.
+Fixed on `fix/triage-reliability` (HEAD `6da2680`): the summary fails a run
+that records an unrecovered bishop-triage error or lacks its required calls.
+Not merged. The operator wants it handled as a follow-up mission.
 
 **The launchd triage jobs run the development checkout.** The jobs run
 `/Users/djm56/bishop-memory`, so a `make mutate` run or an in-progress edit
 can reach a scheduled run. Fix: a dedicated deploy checkout or worktree.
 Source: FINDINGS 2026-10-22 (triage launchd jobs, deployment checkout). Status:
-open.
+in progress. `make triage-deploy` and the installer's `--root` and `--env-file`
+are on `fix/triage-reliability`, not merged. The jobs are not re-pointed until
+the live switch, which is step 7 of mission-20261023-02.
+
+**Triage follow-ups from `fix/triage-reliability`.** Each is open unless its
+status says otherwise.
+
+**The claude engine is not judged by the failure rules.** An unreadable result
+prints `result not parseable` and exits 0; an `is_error` result exits 1. Whether
+the claude engine should get per-tool checks, and what an unreadable result
+should exit with, is an operator decision. Status: open question.
+
+**Cost drift fails the run.** Shape drift on any field, cost included, fails a
+run even when every call completed. Whether that policy stays is an operator
+decision. Status: open question.
+
+**An infinite or NaN cost passes.** The summary reads an infinite or NaN step
+cost as a number and passes it unchecked (review 2h S2; observed by hand, not
+tested). Status: open, low.
+
+**The `mutate.py` shared-text check is vacuous with timestamped messages.**
+Review 2 W5, carried. Status: open.
+
+**`mutate.py` does not refuse an empty `--ids`.** Status: open.
+
+**The installer's `sed` render takes `--root`, `--url`, `--log-dir` and `$HOME`
+unchecked.** The render uses `|` as its delimiter, and `&` in the replacement
+side is special, so a path holding either can corrupt the plist. Only the env
+file path is refused for those characters. Review 4 S4. Status: open.
+
+**Two deploy refusals are untested.** `scripts/triage-deploy.sh` refuses a path
+inside another checkout and a path that exists but is not a directory, and no
+test covers either (review 4 W3). Status: open.
+
+**No `git worktree prune` hint.** When the deploy directory was deleted by hand,
+the next run fails with git's own message and the script prints no hint (review
+4 S2). Status: open, low.
 
 **Live classify and process runs on the OpenCode v2 config shape are not
 observed.** Only `make triage-grade` has run live on that shape (step 2k of

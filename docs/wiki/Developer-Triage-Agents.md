@@ -50,6 +50,29 @@ The skill is the contract. The parts worth knowing when you change something:
 
 **Recommendation hygiene.** A re-run on the same category expires the old pending recommendation and writes a new one; a decided finding is skipped. Nothing expires a pending recommendation by age yet (roadmap).
 
+## When a run fails
+
+The runner decides a run's outcome from its result file, in the summary program inside `scripts/triage-run.sh`. The rules below are the opencode engine's; the claude engine is covered after them. A failed run exits 1. Its line in `triage.log` carries `ERROR` and `reason=`, with the reasons separated by semicolons. The reasons are set where the summary builds its `problems` list (search `problems.append` in `scripts/triage-run.sh`). That list is the authority; this section is a guide to it.
+
+A run fails when any of these holds:
+
+- **A bishop-triage tool call ended in error, and no later call of that tool completed.** A completed call forgives the earlier errors of its own tool and of no other. Errors from other tools are counted in `tool_errors` and do not fail the run.
+- **`triage_run_start` did not complete.**
+- **The kind's work read did not complete.** Per kind:
+  - classify: `triage_next_unclassified` or `finding_list`, either one (a reclassify run may use either);
+  - process: `triage_category_findings`;
+  - grade: `grade_claim`.
+  A run with nothing to do still makes its read, so it passes.
+- **`triage_run_finish` did not complete.** The runner posts no failed finish of its own, so a run that never reached its finish fails here.
+- **No steps.** The result has no `step_finish` event. If its lines are not JSON, the reason is a parse failure instead.
+- **Format drift.** A field the summary reads is not in the expected shape.
+
+Two conditions fail a run with no `reason=`: an `error` event in the stream, which is named in `errors=`; and a `triage_run_finish` that closed the run with status `failed`, which makes the line begin `ERROR run closed as failed`.
+
+**Current policy, and an open question.** Drift on any field, cost included, fails the run even when every call completed. Whether that should stay is an open operator question, not settled design. Lines that are not JSON are counted and judged only in a run with no steps; where there are steps, the calls decide.
+
+**Claude engine.** The claude engine is not judged by these rules, because it has no per-tool results to read. A result that cannot be read prints `result not parseable` and exits 0, so the run is logged as done. That is current behaviour and an open question (see the Findings triage section of `docs/ROADMAP.md`). A result with `is_error` set is logged with `ERROR` and exits 1; `is_error` is the only failure signal the runner reads.
+
 ## Running under a scheduler
 
 The scheduled job has no terminal and no Claude login. On the claude engine the runner sources `<checkout>/.env` for `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`, billed to a Claude plan; the API key wins if both are set); without either the CLI returns `Not logged in` and, under launchd, can hang before its first tool call. A manual `make triage-process` from a Claude Code terminal does not prove the scheduled path, because that shell carries a key of its own; `launchctl start com.bishop-memory.triage-process` does, and the Runs tab shows the result. The opencode engine needs nothing in `.env`: OpenCode reads its own config and auth files, which the job can read as the same user.
@@ -77,6 +100,45 @@ WantedBy=timers.target
 ```
 
 Duplicate both for `process` at 21:20, then `systemctl --user enable --now bishop-triage-classify.timer bishop-triage-process.timer`.
+
+## The deploy worktree and where the jobs run from
+
+The scheduled jobs should not run from the development checkout: a `make mutate` run or an unfinished edit there would reach a scheduled run. `make triage-deploy` keeps a separate worktree pinned to `origin/main` for them.
+
+```bash
+make triage-deploy                          # worktree at $HOME/bishop-memory-deploy
+make triage-deploy DEPLOY_DIR=/abs/path     # any other absolute path
+scripts/triage-deploy.sh --dir /abs/path    # the same, without make
+```
+
+- **Path.** The default is `$HOME/bishop-memory-deploy`. `DEPLOY_DIR=` (in the environment or on the make line) or `--dir` overrides it. The path must be absolute; a relative one exits 64.
+- **What it does.** It fetches `origin/main` into the checkout that holds the script. If the path does not exist, it creates a worktree there, detached at `origin/main`. If the path exists, it updates that worktree. Then it removes `bin/mcpd` in the worktree and rebuilds it with `make build-mcpd`.
+- **Detached and fast-forward only.** The worktree stays on a detached HEAD and the script never moves it onto a branch. It moves the worktree forward only: it checks that HEAD is an ancestor of `origin/main`, then merges with `--ff-only`.
+- **Refusals.** It changes nothing and exits 1 when the path is an existing non-directory; when the path is a plain directory, a worktree of another repository, or this repository's main checkout; when the path is inside another checkout; when the worktree is on a branch; when it has a modified, staged or untracked file (ignored files such as `bin/` do not count); or when it has a commit that `origin/main` does not have (it is ahead or has diverged). The message names the path and the reason.
+- **Known gap.** A new path inside this checkout is not refused. Git accepts it, and the development checkout then shows the worktree as an untracked directory.
+- **Stale registration.** If the deploy directory was deleted by hand, git still holds its registration, and the next run fails with git's own message (exit 2). Run `git worktree prune` in the development checkout, then `make triage-deploy` again. The script does not print that hint itself.
+- **Build failure.** `bin/mcpd` is removed before the build, so a failed build leaves no older binary for the jobs to run (exit 3). The worktree may already be at `origin/main` when that happens.
+- **Timing.** Do not run `make triage-deploy` between 21:00 and 21:40 local time, while the three jobs run. It removes `bin/mcpd` before rebuilding it, and a job that starts in that gap can find no binary. The runner tries to rebuild a missing `bin/mcpd` and exits if it cannot.
+
+Exit codes: 0 the worktree is at `origin/main` with `bin/mcpd` rebuilt; 1 refused, nothing changed; 2 git or make is missing, or a git step could not run or finish; 3 the build failed and `bin/mcpd` was removed; 64 usage.
+
+**Installing the jobs from a root.** `scripts/install-triage-schedule.sh` writes the three plists. By default the jobs run from the checkout that holds the installer.
+
+- `--root DIR` (make: `ROOT=DIR`) runs the jobs from the checkout at `DIR`. `DIR` must hold `scripts/triage-run.sh` as an executable file and an executable `bin/mcpd`. Otherwise the installer exits 64 before it writes anything. A relative `DIR` is made absolute. The plist template is always the one beside the installer.
+- `--env-file FILE` (make: `ENV_FILE=FILE`) names the credentials file the jobs source, as `TRIAGE_ENV_FILE`. Without it, the file is `.env` in the checkout that holds the installer, even with `--root`. `.env` is gitignored, so the deploy worktree has none; without this default its jobs would find no credentials. A relative `FILE` is made absolute. A file that is missing or unreadable produces a WARNING and the install goes ahead.
+- The env-file path is refused before anything is written if it holds `|`, `&`, `\`, `<` or a newline. The plist render cannot carry them: `sed` stops on `|` and a newline, `&` is replaced by the placeholder text, `\` is dropped, and `<` makes the plist invalid XML that `plutil -lint` rejects.
+- Through make, `ROOT` and `ENV_FILE` are passed only when they are on the command line. An exported value in the shell is ignored, since it would silently redirect where the jobs run or what they read. An empty value on the command line is passed and the installer refuses it (exit 64).
+- `--uninstall` ignores both.
+
+**Recommended setup.** Run the installer from the development checkout with the deploy worktree as the root. The jobs then run from `main`, and the default env file is still the development checkout's `.env`:
+
+```bash
+cd /Users/djm56/bishop-memory          # the development checkout
+make triage-deploy
+make triage-install ROOT="$HOME/bishop-memory-deploy"
+```
+
+Plists installed by an earlier installer run from the development checkout until they are reinstalled this way.
 
 ## Switching to OpenCode
 

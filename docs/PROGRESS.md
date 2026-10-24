@@ -14,12 +14,12 @@ Last updated: 2026-10-23, against `main` at `41aa27e`. The operator N/A grade is
 | PostgreSQL | 0 | 5 | 0% |
 | Memory insight | 8 | 14 | 36% |
 | Mission HUD | 17 | 6 | 74% |
-| Triage & grading | 11 | 19 | 37% |
+| Triage & grading | 11 | 28 | 28% |
 | Reconciler | 5 | 10 | 33% |
 | Service hardening | 2 | 4 | 33% |
 | Docs/README | 8 | 2 | 80% |
 | Harness portability | 1 | 7 | 13% |
-| **Total** | **63** | **78** | **45%** |
+| **Total** | **63** | **87** | **42%** |
 
 Percentage is done ÷ (done + outstanding), to the nearest whole number.
 
@@ -157,8 +157,8 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [x] Classifier batch size 20 — PR #6 (`f9d8f1f`), `2df2f46` ([ROADMAP](ROADMAP.md#shipped))
 - [x] `--reclassify` option — `scripts/triage-run.sh:189-190` ([ROADMAP](ROADMAP.md#findings-triage))
 - [x] Triage runner on OpenCode v2 — PR #12, squash-merge `7fc76ba` on 2026-10-22. The guard reads agents through `opencode debug agents` (identity, and a last-match-wins allowlist, with the definition file checked first); a check that cannot finish exits 4; runs use `opencode run --standalone` without `--pure`; the MCP config uses the `mcp.servers` shape with `codemode: false`; `--help` works anywhere in the arguments; the docs require OpenCode v2. Evidence: `CHANGELOG.md` [Unreleased], Changed; `scripts/triage-run.sh`; and one live `make triage-grade` run on 2026-10-22 (run 111, grade written, no 'No tool named' errors) on the mission branch commit `2f63b29`, before the squash. The live run is recorded in mission-20261021-05 DEBRIEF, step 2k (harness repository, `.claude/memory/missions/mission-20261021-05/DEBRIEF.md`) ([ROADMAP](ROADMAP.md#shipped))
-- [ ] Grade runs exit 0 when they end with bishop-triage tool errors and write no grade (open: `scripts/triage-run.sh`, grade success check; the 2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this reason; a follow-up mission is wanted) ([ROADMAP](ROADMAP.md#findings-triage))
-- [ ] The launchd triage jobs run the development checkout `/Users/djm56/bishop-memory`, so `make mutate` and in-progress edits can reach scheduled runs (open: fix is a dedicated deploy checkout or worktree) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Grade runs exit 0 when they end with bishop-triage tool errors and write no grade (open: `scripts/triage-run.sh`, grade success check; the 2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this reason; a follow-up mission is wanted; fixed on `fix/triage-reliability`, not yet merged) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The launchd triage jobs run the development checkout `/Users/djm56/bishop-memory`, so `make mutate` and in-progress edits can reach scheduled runs (open: fix is a dedicated deploy checkout or worktree; the worktree and installer `--root` are on `fix/triage-reliability`, not merged, and the jobs are not re-pointed until step 7) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Live classify and process runs on the OpenCode v2 config shape have not been observed; only grade has (unverified: the scheduled runs are the first check) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] The 1-second real-binary tests in `scripts/test_triage_run.py` are timing-sensitive under load (open, low; review 4b, and three failures under load at step 4a that did not recur) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Review follow-ups from mission-20261021-05 (open, low; listed in its DEBRIEF, `Tracker And Reality`, Follow-ups, in the harness repository at `.claude/memory/missions/mission-20261021-05/DEBRIEF.md`) ([ROADMAP](ROADMAP.md#findings-triage))
@@ -176,6 +176,15 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [ ] Sub-themes across runs and recurrence detection (idea only) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Read-only `/findings-digest` command in the harness (unverified: harness side) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Calibration on the last 20 decisions, and per-run accepted and declined counts (unverified: not found in code on 2026-10-20) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Triage failure rules, `make triage-deploy`, the installer's `--root` and `--env-file`, and their docs are on `fix/triage-reliability` (HEAD `6da2680`), not yet merged; the live switch of the launchd jobs is step 7 of mission-20261023-02 and is not done (pending merge; `docs/wiki/Developer-Triage-Agents.md`, `docs/wiki/Troubleshooting.md`) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The claude engine is not judged by the failure rules, and an unreadable result prints `result not parseable` and exits 0 (open question, operator decision) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Shape drift on the cost fails the run even when every call completed; whether that stays is an open operator question (decision) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] An infinite or NaN step cost passes the summary unchecked (open, low; review 2h S2) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The `mutate.py` shared-text check is vacuous with timestamped messages (open; review 2 W5 carried) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] `mutate.py` does not refuse an empty `--ids` (open) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] `scripts/install-triage-schedule.sh` substitutes `--root`, `--url`, `--log-dir` and `$HOME` into the plist with `sed` and no check on `|` or `&` in them (open; review 4 S4) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The two refusals of `scripts/triage-deploy.sh` for a path inside another checkout and for a path that is not a directory have no test (open; review 4 W3) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] `scripts/triage-deploy.sh` prints no `git worktree prune` hint for a stale registration (open, low; review 4 S2) ([ROADMAP](ROADMAP.md#findings-triage))
 
 ## Reconciler
 
