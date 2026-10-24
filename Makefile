@@ -2,7 +2,7 @@ APP=memoryd
 DB=data/memory.db
 
 .PHONY: run build build-mcpd test fmt vet tidy init-db reset-db health dist-linux-amd64 dist-linux-arm64 dist-linux \
-        triage-seed triage-backfill triage-classify triage-process triage-grade triage-export triage-review triage-install triage-uninstall wiki-publish screenshots \
+        triage-seed triage-backfill triage-classify triage-process triage-grade triage-export triage-review triage-deploy triage-install triage-uninstall wiki-publish screenshots \
         mission-links scratch-clean dist mutate
 
 run:
@@ -153,9 +153,22 @@ triage-export:
 triage-review:
 	open $(TRIAGE_URL)/triage 2>/dev/null || xdg-open $(TRIAGE_URL)/triage 2>/dev/null || echo "open $(TRIAGE_URL)/triage in a browser"
 
-# Install / remove the nightly launchd jobs (macOS).
+# Create or fast-forward the deploy worktree to origin/main and rebuild bin/mcpd in it
+# (scripts/triage-deploy.sh). DEPLOY_DIR must be an absolute path; the default is
+# $HOME/bishop-memory-deploy. The development checkout is never moved.
+DEPLOY_DIR ?= $(HOME)/bishop-memory-deploy
+triage-deploy:
+	scripts/triage-deploy.sh --dir "$(DEPLOY_DIR)"
+
+# Install / remove the nightly launchd jobs (macOS). ROOT=DIR runs the jobs from the
+# checkout at DIR, such as the deploy worktree; unset, they run from this checkout.
+# ENV_FILE=FILE names the credentials file the jobs source; unset, it is .env in the
+# checkout that holds the installer, whatever ROOT says. Both are passed only when
+# they are on the make command line: a ROOT or ENV_FILE exported in the shell is
+# ignored, since either would silently redirect where the jobs run or what they read.
+# An empty value on the command line is passed, and the installer refuses it.
 triage-install:
-	scripts/install-triage-schedule.sh --url $(TRIAGE_URL)
+	scripts/install-triage-schedule.sh --url $(TRIAGE_URL) $(if $(filter command line,$(origin ROOT)),--root "$(ROOT)") $(if $(filter command line,$(origin ENV_FILE)),--env-file "$(ENV_FILE)")
 
 triage-uninstall:
 	scripts/install-triage-schedule.sh --uninstall

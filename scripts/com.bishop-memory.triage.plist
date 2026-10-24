@@ -18,6 +18,11 @@
   PATH and HOME are set explicitly: a launchd job gets a minimal environment
   and the runner needs `claude`, `go`, `curl` and `python3` on PATH and the
   user's HOME for Claude Code's own configuration.
+
+  TRIAGE_ENV_FILE names the credentials file triage-run.sh sources. The installer
+  fills it with the .env of the checkout that holds the installer, or with the
+  file named by --env-file, so a job run from another checkout (--root, such as
+  the deploy worktree, which has no .env) still reads the file it was given.
 -->
 <plist version="1.0">
 <dict>
@@ -43,6 +48,8 @@
         <string>__URL__</string>
         <key>TRIAGE_LOG_DIR</key>
         <string>__LOG_DIR__</string>
+        <key>TRIAGE_ENV_FILE</key>
+        <string>__ENV_FILE__</string>
     </dict>
 
     <key>StartCalendarInterval</key>

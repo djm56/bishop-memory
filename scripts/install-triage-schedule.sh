@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/install-triage-schedule.sh
 #
-# Install (or remove) the three nightly triage launchd user agents:
+# Install (or remove) the nightly triage launchd user agents:
 #
 #   com.bishop-memory.triage-classify   runs scripts/triage-run.sh classify
 #   com.bishop-memory.triage-process    runs scripts/triage-run.sh process
@@ -9,13 +9,35 @@
 #
 # Usage:
 #   scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM]
-#                                      [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
+#                                      [--grade-at HH:MM] [--url URL] [--log-dir DIR]
+#                                      [--root DIR] [--env-file FILE] [--dry-run]
 #   scripts/install-triage-schedule.sh --uninstall
 #
 # Defaults: classify at 21:00, process at 21:20, grade at 21:40, URL
-# http://127.0.0.1:8787, logs in ~/Library/Logs/bishop-memory. macOS only
-# (launchd); on Linux write a systemd timer that runs the same three commands
+# http://127.0.0.1:8787, logs in ~/Library/Logs/bishop-memory, and the root the
+# jobs run from is the checkout that holds this script. macOS only
+# (launchd); on Linux write a systemd timer that runs the same commands
 # — see the wiki page Developer-Triage-Agents.
+#
+# --root DIR runs the jobs from the checkout at DIR instead, such as the deploy
+# worktree that `make triage-deploy` keeps at origin/main. DIR must hold
+# scripts/triage-run.sh as an executable file and an executable bin/mcpd; if it
+# does not, the script refuses before it writes anything. A relative DIR is
+# resolved against the current directory and written into the plists as an
+# absolute path. The plist template is always the one beside this script.
+# --uninstall ignores --root.
+#
+# --env-file FILE names the credentials file the jobs source (TRIAGE_ENV_FILE in
+# triage-run.sh). Without it the file is .env in the checkout that holds this
+# script, even with --root: .env is gitignored, so the deploy worktree has none,
+# and its jobs take their credentials from the development checkout's file. A
+# relative FILE is written as an absolute path. A FILE that is not a readable
+# file is named on stderr, and the install goes ahead: the runner reads the file
+# only when it is there. The path, the default included, is refused before
+# anything is written if it holds | & \ < or a newline, because the plist render
+# cannot carry them: sed stops on | and a newline, writes the placeholder text back
+# in place of &, and drops \, and plutil -lint rejects <. --uninstall ignores
+# --env-file.
 #
 # Idempotent: re-running unloads and reloads every job with the new plists.
 # Loading never triggers a run (RunAtLoad is false); to run now use
@@ -30,6 +52,8 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BISHOP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# The checkout that holds this script. --root may move BISHOP_ROOT; the default env file stays here.
+CHECKOUT_ROOT="$BISHOP_ROOT"
 TEMPLATE="$SCRIPT_DIR/com.bishop-memory.triage.plist"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 
@@ -40,6 +64,10 @@ URL="http://127.0.0.1:8787"
 LOG_DIR="$HOME/Library/Logs/bishop-memory"
 DRY_RUN=0
 UNINSTALL=0
+ROOT_GIVEN=0
+ROOT_ARG=""
+ENV_FILE_GIVEN=0
+ENV_FILE_ARG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -53,9 +81,17 @@ while [[ $# -gt 0 ]]; do
     --url=*) URL="${1#*=}"; shift ;;
     --log-dir) LOG_DIR="${2:-}"; shift 2 ;;
     --log-dir=*) LOG_DIR="${1#*=}"; shift ;;
+    --root)
+      [[ $# -ge 2 ]] || { echo "install-triage-schedule.sh: --root needs a directory" >&2; exit 64; }
+      ROOT_ARG="$2"; ROOT_GIVEN=1; shift 2 ;;
+    --root=*) ROOT_ARG="${1#*=}"; ROOT_GIVEN=1; shift ;;
+    --env-file)
+      [[ $# -ge 2 ]] || { echo "install-triage-schedule.sh: --env-file needs a file" >&2; exit 64; }
+      ENV_FILE_ARG="$2"; ENV_FILE_GIVEN=1; shift 2 ;;
+    --env-file=*) ENV_FILE_ARG="${1#*=}"; ENV_FILE_GIVEN=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
-    -h|--help) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "install-triage-schedule.sh: unknown flag: $1" >&2; exit 64 ;;
   esac
 done
@@ -70,6 +106,54 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
     fi
   done
   exit 0
+fi
+
+# --root is checked before anything is written, so a refused root leaves the agents directory and the log directory alone.
+if [[ "$ROOT_GIVEN" -eq 1 ]]; then
+  if [[ -z "$ROOT_ARG" ]]; then
+    echo "install-triage-schedule.sh: --root needs a directory" >&2
+    exit 64
+  fi
+  if [[ ! -d "$ROOT_ARG" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG is not a directory" >&2
+    exit 64
+  fi
+  if [[ ! -f "$ROOT_ARG/scripts/triage-run.sh" || ! -x "$ROOT_ARG/scripts/triage-run.sh" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG has no executable scripts/triage-run.sh" >&2
+    exit 64
+  fi
+  if [[ ! -x "$ROOT_ARG/bin/mcpd" ]]; then
+    echo "install-triage-schedule.sh: --root $ROOT_ARG has no executable bin/mcpd (run make triage-deploy, or make build-mcpd, in it)" >&2
+    exit 64
+  fi
+  # Logical absolute path, as the default root is derived, so a relative DIR is written as an absolute one.
+  BISHOP_ROOT="$(cd "$ROOT_ARG" && pwd)"
+fi
+
+# The env file is resolved and checked before anything is written, as --root is. A relative FILE is made
+# absolute here, and the checks run on that absolute path, because that is the value the plist receives.
+if [[ "$ENV_FILE_GIVEN" -eq 1 ]]; then
+  if [[ -z "$ENV_FILE_ARG" ]]; then
+    echo "install-triage-schedule.sh: --env-file needs a file" >&2
+    exit 64
+  fi
+  case "$ENV_FILE_ARG" in
+    /*) ENV_FILE_PATH="$ENV_FILE_ARG" ;;
+    *) ENV_FILE_PATH="$PWD/$ENV_FILE_ARG" ;;
+  esac
+else
+  ENV_FILE_PATH="$CHECKOUT_ROOT/.env"
+fi
+# The render passes the path through sed with | as the delimiter, into the plist. A path holding one of these
+# does not come out as given: | and a newline stop sed with an error, & is replaced by the text the pattern
+# matched (the placeholder), \ is dropped, and < makes the plist invalid XML, which plutil -lint rejects.
+case "$ENV_FILE_PATH" in
+  *'|'*|*'&'*|*'\'*|*'<'*|*$'\n'*)
+    echo "install-triage-schedule.sh: env file path $ENV_FILE_PATH holds | & \\ < or a newline; the plist render cannot carry it" >&2
+    exit 64 ;;
+esac
+if [[ ! -f "$ENV_FILE_PATH" || ! -r "$ENV_FILE_PATH" ]]; then
+  echo "install-triage-schedule.sh: WARNING: env file $ENV_FILE_PATH is not a readable file; the jobs run without it" >&2
 fi
 
 parse_time() {
@@ -106,6 +190,7 @@ echo "[install-triage] grade at:           $GRADE_AT"
 echo "[install-triage] service URL:        $URL"
 echo "[install-triage] log directory:      $LOG_DIR"
 echo "[install-triage] job PATH:           $job_path"
+echo "[install-triage] env file:           $ENV_FILE_PATH"
 
 mkdir -p "$LOG_DIR"
 
@@ -117,6 +202,7 @@ render() {
       -e "s|__HOME__|$HOME|g" \
       -e "s|__URL__|$URL|g" \
       -e "s|__LOG_DIR__|$LOG_DIR|g" \
+      -e "s|__ENV_FILE__|$ENV_FILE_PATH|g" \
       -e "s|__HOUR__|$hour|g" \
       -e "s|__MINUTE__|$minute|g" \
       "$TEMPLATE"

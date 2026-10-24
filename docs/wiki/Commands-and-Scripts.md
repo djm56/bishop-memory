@@ -22,7 +22,8 @@ Every `make` target and every script, with flags, environment, exit codes and wh
 | `make triage-grade [LIMIT=n] [MISSIONS=id,…] [REGRADE=1]` | Grade finished missions now | Default: the next 10 ungraded; `REGRADE=1` needs `MISSIONS`. See [Mission Grading](Mission-Grading) |
 | `make triage-export` | Write decisions to every registered harness's Markdown | Exit 3 means a conflict was skipped |
 | `make triage-review` | Open the review page | |
-| `make triage-install` / `triage-uninstall` | Install or remove the nightly launchd jobs | macOS |
+| `make triage-install [ROOT=DIR] [ENV_FILE=FILE]` / `triage-uninstall` | Install or remove the nightly launchd jobs; `ROOT` runs them from another checkout, `ENV_FILE` names their credentials file | macOS. Only command-line values count; see [the installer](#scriptsinstall-triage-schedulesh) |
+| `make triage-deploy [DEPLOY_DIR=/abs/path]` | Create or fast-forward the deploy worktree to `origin/main` and rebuild `bin/mcpd` in it. Default `$HOME/bishop-memory-deploy`. See [the deploy worktree](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from) | Never between 21:00 and 21:40 local time |
 | `make mission-links [RENAME="old=new …"] [APPLY=1]` | One-off backfill of mission links: findings, step times and summaries, orphan documents, stray harness names | Dry run unless `APPLY=1`; run `POST /v1/documents/sync` first |
 | `make scratch-clean [DAYS=30] [HARNESS=name] [APPLY=1]` | Move harness workspace files older than `DAYS` to the Trash and drop them from search, through the API | Run on the machine that holds the harness checkouts. Dry run unless `APPLY=1`; default every registered harness |
 | `make wiki-publish` | Push `docs/wiki/` (pages and images) to the GitHub wiki | Needs the wiki created once in the web UI |
@@ -122,7 +123,7 @@ The single entry point for all three agents; launchd and `make` call it. Sources
 | `TRIAGE_TIMEOUT_MIN` | 45 (20 for grade) | Stop a run still going after this many minutes; `0` never |
 | `TRIAGE_GUARD_TIMEOUT_SEC` | 30 | Seconds the opencode agent listing may take before the guard exits 4; a whole number of at least 1; validated on the opencode engine only |
 | `TRIAGE_ADD_DIRS` | every registered harness checkout | Read-only directories for the processor |
-| `TRIAGE_ENV_FILE` | `<checkout>/.env` | Credentials file |
+| `TRIAGE_ENV_FILE` | `<bishop-root>/.env`, where `<bishop-root>` is the checkout the runner runs from | Credentials file. The launchd jobs get it from the installer, which sets it in each plist to the installer checkout's `.env` unless `--env-file` is given; see the installer section below |
 | `CLAUDE_BIN` / `OPENCODE_BIN` | `claude` / `opencode` | CLI per engine |
 
 Exit 0 ran or nothing to do (on `grade --mission`, also when every named mission is excluded); 1 the agent run failed or timed out; 2 the guard refused the agent, or a precondition the run needs was not met; 4 the guard could not finish checking the agent, or on `grade --mission` the exclusion lookup or a tool it needs could not finish, so nothing ran; 64 usage error.
@@ -130,11 +131,24 @@ Exit 0 ran or nothing to do (on `grade --mission`, also when every named mission
 ### `scripts/install-triage-schedule.sh`
 
 ```
-scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM] [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--dry-run]
+scripts/install-triage-schedule.sh [--classify-at HH:MM] [--process-at HH:MM] [--grade-at HH:MM] [--url URL] [--log-dir DIR] [--root DIR] [--env-file FILE] [--dry-run]
 scripts/install-triage-schedule.sh --uninstall
 ```
 
 Renders `scripts/com.bishop-memory.triage.plist` three times and loads `com.bishop-memory.triage-classify` (21:00), `com.bishop-memory.triage-process` (21:20) and `com.bishop-memory.triage-grade` (21:40). Loading never runs a job; `launchctl start <label>` does. Bakes in a PATH that includes wherever `claude` and `go` are now.
+
+- `--root DIR` (make: `ROOT=DIR`) runs the jobs from the checkout at `DIR`, such as the deploy worktree. The default is the checkout that holds the installer. `DIR` must hold an executable `scripts/triage-run.sh` and an executable `bin/mcpd`, or the installer exits 64 before it writes anything. A relative `DIR` is written as an absolute path.
+- `--env-file FILE` (make: `ENV_FILE=FILE`) names the credentials file the jobs source, as `TRIAGE_ENV_FILE`. The default is `.env` in the checkout that holds the installer, even with `--root`, because `.env` is gitignored and a deploy worktree has none. A file that is missing or unreadable produces a WARNING and the install goes ahead. The path is refused, before anything is written, if it holds a character the plist render cannot carry; the installer's header lists them.
+- Through make, `ROOT` and `ENV_FILE` count only when given on the command line; an exported value is ignored. An empty command-line value is refused with exit 64.
+- `--uninstall` ignores `--root` and `--env-file`. The worked setup, with `make triage-deploy` first, is in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
+
+### `scripts/triage-deploy.sh`
+
+```
+scripts/triage-deploy.sh [--dir DIR]
+```
+
+Creates or fast-forwards the deploy worktree (default `$HOME/bishop-memory-deploy`, or `DEPLOY_DIR=` / `--dir`, absolute paths only) to `origin/main`, detached, and rebuilds `bin/mcpd` in it. Refuses a DIR in a state its header lists, leaving the worktree unchanged. It also refuses, and the header does not list, an existing path that is not a directory and a path inside another checkout; these refusals have no test, as the ROADMAP and PROGRESS record. The fetch of `origin/main` has already run by then. Exit codes and the details are in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
 
 ### `scripts/triage-seed-categories.py`
 
