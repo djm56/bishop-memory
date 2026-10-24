@@ -148,7 +148,7 @@ Renders `scripts/com.bishop-memory.triage.plist` three times and loads `com.bish
 scripts/triage-deploy.sh [--dir DIR]
 ```
 
-Creates or fast-forwards the deploy worktree (default `$HOME/bishop-memory-deploy`, or `DEPLOY_DIR=` / `--dir`, absolute paths only) to `origin/main`, detached, and rebuilds `bin/mcpd` in it. Refuses a DIR in a state its header lists, leaving the worktree unchanged. It also refuses two cases the header does not list, an existing path that is not a directory and a path inside another checkout; both are untested, as the ROADMAP and PROGRESS record. The fetch of `origin/main` has already run by then. Exit codes and the details are in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
+Creates or fast-forwards the deploy worktree (default `$HOME/bishop-memory-deploy`, or `DEPLOY_DIR=` / `--dir`, absolute paths only) to `origin/main`, detached, and rebuilds `bin/mcpd` in it. Refuses a DIR in a state its header lists, leaving the worktree unchanged. It also refuses, and the header does not list, an existing path that is not a directory and a path inside another checkout; both refusals are untested, as the ROADMAP and PROGRESS record. The fetch of `origin/main` has already run by then. Exit codes and the details are in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
 
 ### `scripts/triage-seed-categories.py`
 
