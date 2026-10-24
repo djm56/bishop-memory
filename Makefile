@@ -162,8 +162,10 @@ triage-deploy:
 
 # Install / remove the nightly launchd jobs (macOS). ROOT=DIR runs the jobs from the
 # checkout at DIR, such as the deploy worktree; unset, they run from this checkout.
+# ENV_FILE=FILE names the credentials file the jobs source; unset, it is .env in the
+# checkout that holds the installer, whatever ROOT says.
 triage-install:
-	scripts/install-triage-schedule.sh --url $(TRIAGE_URL) $(if $(ROOT),--root "$(ROOT)")
+	scripts/install-triage-schedule.sh --url $(TRIAGE_URL) $(if $(ROOT),--root "$(ROOT)") $(if $(ENV_FILE),--env-file "$(ENV_FILE)")
 
 triage-uninstall:
 	scripts/install-triage-schedule.sh --uninstall
