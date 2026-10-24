@@ -138,9 +138,9 @@ scripts/install-triage-schedule.sh --uninstall
 Renders `scripts/com.bishop-memory.triage.plist` three times and loads `com.bishop-memory.triage-classify` (21:00), `com.bishop-memory.triage-process` (21:20) and `com.bishop-memory.triage-grade` (21:40). Loading never runs a job; `launchctl start <label>` does. Bakes in a PATH that includes wherever `claude` and `go` are now.
 
 - `--root DIR` (make: `ROOT=DIR`) runs the jobs from the checkout at `DIR`, such as the deploy worktree. The default is the checkout that holds the installer. `DIR` must hold an executable `scripts/triage-run.sh` and an executable `bin/mcpd`, or the installer exits 64 before it writes anything. A relative `DIR` is written as an absolute path.
-- `--env-file FILE` (make: `ENV_FILE=FILE`) names the credentials file the jobs source, as `TRIAGE_ENV_FILE`. The default is `.env` in the checkout that holds the installer, even with `--root`, because `.env` is gitignored and a deploy worktree has none. A file that is missing or unreadable produces a WARNING and the install goes ahead. The path is refused, before anything is written, if it holds `|`, `&`, `\`, `<` or a newline.
+- `--env-file FILE` (make: `ENV_FILE=FILE`) names the credentials file the jobs source, as `TRIAGE_ENV_FILE`. The default is `.env` in the checkout that holds the installer, even with `--root`, because `.env` is gitignored and a deploy worktree has none. A file that is missing or unreadable produces a WARNING and the install goes ahead. The path is refused, before anything is written, if it holds a character the plist render cannot carry; the installer's header lists them.
 - Through make, `ROOT` and `ENV_FILE` count only when given on the command line; an exported value is ignored. An empty command-line value is refused with exit 64.
-- Both flags are ignored by `--uninstall`. The worked setup, with `make triage-deploy` first, is in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
+- `--uninstall` ignores `--root` and `--env-file`. The worked setup, with `make triage-deploy` first, is in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
 
 ### `scripts/triage-deploy.sh`
 
@@ -148,7 +148,7 @@ Renders `scripts/com.bishop-memory.triage.plist` three times and loads `com.bish
 scripts/triage-deploy.sh [--dir DIR]
 ```
 
-Creates or fast-forwards the deploy worktree (default `$HOME/bishop-memory-deploy`, or `DEPLOY_DIR=` / `--dir`, absolute paths only) to `origin/main`, detached, and rebuilds `bin/mcpd` in it. Refuses, changing nothing, a dirty or diverged tree and a path that is not a linked worktree of this repository. Exit codes and the details are in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
+Creates or fast-forwards the deploy worktree (default `$HOME/bishop-memory-deploy`, or `DEPLOY_DIR=` / `--dir`, absolute paths only) to `origin/main`, detached, and rebuilds `bin/mcpd` in it. Refuses the paths its header lists, leaving the worktree unchanged; the fetch of `origin/main` has already run by then. Exit codes and the details are in [Developer: Triage Agents](Developer-Triage-Agents#the-deploy-worktree-and-where-the-jobs-run-from).
 
 ### `scripts/triage-seed-categories.py`
 

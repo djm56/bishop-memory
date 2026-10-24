@@ -113,7 +113,7 @@ when a grade run ends with bishop-triage tool errors and writes no grade. The
 2026-10-21 grade runs at 15:35, 17:21 and 18:00 UTC looked successful for this
 reason. Source: mission-20261021-05 DEBRIEF (harness repository), and FINDINGS
 2026-10-22 (`scripts/triage-run.sh`, grade success check). Status: in progress.
-Fixed on `fix/triage-reliability` (HEAD `6da2680`): the summary fails a run
+Fixed on `fix/triage-reliability`: the summary fails a run
 that records an unrecovered bishop-triage error or lacks its required calls.
 Not merged. The operator wants it handled as a follow-up mission.
 
@@ -148,12 +148,12 @@ Review 2 W5, carried. Status: open.
 
 **The installer's `sed` render takes `--root`, `--url`, `--log-dir` and `$HOME`
 unchecked.** The render uses `|` as its delimiter, and `&` in the replacement
-side is special, so a path holding either can corrupt the plist. Only the env
+side is special, so a path holding one of those characters can corrupt the plist. Only the env
 file path is refused for those characters. Review 4 S4. Status: open.
 
-**Two deploy refusals are untested.** `scripts/triage-deploy.sh` refuses a path
+**Deploy refusals without a test.** `scripts/triage-deploy.sh` refuses a path
 inside another checkout and a path that exists but is not a directory, and no
-test covers either (review 4 W3). Status: open.
+test covers them (review 4 W3). Status: open.
 
 **No `git worktree prune` hint.** When the deploy directory was deleted by hand,
 the next run fails with git's own message and the script prints no hint (review

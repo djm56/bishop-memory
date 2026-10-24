@@ -176,14 +176,14 @@ the wiki pages [Mission-Grading](wiki/Mission-Grading.md) and
 - [ ] Sub-themes across runs and recurrence detection (idea only) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Read-only `/findings-digest` command in the harness (unverified: harness side) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Calibration on the last 20 decisions, and per-run accepted and declined counts (unverified: not found in code on 2026-10-20) ([ROADMAP](ROADMAP.md#findings-triage))
-- [ ] Triage failure rules, `make triage-deploy`, the installer's `--root` and `--env-file`, and their docs are on `fix/triage-reliability` (HEAD `6da2680`), not yet merged; the live switch of the launchd jobs is step 7 of mission-20261023-02 and is not done (pending merge; `docs/wiki/Developer-Triage-Agents.md`, `docs/wiki/Troubleshooting.md`) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] Triage failure rules, `make triage-deploy`, the installer's `--root` and `--env-file`, and their docs are on `fix/triage-reliability`, not yet merged; the live switch of the launchd jobs is step 7 of mission-20261023-02 and is not done (pending merge; `docs/wiki/Developer-Triage-Agents.md`, `docs/wiki/Troubleshooting.md`) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] The claude engine is not judged by the failure rules, and an unreadable result prints `result not parseable` and exits 0 (open question, operator decision) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] Shape drift on the cost fails the run even when every call completed; whether that stays is an open operator question (decision) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] An infinite or NaN step cost passes the summary unchecked (open, low; review 2h S2) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] The `mutate.py` shared-text check is vacuous with timestamped messages (open; review 2 W5 carried) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] `mutate.py` does not refuse an empty `--ids` (open) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] `scripts/install-triage-schedule.sh` substitutes `--root`, `--url`, `--log-dir` and `$HOME` into the plist with `sed` and no check on `|` or `&` in them (open; review 4 S4) ([ROADMAP](ROADMAP.md#findings-triage))
-- [ ] The two refusals of `scripts/triage-deploy.sh` for a path inside another checkout and for a path that is not a directory have no test (open; review 4 W3) ([ROADMAP](ROADMAP.md#findings-triage))
+- [ ] The refusals of `scripts/triage-deploy.sh` for a path inside another checkout and for a path that is not a directory have no test (open; review 4 W3) ([ROADMAP](ROADMAP.md#findings-triage))
 - [ ] `scripts/triage-deploy.sh` prints no `git worktree prune` hint for a stale registration (open, low; review 4 S2) ([ROADMAP](ROADMAP.md#findings-triage))
 
 ## Reconciler
